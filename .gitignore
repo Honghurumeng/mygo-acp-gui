@@ -1,0 +1,24 @@
+# macOS / Windows
+.DS_Store
+Thumbs.db
+
+# Node（仅参考原型）
+node_modules/
+*.log
+.env
+
+# Go / MyGo
+gui/build/
+gui/.mygo/
+gui/dist/
+/gui/gui
+*.test
+coverage.out
+*.prof
+
+# 本地进程
+*.pid
+
+# 注意：gui/resources/agents/pi-acp/ 是 vendored bundle，必须提交，不要忽略
+
+docs/*.png

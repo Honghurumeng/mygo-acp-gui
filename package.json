@@ -1,0 +1,14 @@
+{
+  "name": "acp-pi-gui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A minimal ACP client GUI that drives the pi coding agent through @geohar/pi-acp",
+  "scripts": {
+    "start": "node server/index.mjs",
+    "dev": "node --watch server/index.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
+  }
+}
