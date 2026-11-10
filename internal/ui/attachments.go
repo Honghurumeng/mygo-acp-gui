@@ -17,12 +17,13 @@ const (
 )
 
 func (a *App) chooseImages() {
-	if a.Session == nil || a.Connecting || a.SessionBusy != "" {
+	chat := a.activeChat()
+	if chat == nil || chat.Session == nil || chat.Connecting || chat.Busy != "" {
 		return
 	}
-	remaining := maxAttachments - len(a.Attachments)
+	remaining := maxAttachments - len(chat.Attachments)
 	if remaining <= 0 {
-		a.addError(errAttachmentCount)
+		a.addError(chat, errAttachmentCount)
 		return
 	}
 	win := a.window()
@@ -37,7 +38,7 @@ func (a *App) chooseImages() {
 			}},
 		})
 		if err != nil {
-			a.Post(func() { a.addError(err) })
+			a.Post(func() { a.addError(chat, err) })
 			return
 		}
 		for _, path := range paths {
@@ -46,16 +47,16 @@ func (a *App) chooseImages() {
 			}
 			info, err := os.Stat(path)
 			if err != nil {
-				a.Post(func() { a.addError(err) })
+				a.Post(func() { a.addError(chat, err) })
 				continue
 			}
 			if info.Size() > maxImageBytes {
-				a.Post(func() { a.addError(errImageTooLarge(path)) })
+				a.Post(func() { a.addError(chat, errImageTooLarge(path)) })
 				continue
 			}
 			data, err := os.ReadFile(path)
 			if err != nil {
-				a.Post(func() { a.addError(err) })
+				a.Post(func() { a.addError(chat, err) })
 				continue
 			}
 			mime := imageMIME(path, data)
@@ -65,18 +66,21 @@ func (a *App) chooseImages() {
 				Data:     base64.StdEncoding.EncodeToString(data),
 			}
 			a.Post(func() {
+				if chat.Closed || a.chatIndex(chat) < 0 {
+					return
+				}
 				bitmap, err := mui.DecodeBitmap(data)
 				if err != nil {
-					a.addError(err)
+					a.addError(chat, err)
 					return
 				}
 				attachment.Bitmap = bitmap
-				if len(a.Attachments) >= maxAttachments {
+				if len(chat.Attachments) >= maxAttachments {
 					bitmap.ReleasePixels()
-					a.addError(errAttachmentCount)
+					a.addError(chat, errAttachmentCount)
 					return
 				}
-				a.Attachments = append(a.Attachments, attachment)
+				chat.Attachments = append(chat.Attachments, attachment)
 			})
 			remaining--
 		}
@@ -102,20 +106,20 @@ func imageMIME(path string, data []byte) string {
 	return "application/octet-stream"
 }
 
-func (a *App) removeAttachment(index int) {
-	if index < 0 || index >= len(a.Attachments) {
+func (a *App) removeAttachment(chat *Chat, index int) {
+	if chat == nil || index < 0 || index >= len(chat.Attachments) {
 		return
 	}
-	a.Attachments = append(a.Attachments[:index], a.Attachments[index+1:]...)
+	chat.Attachments = append(chat.Attachments[:index], chat.Attachments[index+1:]...)
 }
 
-func (a *App) attachmentPicker(c *mui.Context) {
-	if len(a.Attachments) == 0 {
+func (a *App) attachmentPicker(c *mui.Context, chat *Chat) {
+	if len(chat.Attachments) == 0 {
 		return
 	}
 	t := c.Theme()
 	mui.Row(c).Gap(8).Wrap().Children(func() {
-		for i, attachment := range a.Attachments {
+		for i, attachment := range chat.Attachments {
 			i := i
 			attachment := attachment
 			mui.Row(c).Gap(6).AlignItems(mui.Center).Padding(4, 6).Radius(8).Background(t.Surface).Children(func() {
@@ -127,7 +131,7 @@ func (a *App) attachmentPicker(c *mui.Context) {
 					mui.Text(c, attachment.MimeType).FontSize(9).TextColor(t.TextMuted)
 				})
 				if mui.Button(c, "×").Label("Remove " + attachment.Name).Clicked() {
-					a.removeAttachment(i)
+					a.removeAttachment(chat, i)
 				}
 			})
 		}

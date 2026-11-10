@@ -10,7 +10,8 @@
 
 ```
 MyGo 原生窗口 (Go + ui)
-  ├─ Agent 选择 / 工作区选择 / 会话视图
+  ├─ 会话标签栏（每个标签一个 agent 进程 + ACP session）
+  ├─ Agent 选择 / 工作区选择 / 当前标签的会话视图
   ├─ ui/markdown.Stream / View      ← agent_message_chunk
   ├─ ui.List(FollowEnd)             ← 消息列表
   ├─ ui.Collapsible                 ← thought / tool_call
@@ -32,7 +33,7 @@ MyGo 原生窗口 (Go + ui)
   internal/acp/            JSON-RPC、请求/通知、权限、行分帧（已实现）
   internal/agent/          内置 agent 表、launch spec、登录 shell 路径解析、工作区校验、状态探测
   internal/session/        进程组 + ACP 会话生命周期 + update/permission 分发（已实现）
-  internal/ui/             聊天、流式 Markdown、权限对话框、窗口更新（已实现）
+  internal/ui/             多标签会话、聊天、流式 Markdown、权限队列、窗口更新（已实现）
   resources/
     agents/pi-acp/
       pi-acp.bundle.mjs    单文件 bundle，启动时直接 node 执行（见 pi.md）
@@ -59,19 +60,21 @@ MyGo 原生窗口 (Go + ui)
       pi: vendored bundle + Node 22+
       command-code: <绝对路径>/command-code acp
   → internal/session.Probe（initialize，5 秒，逐 agent 并行）
-  → internal/ui.Connect
+  → 标签栏 + New / Connect：每个标签各自 internal/session.Start
       session/new | session/load | session/resume（DeferUpdates 缓冲历史）
   → session/prompt（文本 + 图片）
-  → session/update → Window.Update → markdown / tool / plan / usage
+  → session/update → 所属 *Chat → Window.Update → markdown / tool / plan / usage
   → session/set_config_option / set_mode
   → session/list → load / resume / close；New chat 同进程 session/new
   → Stop → session/cancel
-  → 关闭窗口 / 退出 → session/close → Session.Close → kill(-pgid)
+  → 标签 × / Disconnect → Session.Close → kill(-pgid)
+  → 关闭窗口 / 退出 → 关闭所有标签的进程组
 ```
 
 - 解析并探测 pi、command-code；单个 agent 缺失不会隐藏另一个，状态行展示 `ready` / `not-installed` / `installed-not-acp` / `needs-auth` / `error`。内置 agent 表固定为 pi、command-code，不做 registry 发现。
 - 路径解析优先使用 `ACP_GUI_NODE` / `ACP_GUI_PI` / `ACP_GUI_COMMAND_CODE` 的绝对路径覆盖；否则用登录 shell 的 `PATH`。只定位已有安装，不安装、不捆绑 Node。
 - UI 状态只在主线程修改。session 回调通过 `Window.Update`（测试中通过队列）提交，不直接改状态。
+- 每个标签是一个 `ui.Chat`，保存自己的 Session、Info、消息、输入草稿、配置、附件和连接代数；App 持有 `Chats` 与 `Active`。回调捕获 chat 指针，因此后台标签仍能流式更新。
 - 测试用 `scripts/fake-agent.mjs`：prompt 流式输出、`/slow` + cancel、`/permission`、config/mode、list/load/resume/close、图片/MCP 计数、命令/plan/usage、子进程清理。
 
 ## ACP 客户端
@@ -115,7 +118,7 @@ pi 自己的工具在工作区内读写执行；客户端只负责展示和审�
 - Unix：`Setpgid: true`，退出时 `kill(-pid, SIGTERM)`，宽限 1.5 秒后 `SIGKILL`。
 - Windows：新进程组 + `taskkill /PID <pid> /T /F`。
 - 先关 stdin 请求优雅退出；agent 意外退出时也对残留进程组发 SIGTERM。
-- 应用退出 / 窗口关闭必须清理所有 agent 进程；`Session.Close` 幂等，`App.Shutdown` 会取消进行中的连接。
+- 应用退出 / 窗口关闭必须清理所有 agent 进程；`Session.Close` 幂等，`App.Shutdown` 取消所有标签的连接并关闭 sessions 中登记的全部进程组。
 - stderr 单独收集，保留末尾 64 KiB；初始化/会话失败时附在错误里（截断展示）。
 
 ## MyGo UI
@@ -126,7 +129,9 @@ pi 自己的工具在工作区内读写执行；客户端只负责展示和审�
 - 权限：`session/request_permission` 回调阻塞，`ui.Modal` 展示工具名和 agent 给出的 `options`；按钮直接回 `optionId`，关闭/取消回 `cancelled`。
 - 配置：`ui.Select` / `ui.Segmented`；模型、effort、模式从 `configOptions` / `modes` 生成，不硬编码。
 - 输入：`ui.TextArea`，Enter 发送、Shift+Enter 换行；流式期间同一位置切换为 Stop；支持图片附件。
-- 历史：`session/list` 模态；Open 走 `session/load` 并重放，Resume 走 `session/resume`；Close chat 走 `session/close`。
+- 多会话：标签栏显示标题/流式/未读/权限提醒；`+ New` 复制当前 agent、工作区和 MCP；标签 `×` 关闭对应进程。Agent/Workspace 选择跟随当前标签，连接后锁定。
+- 权限：全局模态但带 `Chat: …` 标签，后台请求排队；回答按所属 `Chat` 路由，标签 `!` 提醒未答请求。
+- 历史：`session/list` 模态；当前标签已有消息或流式时，Open/Resume 在新标签连接，否则就地 load/resume；Close chat 走 `session/close`。
 - MCP：JSON 模态，校验后传给 new/load/resume；命令面板解析 `available_commands_update`。
 - 计划/用量：composer 上方 plan，会话栏显示 usage/title。
 - 跨 goroutine 改状态：`win.Update(func(){ ... })`；没有窗口的测试用 `App.Flush` 排队应用。

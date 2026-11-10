@@ -3,6 +3,7 @@ package ui
 import "github.com/egoist/mygo"
 
 func (a *App) chooseWorkspace() {
+	chat := a.activeChat()
 	win := a.window()
 	go func() {
 		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
@@ -13,7 +14,12 @@ func (a *App) chooseWorkspace() {
 		})
 		if err != nil {
 			a.Post(func() {
-				if !a.closed.Load() {
+				if a.closed.Load() {
+					return
+				}
+				if chat != nil && a.chatIndex(chat) >= 0 {
+					chat.WorkspaceError = err.Error()
+				} else {
 					a.WorkspaceError = err.Error()
 				}
 			})
@@ -24,6 +30,11 @@ func (a *App) chooseWorkspace() {
 		}
 		a.Post(func() {
 			if a.closed.Load() {
+				return
+			}
+			if chat != nil && a.chatIndex(chat) >= 0 {
+				chat.Workspace = paths[0]
+				chat.WorkspaceError = ""
 				return
 			}
 			a.Workspace = paths[0]

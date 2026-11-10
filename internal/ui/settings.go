@@ -36,7 +36,7 @@ func (a *App) settingsDialog(c *mui.Context) {
 	mui.Modal(c, &a.SettingsOpen, func() {
 		mui.Column(c).Gap(10).Width(620).Children(func() {
 			mui.Text(c, "MCP servers").FontSize(18).Bold()
-			mui.Text(c, "Passed to session/new, load and resume. Applies to the next chat you create or open.").
+			mui.Text(c, "Applies to the active chat and new tabs created from it. Each tab keeps its own list.").
 				FontSize(11).TextColor(t.TextMuted)
 			mui.TextArea(c, &a.MCPText).
 				Label("JSON array").
@@ -61,6 +61,12 @@ func (a *App) settingsDialog(c *mui.Context) {
 						a.MCPError = err.Error()
 					} else {
 						a.MCPServers = servers
+						if chat := a.activeChat(); chat != nil {
+							chat.MCPServers = append([]any(nil), servers...)
+							if chat.Session != nil {
+								chat.Session.SetMCPServers(servers)
+							}
+						}
 						a.MCPText = prettyJSON(servers)
 						a.MCPError = ""
 						a.SettingsOpen = false

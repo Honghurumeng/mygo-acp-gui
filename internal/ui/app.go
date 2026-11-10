@@ -99,31 +99,14 @@ type App struct {
 	Resolving     bool
 	ResolveError  string
 
+	// Workspace is the draft workspace used when no chat tab exists. An
+	// open chat carries its own workspace.
 	Workspace      string
 	WorkspaceError string
 
-	Session      *session.Session
-	Info         session.Info
-	Connecting   bool
-	Connected    bool
-	ConnectError string
-	SessionBusy  string
+	Chats  []*Chat
+	Active int
 
-	Messages   []*Message
-	Input      string
-	Streaming  bool
-	Cancelling bool
-	LastStop   string
-
-	Commands     []acp.AvailableCommand
-	CommandsOpen bool
-	Attachments  []Attachment
-	Plan         []session.PlanEntry
-	PlanOpen     bool
-	Usage        *acp.Usage
-	Title        string
-
-	ConfigBusy   string
 	MCPText      string
 	MCPServers   []any
 	MCPError     string
@@ -137,17 +120,14 @@ type App struct {
 	HistorySelected int
 	HistoryList     mui.ListState
 
-	pendingSessionID     string
-	pendingSessionAction string
-	pendingSessionTitle  string
-	replaying            bool
+	Permission      *permissionPrompt
+	PermissionOpen  bool
+	permissionQueue []*permissionPrompt
 
-	Permission     *permissionPrompt
-	PermissionOpen bool
+	MD markdown.Options
 
-	MD   markdown.Options
-	list mui.ListState
-
+	chatsMu      sync.Mutex
+	nextChat     int
 	win          *mygo.Window
 	postMu       sync.Mutex
 	pending      []func()
@@ -161,17 +141,12 @@ type App struct {
 	sessionsMu sync.Mutex
 	sessions   map[*session.Session]struct{}
 
-	connectMu     sync.Mutex
-	connectCancel context.CancelFunc
-	connectGen    int
-
 	discoverMu     sync.Mutex
 	discoverCancel context.CancelFunc
 
 	injectedAgents bool
 	resolveOpts    agent.ResolveOptions
 
-	turn *turnState
 	next int
 }
 
@@ -195,6 +170,7 @@ func New(opts Options) *App {
 		lifeCancel:     lifeCancel,
 		Resources:      opts.Resources,
 		Workspace:      workspace,
+		Active:         -1,
 		MD:             markdown.Options{},
 		sessions:       make(map[*session.Session]struct{}),
 		resolveOpts:    opts.Resolve,
@@ -286,13 +262,8 @@ func (a *App) Shutdown() {
 		}
 		a.sessionsMu.Unlock()
 
-		a.connectMu.Lock()
-		a.connectGen++
-		cancel := a.connectCancel
-		a.connectCancel = nil
-		a.connectMu.Unlock()
-		if cancel != nil {
-			cancel()
+		for _, chat := range a.chatsSnapshot() {
+			chat.cancelConnect()
 		}
 		a.lifeCancel()
 		a.cancelDiscovery()
@@ -325,13 +296,6 @@ func (a *App) untrackSession(s *session.Session) {
 	a.sessionsMu.Unlock()
 }
 
-func (a *App) currentAgent() (agent.LaunchSpec, bool) {
-	if a.AgentIndex < 0 || a.AgentIndex >= len(a.Agents) {
-		return agent.LaunchSpec{}, false
-	}
-	return a.Agents[a.AgentIndex], true
-}
-
 func (a *App) agentNames() []string {
 	names := make([]string, 0, len(a.Agents))
 	for _, spec := range a.Agents {
@@ -345,18 +309,31 @@ func (a *App) nextID() int {
 	return a.next
 }
 
+func (a *App) nextChatID() int {
+	a.nextChat++
+	return a.nextChat
+}
+
 // View builds the window.
 func (a *App) View(c *mui.Context) {
-	a.list.Key = func(i int) any { return a.Messages[i].ID }
-	a.list.FollowEnd = true
-	a.list.FollowAnimation = &mui.Smooth
+	chat := a.activeChat()
+	if chat != nil {
+		chat.list.Key = func(i int) any { return chat.Messages[i].ID }
+		chat.list.FollowEnd = true
+		chat.list.FollowAnimation = &mui.Smooth
+	}
 
 	mui.Column(c).Fill().Children(func() {
 		a.toolbar(c)
-		mui.List(c, &a.list, len(a.Messages), func(i int) {
-			a.message(c, a.Messages[i])
+		a.chatTabs(c)
+		if chat == nil {
+			mui.Column(c).Grow(1).Children(func() { a.emptyState(c) })
+			return
+		}
+		mui.List(c, &chat.list, len(chat.Messages), func(i int) {
+			a.message(c, chat.Messages[i])
 		}).Grow(1).Padding(16, 20).Gap(16).Justify(mui.End).Children(func() {
-			if len(a.Messages) == 0 {
+			if len(chat.Messages) == 0 {
 				a.emptyState(c)
 			}
 		})
@@ -368,8 +345,55 @@ func (a *App) View(c *mui.Context) {
 	a.settingsDialog(c)
 }
 
+// chatTabs draws the open chats. Each tab keeps its own process, so a
+// background chat can stream while another is shown.
+func (a *App) chatTabs(c *mui.Context) {
+	t := c.Theme()
+	var closeChat *Chat
+	mui.ScrollHorizontal(c).Padding(0, 20, 6, 20).Children(func() {
+		mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
+			for i, chat := range a.Chats {
+				i, chat := i, chat
+				background := t.Background
+				textColor := t.TextMuted
+				if i == a.Active {
+					background = t.Surface
+					textColor = t.Text
+				}
+				tab := mui.ButtonBase(c).Padding(5, 8).Radius(8).Background(background)
+				tab.Children(func() {
+					mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
+						if chat.Streaming {
+							mui.Spinner(c)
+						} else if chat.Attention {
+							mui.Text(c, "!").FontSize(11).TextColor(t.Warning)
+						} else if chat.Unread {
+							mui.Text(c, "•").FontSize(11).TextColor(t.Accent)
+						}
+						mui.Text(c, chat.name()).FontSize(12).TextColor(textColor)
+					})
+				})
+				if tab.Clicked() {
+					a.selectChat(chat)
+				}
+				if mui.Button(c, "×").Label("Close " + chat.name()).FontSize(11).Clicked() {
+					closeChat = chat
+				}
+			}
+			if mui.Button(c, "+ New").Label("New chat tab").FontSize(12).Clicked() {
+				a.newChatTab()
+			}
+		})
+	})
+	if closeChat != nil {
+		a.removeChat(closeChat)
+	}
+}
+
 func (a *App) toolbar(c *mui.Context) {
 	t := c.Theme()
+	chat := a.activeChat()
+	locked := chat != nil && (chat.Connected || chat.Connecting)
 	mui.Column(c).BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
 		mui.Row(c).Gap(10).AlignItems(mui.Center).Padding(10, 20).Children(func() {
 			mui.Text(c, "ACP GUI").FontSize(21).Bold()
@@ -383,17 +407,26 @@ func (a *App) toolbar(c *mui.Context) {
 			if len(names) == 0 {
 				mui.Text(c, "none available").TextColor(t.Danger)
 			} else {
-				if a.AgentIndex < 0 || a.AgentIndex >= len(a.Agents) {
+				current := a.AgentIndex
+				if current < 0 || current >= len(a.Agents) {
+					current = 0
 					a.AgentIndex = 0
 				}
-				choice := a.Agents[a.AgentIndex].Name
+				if chat != nil && chat.Agent.ID != "" {
+					current = a.agentIndex(chat.Agent.ID)
+				}
+				choice := a.Agents[current].Name
 				if mui.Select(c, &choice, names).
 					Label("Agent").
-					Disabled(a.Connected || a.Connecting).
+					Disabled(locked).
 					Changed() {
 					for i, name := range names {
 						if name == choice {
 							a.AgentIndex = i
+							if chat != nil {
+								chat.Agent = a.Agents[i]
+								chat.WorkspaceError = ""
+							}
 							break
 						}
 					}
@@ -401,26 +434,34 @@ func (a *App) toolbar(c *mui.Context) {
 			}
 
 			mui.Text(c, "Workspace").TextColor(t.TextMuted)
-			ws := mui.TextInput(c, &a.Workspace).
+			workspace := &a.Workspace
+			if chat != nil {
+				workspace = &chat.Workspace
+			}
+			ws := mui.TextInput(c, workspace).
 				Placeholder("Absolute workspace path").
 				Label("Workspace").
-				Disabled(a.Connected || a.Connecting).
+				Disabled(locked).
 				Grow(1)
 			if ws.Changed() {
-				a.WorkspaceError = ""
+				if chat != nil {
+					chat.WorkspaceError = ""
+				} else {
+					a.WorkspaceError = ""
+				}
 			}
 			if mui.Button(c, "Choose…").
-				Disabled(a.Connected || a.Connecting).
+				Disabled(locked).
 				Clicked() {
 				a.chooseWorkspace()
 			}
 
 			switch {
-			case a.Connected:
+			case chat != nil && chat.Connected:
 				if mui.Button(c, "Disconnect").Clicked() {
 					a.Disconnect()
 				}
-			case a.Connecting:
+			case chat != nil && chat.Connecting:
 				mui.PrimaryButton(c, "Connecting…").Disabled(true)
 				if mui.Button(c, "Cancel").Clicked() {
 					a.Disconnect()
@@ -447,8 +488,10 @@ func (a *App) toolbar(c *mui.Context) {
 			}
 		})
 		a.agentStatusRow(c)
-		a.sessionControls(c)
-		a.configControls(c)
+		if chat != nil {
+			a.sessionControls(c, chat)
+			a.configControls(c, chat)
+		}
 		if msg := a.errorLine(); msg != "" {
 			mui.Text(c, msg).FontSize(12).TextColor(t.Danger).Padding(0, 20, 8, 20).Selectable()
 		}
@@ -463,33 +506,31 @@ func (a *App) toolbar(c *mui.Context) {
 }
 
 func (a *App) statusLine() string {
+	chat := a.activeChat()
 	switch {
 	case a.Resolving:
 		return "Finding agents…"
-	case a.Connecting:
-		if spec, ok := a.currentAgent(); ok {
-			return "Connecting to " + spec.Name + "…"
-		}
-		return "Connecting…"
-	case a.Session != nil:
+	case chat != nil && chat.Connecting:
+		return "Connecting to " + chat.agentName() + "…"
+	case chat != nil && chat.Session != nil:
 		name := "agent"
 		version := ""
-		if a.Info.AgentInfo != nil {
-			if a.Info.AgentInfo.Title != "" {
-				name = a.Info.AgentInfo.Title
-			} else if a.Info.AgentInfo.Name != "" {
-				name = a.Info.AgentInfo.Name
+		if chat.Info.AgentInfo != nil {
+			if chat.Info.AgentInfo.Title != "" {
+				name = chat.Info.AgentInfo.Title
+			} else if chat.Info.AgentInfo.Name != "" {
+				name = chat.Info.AgentInfo.Name
 			}
-			version = a.Info.AgentInfo.Version
+			version = chat.Info.AgentInfo.Version
 		}
 		status := "Connected to " + name
 		if version != "" {
 			status += " " + version
 		}
-		if a.Info.SessionID == "" {
+		if chat.Info.SessionID == "" {
 			return status + " · no active session"
 		}
-		return status + " · " + a.Info.SessionID
+		return status + " · " + chat.Info.SessionID
 	case a.Env.Summary() != "":
 		return a.Env.Summary()
 	default:
@@ -498,11 +539,17 @@ func (a *App) statusLine() string {
 }
 
 func (a *App) errorLine() string {
+	if chat := a.activeChat(); chat != nil {
+		switch {
+		case chat.ConnectError != "":
+			return chat.ConnectError
+		case chat.WorkspaceError != "":
+			return chat.WorkspaceError
+		}
+	}
 	switch {
 	case a.ResolveError != "":
 		return a.ResolveError
-	case a.ConnectError != "":
-		return a.ConnectError
 	case a.WorkspaceError != "":
 		return a.WorkspaceError
 	default:
@@ -512,15 +559,16 @@ func (a *App) errorLine() string {
 
 func (a *App) emptyState(c *mui.Context) {
 	t := c.Theme()
+	chat := a.activeChat()
 	mui.Column(c).Fill().Center().Gap(8).Children(func() {
 		switch {
-		case a.Session != nil && a.Info.SessionID == "":
+		case chat != nil && chat.Session != nil && chat.Info.SessionID == "":
 			mui.Text(c, "No active session.").FontSize(16)
 			mui.Text(c, "Create a new chat or open one from History.").FontSize(12).TextColor(t.TextMuted)
-		case a.Session != nil:
+		case chat != nil && chat.Session != nil:
 			mui.Text(c, "Connected. Send a message to start.").FontSize(16)
 			mui.Text(c, "Agent updates stream into this list.").FontSize(12).TextColor(t.TextMuted)
-		case a.Connecting:
+		case chat != nil && chat.Connecting:
 			mui.Text(c, "Connecting…").FontSize(14).TextColor(t.TextMuted)
 		case a.Resolving:
 			mui.Text(c, "Probing pi and Command Code…").FontSize(14).TextColor(t.TextMuted)
@@ -529,44 +577,48 @@ func (a *App) emptyState(c *mui.Context) {
 			mui.Text(c, "Install pi or Command Code, then restart or reconnect.").FontSize(12).TextColor(t.TextMuted)
 		default:
 			mui.Text(c, "Choose an agent and workspace, then Connect.").FontSize(16)
-			mui.Text(c, "The chat appears here.").FontSize(12).TextColor(t.TextMuted)
+			mui.Text(c, "Open another chat with + New; each chat keeps its own agent process.").FontSize(12).TextColor(t.TextMuted)
 		}
 	})
 }
 
 func (a *App) composer(c *mui.Context) {
+	chat := a.activeChat()
+	if chat == nil {
+		return
+	}
 	t := c.Theme()
 	mui.Column(c).Gap(8).Padding(12, 20).BorderWidth(1, 0, 0, 0).BorderColor(t.Border).Children(func() {
-		a.planPanel(c)
-		a.attachmentPicker(c)
-		if a.LastStop != "" {
-			mui.Text(c, "Last turn: "+a.LastStop).FontSize(10).TextColor(t.TextMuted)
+		a.planPanel(c, chat)
+		a.attachmentPicker(c, chat)
+		if chat.LastStop != "" {
+			mui.Text(c, "Last turn: "+chat.LastStop).FontSize(10).TextColor(t.TextMuted)
 		}
 
 		mui.Row(c).Gap(8).AlignItems(mui.End).Children(func() {
 			if mui.Button(c, "Image…").
-				Disabled(!a.canAttach()).
+				Disabled(!chat.canAttach()).
 				Clicked() {
 				a.chooseImages()
 			}
 			commands := mui.Button(c, "Commands")
-			commands.Disabled(a.canType() == false || len(a.Commands) == 0)
+			commands.Disabled(!chat.canType() || len(chat.Commands) == 0)
 			if commands.Clicked() {
-				a.CommandsOpen = !a.CommandsOpen
+				chat.CommandsOpen = !chat.CommandsOpen
 			}
-			mui.Popover(c, commands, &a.CommandsOpen, func() {
-				a.commandsPanel(c)
+			mui.Popover(c, commands, &chat.CommandsOpen, func() {
+				a.commandsPanel(c, chat)
 			})
 
-			input := mui.TextArea(c, &a.Input).
+			input := mui.TextArea(c, &chat.Input).
 				Placeholder("Message").
 				Label("Message").
 				Lines(1, 6).
 				Grow(1).
-				Disabled(!a.canType()).
+				Disabled(!chat.canType()).
 				OnTextKey(func(k mui.TextKey) bool {
 					if k.Key == mui.KeyEnter && k.Mods == 0 {
-						a.Input = k.Text()
+						chat.Input = k.Text()
 						if a.send() {
 							k.SetText("")
 						}
@@ -576,36 +628,36 @@ func (a *App) composer(c *mui.Context) {
 				})
 			_ = input
 
-			if a.Streaming {
+			if chat.Streaming {
 				label := "Stop"
-				if a.Cancelling {
+				if chat.Cancelling {
 					label = "Stopping…"
 				}
-				if mui.PrimaryButton(c, label).Disabled(a.Cancelling).Clicked() {
+				if mui.PrimaryButton(c, label).Disabled(chat.Cancelling).Clicked() {
 					a.stop()
 				}
 			} else if mui.PrimaryButton(c, "Send").
-				Disabled(!a.canSend() || !a.hasPrompt()).
+				Disabled(!chat.canSend() || !chat.hasPrompt()).
 				Clicked() {
 				a.send()
 			}
 		})
 		hint := "Enter sends · Shift+Enter adds a line"
-		if a.Session != nil && a.Info.AgentCapabilities.PromptCapabilities.Image {
+		if chat.Session != nil && chat.Info.AgentCapabilities.PromptCapabilities.Image {
 			hint += " · up to 4 images"
 		}
 		mui.Text(c, hint).FontSize(10).TextColor(t.TextMuted)
 	})
 }
 
-func (a *App) planPanel(c *mui.Context) {
-	if len(a.Plan) == 0 {
+func (a *App) planPanel(c *mui.Context, chat *Chat) {
+	if len(chat.Plan) == 0 {
 		return
 	}
 	t := c.Theme()
-	mui.Collapsible(c, "Plan", &a.PlanOpen, func() {
+	mui.Collapsible(c, "Plan", &chat.PlanOpen, func() {
 		mui.Column(c).Gap(3).Children(func() {
-			for _, entry := range a.Plan {
+			for _, entry := range chat.Plan {
 				color := t.TextMuted
 				switch entry.Status {
 				case "completed":
@@ -625,23 +677,23 @@ func (a *App) planPanel(c *mui.Context) {
 	})
 }
 
-func (a *App) commandsPanel(c *mui.Context) {
+func (a *App) commandsPanel(c *mui.Context, chat *Chat) {
 	t := c.Theme()
 	mui.Column(c).Width(360).Gap(4).Children(func() {
 		mui.Text(c, "Commands").FontSize(12).Bold()
 		mui.Scroll(c).MaxHeight(320).Gap(2).Children(func() {
-			for _, command := range a.Commands {
+			for _, command := range chat.Commands {
 				command := command
 				label := "/" + command.Name
 				button := mui.Button(c, label)
 				if button.Clicked() {
-					draft := strings.TrimSpace(a.Input)
-					a.Input = label
+					draft := strings.TrimSpace(chat.Input)
+					chat.Input = label
 					if command.Input != nil || draft != "" {
-						a.Input += " "
+						chat.Input += " "
 					}
-					a.Input += draft
-					a.CommandsOpen = false
+					chat.Input += draft
+					chat.CommandsOpen = false
 				}
 				if command.Description != "" {
 					mui.Text(c, truncate(command.Description, 120)).FontSize(10).TextColor(t.TextMuted)
@@ -651,17 +703,21 @@ func (a *App) commandsPanel(c *mui.Context) {
 	})
 }
 
-func (a *App) canAttach() bool {
-	return a.Session != nil && a.Info.SessionID != "" && !a.Connecting && a.SessionBusy == "" &&
-		a.Info.AgentCapabilities.PromptCapabilities.Image
+func (c *Chat) canAttach() bool {
+	return c.Session != nil && c.Info.SessionID != "" && !c.Connecting && c.Busy == "" &&
+		c.Info.AgentCapabilities.PromptCapabilities.Image
 }
 
-func (a *App) canType() bool {
-	return a.Session != nil && a.Info.SessionID != "" && !a.Connecting && a.SessionBusy == ""
+func (c *Chat) canType() bool {
+	return c.Session != nil && c.Info.SessionID != "" && !c.Connecting && c.Busy == ""
 }
 
-func (a *App) canSend() bool {
-	return a.canType() && a.ConfigBusy == ""
+func (c *Chat) canSend() bool {
+	return c.canType() && !c.Streaming && c.ConfigBusy == ""
+}
+
+func (c *Chat) hasPrompt() bool {
+	return strings.TrimSpace(c.Input) != "" || len(c.Attachments) > 0
 }
 
 func (a *App) message(c *mui.Context, m *Message) {
@@ -732,13 +788,16 @@ func (a *App) message(c *mui.Context, m *Message) {
 	}
 }
 
-func (a *App) addMessage(m *Message) *Message {
-	a.Messages = append(a.Messages, m)
+func (a *App) addMessage(chat *Chat, m *Message) *Message {
+	if chat == nil {
+		return m
+	}
+	chat.Messages = append(chat.Messages, m)
 	return m
 }
 
-func (a *App) addError(err error) {
-	if err == nil {
+func (a *App) addError(chat *Chat, err error) {
+	if chat == nil || err == nil {
 		return
 	}
 	msg := err.Error()
@@ -746,13 +805,16 @@ func (a *App) addError(err error) {
 		return
 	}
 	// Keep the chat readable when an agent crashes repeatedly.
-	if n := len(a.Messages); n > 0 {
-		last := a.Messages[n-1]
+	if n := len(chat.Messages); n > 0 {
+		last := chat.Messages[n-1]
 		if last.Role == RoleError && last.Text == msg {
 			return
 		}
 	}
-	a.addMessage(&Message{ID: a.nextID(), Role: RoleError, Text: msg, Done: true})
+	a.addMessage(chat, &Message{ID: a.nextID(), Role: RoleError, Text: msg, Done: true})
+	if chat != a.activeChat() {
+		chat.Unread = true
+	}
 }
 
 func compactJSON(raw json.RawMessage) string {

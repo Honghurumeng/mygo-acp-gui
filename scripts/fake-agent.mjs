@@ -244,7 +244,7 @@ function startTurn(turn, text, images = 0, mcpCount = 0) {
     }
     sendChunk(turn, chars.slice(offset, offset + chunkSize).join(''));
     offset += chunkSize;
-    turn.timer = setTimeout(tick, slow ? 180 : 35);
+    turn.timer = setTimeout(tick, slow ? 80 : 35);
   };
   tick();
 }

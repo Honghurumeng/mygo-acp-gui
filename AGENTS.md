@@ -14,7 +14,7 @@
 - `docs/design/discovery.md`：内置 agent 表（pi、command-code）、launch spec、路径解析、initialize 探测、状态机、手动测试。
 - `docs/design/pi.md`：pi-acp vendor、SDK/zod 依赖、Node/pi 版本、PATH、认证、更新。
 - `docs/design/command-code.md`：Command Code 启动、已验证 ACP 流程、权限/取消、测试。
-- `docs/design/features.md`：发现探测、配置/模式、历史、图片、MCP、命令面板、计划/用量。
+- `docs/design/features.md`：多会话、发现探测、配置/模式、历史、图片、MCP、命令面板、计划/用量。
 - `docs/design/plan.md`：测试、MVP 范围、后续、非目标、待定问题、参考链接。
 
 ## 铁律

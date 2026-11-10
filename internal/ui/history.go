@@ -25,13 +25,18 @@ func (a *App) loadHistorySessions() {
 	if a.HistoryLoading || a.closed.Load() {
 		return
 	}
-	spec, ok := a.currentAgent()
+	spec, ok := a.preferredAgent()
 	if !ok {
 		a.HistoryError = "No agent selected."
 		return
 	}
+	chat := a.activeChat()
+	workspace := strings.TrimSpace(a.Workspace)
+	if chat != nil {
+		workspace = strings.TrimSpace(chat.Workspace)
+	}
 	cwd := ""
-	if workspace := strings.TrimSpace(a.Workspace); !a.HistoryAll && filepath.IsAbs(workspace) {
+	if !a.HistoryAll && filepath.IsAbs(workspace) {
 		cwd = workspace
 		if resolved, err := filepath.EvalSymlinks(cwd); err == nil {
 			cwd = resolved
@@ -39,7 +44,10 @@ func (a *App) loadHistorySessions() {
 	}
 	a.HistoryLoading = true
 	a.HistoryError = ""
-	s := a.Session
+	var s *session.Session
+	if chat != nil {
+		s = chat.Session
+	}
 	a.cleanup.Add(1)
 	go func() {
 		defer a.cleanup.Done()
@@ -121,8 +129,12 @@ func (a *App) historyDialog(c *mui.Context) {
 			mui.Row(c).Gap(8).Wrap().Justify(mui.End).Children(func() {
 				selected := a.selectedHistory()
 				hasSelection := selected != nil
-				busy := a.SessionBusy != ""
-				if mui.Button(c, "Close current chat").Disabled(a.Session == nil || a.Info.SessionID == "" || busy).Clicked() {
+				busy := a.activeBusy()
+				closeDisabled := true
+				if chat := a.activeChat(); chat != nil && chat.Session != nil && chat.Info.SessionID != "" {
+					closeDisabled = false
+				}
+				if mui.Button(c, "Close current chat").Disabled(closeDisabled || busy).Clicked() {
 					a.closeActiveSession()
 					a.HistoryOpen = false
 				}
@@ -169,38 +181,47 @@ func (a *App) selectedHistory() *acp.SessionSummary {
 }
 
 func (a *App) openSelected(item *acp.SessionSummary) {
-	if item == nil {
-		return
-	}
-	a.HistoryOpen = false
-	if a.Session != nil {
-		a.loadHistory(item.SessionID, item.Title, item.Cwd)
-		return
-	}
-	if filepath.IsAbs(item.Cwd) {
-		a.Workspace = item.Cwd
-	}
-	a.pendingSessionID = item.SessionID
-	a.pendingSessionAction = "load"
-	a.pendingSessionTitle = item.Title
-	a.Connect()
+	a.openFromHistory(item, false)
 }
 
 func (a *App) resumeSelected(item *acp.SessionSummary) {
+	a.openFromHistory(item, true)
+}
+
+func (a *App) openFromHistory(item *acp.SessionSummary, resume bool) {
 	if item == nil {
 		return
 	}
 	a.HistoryOpen = false
-	if a.Session != nil {
-		a.resumeHistory(item.SessionID, item.Title, item.Cwd)
+	chat := a.activeChat()
+	if chat == nil {
+		chat = a.ensureChat()
+	} else if chat.Session != nil && (len(chat.Messages) > 0 || chat.Streaming || chat.Busy != "") {
+		// Keep a chat that is already doing something and open the saved
+		// session in another tab, so the running conversation is not lost.
+		chat = a.newChatTab()
+	} else {
+		a.selectChat(chat)
+	}
+	if chat.Session != nil {
+		if resume {
+			a.resumeHistory(item.SessionID, item.Title, item.Cwd)
+		} else {
+			a.loadHistory(item.SessionID, item.Title, item.Cwd)
+		}
 		return
 	}
 	if filepath.IsAbs(item.Cwd) {
+		chat.Workspace = item.Cwd
 		a.Workspace = item.Cwd
 	}
-	a.pendingSessionID = item.SessionID
-	a.pendingSessionAction = "resume"
-	a.pendingSessionTitle = item.Title
+	chat.pendingSessionID = item.SessionID
+	if resume {
+		chat.pendingSessionAction = "resume"
+	} else {
+		chat.pendingSessionAction = "load"
+	}
+	chat.pendingSessionTitle = item.Title
 	a.Connect()
 }
 

@@ -23,7 +23,7 @@
 ```bash
 go test ./... -race
 go test ./internal/session -run 'TestFakeAgent|TestCloseKillsProcessGroup' -v
-go test ./internal/ui -run TestChatWithFakeAgent -v
+go test ./internal/ui -run 'TestChatWithFakeAgent|TestMultipleChats|TestBackgroundChat|TestPermissionFrom|TestCloseTab|TestHistoryOpensNewTab' -v
 ```
 
 pi-acp bundle 冒烟（只 `initialize`，不 spawn pi、不碰凭据）：
@@ -80,6 +80,7 @@ go test ./internal/ui -run 'TestSessionConfig|TestHistory|TestCloseChat|TestSend
 8. 权限弹窗、取消、关闭窗口：无残留 `pi` / `command-code` / agent 进程。
 9. 退出再启动：上次 agent / 工作区恢复。
 10. pi 未登录：只显示 `authMethods` / 登录命令，应用不尝试登录、不打开内嵌终端。
+11. 多会话：开两个标签分别发 `/slow` 和普通消息，切换标签时后台继续流式；后台标签请求权限时弹窗标明标签，回答不影响另一个标签。
 
 ### 常用命令
 
@@ -114,7 +115,7 @@ scripts/vendor-pi-acp.sh             # 仅在升级 pi-acp 时运行
 
 - [x] `session/load` / `resume` / `close` 历史会话列表
 - [x] 图片输入
-- [ ] 多会话并行
+- [x] 多会话并行（标签各自一个 agent 进程；后台流式、权限按标签路由、标签关闭/切换）
 - [ ] settings.json 持久化（MCP、上次 agent/工作区）
 - [ ] MCP 行编辑器（当前是校验过的 JSON）
 - [ ] ACP 报文监视器

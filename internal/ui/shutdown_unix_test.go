@@ -21,7 +21,7 @@ func TestShutdownKillsProcessGroup(t *testing.T) {
 	connect(t, app, tt)
 
 	child := waitPID(t, pidFile)
-	leader := app.Session.PID()
+	leader := app.activeChat().Session.PID()
 	if !alive(child) || !alive(leader) {
 		t.Fatalf("processes not running: leader=%d child=%d", leader, child)
 	}

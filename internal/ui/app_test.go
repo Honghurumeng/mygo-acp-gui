@@ -26,22 +26,22 @@ func TestChatWithFakeAgent(t *testing.T) {
 	}
 
 	// Send, stream, and finish.
-	app.Input = "hello"
+	current(app).Input = "hello"
 	tt.Frame()
 	if err := tt.Click("Send"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, app, tt, func() bool {
-		return !app.Streaming && lastAssistantHas(app, "收到：hello")
+		return !current(app).Streaming && lastAssistantHas(app, "收到：hello")
 	})
 	if !tt.HasText("收到：hello") {
 		t.Errorf("reply not rendered; texts: %q", tt.Texts())
 	}
-	if app.Title != "Fake session title" {
-		t.Errorf("session title = %q", app.Title)
+	if current(app).Title != "Fake session title" {
+		t.Errorf("session title = %q", current(app).Title)
 	}
-	if app.Usage == nil || app.Usage.Used != 1200 {
-		t.Errorf("usage = %+v", app.Usage)
+	if current(app).Usage == nil || current(app).Usage.Used != 1200 {
+		t.Errorf("usage = %+v", current(app).Usage)
 	}
 	if !tt.HasText("Fake session title") {
 		t.Errorf("title not rendered; texts: %q", tt.Texts())
@@ -51,26 +51,26 @@ func TestChatWithFakeAgent(t *testing.T) {
 	}
 
 	// Stop sends session/cancel and the fake agent reports cancelled.
-	app.Input = "/slow cancel me"
+	current(app).Input = "/slow cancel me"
 	tt.Frame()
 	if err := tt.Click("Send"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, app, tt, func() bool {
-		return app.Streaming && lastAssistantHas(app, "收到")
+		return current(app).Streaming && lastAssistantHas(app, "收到")
 	})
 	if err := tt.Click("Stop"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, app, tt, func() bool {
-		return !app.Streaming && app.LastStop == "cancelled"
+		return !current(app).Streaming && current(app).LastStop == "cancelled"
 	})
-	if app.LastStop != "cancelled" {
-		t.Errorf("last stop = %q", app.LastStop)
+	if current(app).LastStop != "cancelled" {
+		t.Errorf("last stop = %q", current(app).LastStop)
 	}
 
 	// A permission dialog blocks the ACP request until answered.
-	app.Input = "/permission"
+	current(app).Input = "/permission"
 	tt.Frame()
 	if err := tt.Click("Send"); err != nil {
 		t.Fatal(err)
@@ -84,7 +84,7 @@ func TestChatWithFakeAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, app, tt, func() bool {
-		return !app.Streaming && app.Permission == nil && lastAssistantHas(app, "permission granted")
+		return !current(app).Streaming && app.Permission == nil && lastAssistantHas(app, "permission granted")
 	})
 	if !tt.HasText("permission granted") {
 		t.Errorf("permission reply not rendered; texts: %q", tt.Texts())
@@ -98,7 +98,8 @@ func TestConnectRejectsRelativeWorkspace(t *testing.T) {
 	if err := tt.Click("Connect"); err != nil {
 		t.Fatal(err)
 	}
-	if app.WorkspaceError == "" {
+	chat := app.activeChat()
+	if chat == nil || chat.WorkspaceError == "" {
 		t.Fatal("relative workspace was accepted")
 	}
 	if !tt.HasText("workspace must be an absolute path") {
@@ -154,7 +155,14 @@ func connect(t *testing.T, app *App, tt *mui.Tester) {
 	if err := tt.Click("Connect"); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, app, tt, func() bool { return app.Connected })
+	waitFor(t, app, tt, func() bool { return current(app).Connected })
+}
+
+func current(app *App) *Chat {
+	if chat := app.activeChat(); chat != nil {
+		return chat
+	}
+	return &Chat{}
 }
 
 func waitFor(t *testing.T, app *App, tt *mui.Tester, cond func() bool) {
@@ -172,8 +180,9 @@ func waitFor(t *testing.T, app *App, tt *mui.Tester, cond func() bool) {
 }
 
 func lastAssistantHas(app *App, want string) bool {
-	for i := len(app.Messages) - 1; i >= 0; i-- {
-		m := app.Messages[i]
+	chat := current(app)
+	for i := len(chat.Messages) - 1; i >= 0; i-- {
+		m := chat.Messages[i]
 		if m.Role == RoleAssistant {
 			return strings.Contains(m.Text, want)
 		}
@@ -191,7 +200,7 @@ func TestComposerEnterSends(t *testing.T) {
 	tt.Type("enter hello")
 	tt.Key(0, mui.KeyEnter)
 	waitFor(t, app, tt, func() bool {
-		return !app.Streaming && lastAssistantHas(app, "收到：enter hello")
+		return !current(app).Streaming && lastAssistantHas(app, "收到：enter hello")
 	})
 }
 
@@ -211,7 +220,7 @@ func TestConnectErrorShowsLoginHint(t *testing.T) {
 func TestSessionConfigModeAndCommands(t *testing.T) {
 	app, tt := newFakeApp(t)
 	connect(t, app, tt)
-	waitFor(t, app, tt, func() bool { return len(app.Commands) == 2 })
+	waitFor(t, app, tt, func() bool { return len(current(app).Commands) == 2 })
 	tt.Frame()
 	for _, want := range []string{"Model", "Thinking", "Mode", "demo/small"} {
 		if !tt.HasText(want) {
@@ -227,8 +236,8 @@ func TestSessionConfigModeAndCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, app, tt, func() bool {
-		option := app.Info.ConfigOption("model")
-		return option != nil && option.CurrentValue == "demo/large" && app.ConfigBusy == ""
+		option := current(app).Info.ConfigOption("model")
+		return option != nil && option.CurrentValue == "demo/large" && current(app).ConfigBusy == ""
 	})
 	tt.Frame()
 	if err := tt.Click("Standard"); err != nil {
@@ -238,7 +247,7 @@ func TestSessionConfigModeAndCommands(t *testing.T) {
 	if err := tt.Click("Plan"); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, app, tt, func() bool { return app.Info.CurrentModeID == "plan" && app.ConfigBusy == "" })
+	waitFor(t, app, tt, func() bool { return current(app).Info.CurrentModeID == "plan" && current(app).ConfigBusy == "" })
 
 	if err := tt.Click("Commands"); err != nil {
 		t.Fatal(err)
@@ -247,14 +256,14 @@ func TestSessionConfigModeAndCommands(t *testing.T) {
 	if err := tt.Click("/plan"); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, app, tt, func() bool { return app.Input == "/plan " && !app.CommandsOpen })
+	waitFor(t, app, tt, func() bool { return current(app).Input == "/plan " && !current(app).CommandsOpen })
 
-	app.Input = "/plan"
+	current(app).Input = "/plan"
 	tt.Frame()
 	if err := tt.Click("Send"); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, app, tt, func() bool { return len(app.Plan) == 2 && app.PlanOpen && !app.Streaming })
+	waitFor(t, app, tt, func() bool { return len(current(app).Plan) == 2 && current(app).PlanOpen && !current(app).Streaming })
 }
 
 func TestHistoryBeforeConnectLoadsSession(t *testing.T) {
@@ -271,7 +280,7 @@ func TestHistoryBeforeConnectLoadsSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, app, tt, func() bool {
-		return app.Connected && app.Info.SessionID == "fake-history" && !app.replaying && app.SessionBusy == ""
+		return current(app).Connected && current(app).Info.SessionID == "fake-history" && !current(app).replaying && current(app).Busy == ""
 	})
 	if !hasRoleText(app, RoleUser, "Question from history") {
 		t.Errorf("user history missing; texts: %q", tt.Texts())
@@ -288,7 +297,7 @@ func TestCloseChatThenNewChat(t *testing.T) {
 	if err := tt.Click("Close chat"); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, app, tt, func() bool { return app.Info.SessionID == "" && app.SessionBusy == "" })
+	waitFor(t, app, tt, func() bool { return current(app).Info.SessionID == "" && current(app).Busy == "" })
 	if !tt.HasText("No active session") {
 		t.Errorf("no active session state missing; texts: %q", tt.Texts())
 	}
@@ -296,9 +305,9 @@ func TestCloseChatThenNewChat(t *testing.T) {
 	if err := tt.Click("New chat"); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, app, tt, func() bool { return app.Info.SessionID != "" && app.SessionBusy == "" })
-	if app.Info.SessionID == "fake-session" {
-		t.Errorf("new chat reused the closed session id: %q", app.Info.SessionID)
+	waitFor(t, app, tt, func() bool { return current(app).Info.SessionID != "" && current(app).Busy == "" })
+	if current(app).Info.SessionID == "fake-session" {
+		t.Errorf("new chat reused the closed session id: %q", current(app).Info.SessionID)
 	}
 }
 
@@ -314,8 +323,8 @@ func TestSendImageAttachment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	app.Input = "look"
-	app.Attachments = []Attachment{{
+	current(app).Input = "look"
+	current(app).Attachments = []Attachment{{
 		Name:     "pixel.png",
 		MimeType: "image/png",
 		Data:     pngBase64,
@@ -326,7 +335,7 @@ func TestSendImageAttachment(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, app, tt, func() bool {
-		return !app.Streaming && lastAssistantHas(app, "images=1")
+		return !current(app).Streaming && lastAssistantHas(app, "images=1")
 	})
 }
 
@@ -344,14 +353,14 @@ func TestMCPDialogAndPrompt(t *testing.T) {
 	if err := tt.Click("Connect"); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, app, tt, func() bool { return app.Connected })
-	app.Input = "hello"
+	waitFor(t, app, tt, func() bool { return current(app).Connected })
+	current(app).Input = "hello"
 	tt.Frame()
 	if err := tt.Click("Send"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, app, tt, func() bool {
-		return !app.Streaming && lastAssistantHas(app, "mcp=1")
+		return !current(app).Streaming && lastAssistantHas(app, "mcp=1")
 	})
 }
 
@@ -368,7 +377,8 @@ func TestParseMCPServersRejectsInvalid(t *testing.T) {
 }
 
 func hasRoleText(app *App, role MessageRole, want string) bool {
-	for _, message := range app.Messages {
+	chat := current(app)
+	for _, message := range chat.Messages {
 		if message.Role == role && strings.Contains(message.Text, want) {
 			return true
 		}
@@ -391,7 +401,7 @@ func TestHistoryWhileConnectedLoadsAndResumes(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, app, tt, func() bool {
-		return app.Info.SessionID == "fake-history" && !app.replaying && app.SessionBusy == ""
+		return current(app).Info.SessionID == "fake-history" && !current(app).replaying && current(app).Busy == ""
 	})
 	if !lastAssistantHas(app, "Answer from history") {
 		t.Errorf("history was not replayed; texts: %q", tt.Texts())
@@ -409,6 +419,6 @@ func TestHistoryWhileConnectedLoadsAndResumes(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, app, tt, func() bool {
-		return app.Info.SessionID == "fake-history" && app.SessionBusy == "" && len(app.Messages) == 0
+		return current(app).Info.SessionID == "fake-history" && current(app).Busy == "" && len(current(app).Messages) == 0
 	})
 }

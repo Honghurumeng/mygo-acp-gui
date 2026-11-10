@@ -34,7 +34,7 @@ func (a *App) agentStatusRow(c *mui.Context) {
 			}
 			mui.Text(c, text).FontSize(11).TextColor(color).Selectable()
 		}
-		if !a.Resolving && !a.Connected && !a.Connecting && !a.injectedAgents {
+		if !a.Resolving && !a.anyLiveChat() && !a.injectedAgents {
 			if mui.Button(c, "Refresh").FontSize(11).Clicked() {
 				a.retryDiscovery()
 			}
@@ -42,26 +42,26 @@ func (a *App) agentStatusRow(c *mui.Context) {
 	})
 }
 
-func (a *App) sessionControls(c *mui.Context) {
-	if a.Session == nil {
+func (a *App) sessionControls(c *mui.Context, chat *Chat) {
+	if chat.Session == nil {
 		return
 	}
 	t := c.Theme()
 	mui.Row(c).Gap(8).Wrap().AlignItems(mui.Center).Padding(0, 20, 8, 20).Children(func() {
-		busy := a.Connecting || a.Streaming || a.SessionBusy != "" || a.ConfigBusy != ""
-		if a.SessionBusy != "" {
-			mui.Text(c, sessionBusyLabel(a.SessionBusy)+"…").FontSize(11).TextColor(t.TextMuted)
+		busy := chat.Connecting || chat.Streaming || chat.Busy != "" || chat.ConfigBusy != ""
+		if chat.Busy != "" {
+			mui.Text(c, sessionBusyLabel(chat.Busy)+"…").FontSize(11).TextColor(t.TextMuted)
 		}
-		if a.Info.SessionID == "" {
+		if chat.Info.SessionID == "" {
 			mui.Text(c, "No active session").FontSize(11).TextColor(t.TextMuted)
 		}
 		if mui.Button(c, "History").Disabled(busy).Clicked() {
 			a.openHistory()
 		}
 		if mui.Button(c, "New chat").Disabled(busy).Clicked() {
-			a.newChat()
+			a.newSession()
 		}
-		if a.Info.SessionID != "" {
+		if chat.Info.SessionID != "" {
 			if mui.Button(c, "Close chat").Disabled(busy).Clicked() {
 				a.closeActiveSession()
 			}
@@ -70,42 +70,42 @@ func (a *App) sessionControls(c *mui.Context) {
 			a.openMCPSettings()
 		}
 		mui.Spacer(c)
-		if a.Title != "" {
-			mui.Text(c, truncate(a.Title, 80)).FontSize(11).TextColor(t.TextMuted).Selectable()
+		if chat.Title != "" {
+			mui.Text(c, truncate(chat.Title, 80)).FontSize(11).TextColor(t.TextMuted).Selectable()
 		}
-		if a.Usage != nil {
-			text := "context " + formatCount(a.Usage.Used)
-			if a.Usage.Size > 0 {
-				text += " / " + formatCount(a.Usage.Size)
+		if chat.Usage != nil {
+			text := "context " + formatCount(chat.Usage.Used)
+			if chat.Usage.Size > 0 {
+				text += " / " + formatCount(chat.Usage.Size)
 			}
-			if a.Usage.Cost != nil && a.Usage.Cost.Amount > 0 {
-				text += " · " + formatMoney(a.Usage.Cost)
+			if chat.Usage.Cost != nil && chat.Usage.Cost.Amount > 0 {
+				text += " · " + formatMoney(chat.Usage.Cost)
 			}
 			mui.Text(c, text).FontSize(11).TextColor(t.TextMuted)
 		}
 	})
 }
 
-func (a *App) configControls(c *mui.Context) {
-	if a.Session == nil {
+func (a *App) configControls(c *mui.Context, chat *Chat) {
+	if chat.Session == nil {
 		return
 	}
-	if len(a.Info.Modes) == 0 && len(a.Info.ConfigOptions) == 0 {
+	if len(chat.Info.Modes) == 0 && len(chat.Info.ConfigOptions) == 0 {
 		return
 	}
 	t := c.Theme()
-	disabled := a.Connecting || a.Streaming || a.SessionBusy != "" || a.ConfigBusy != "" || a.Info.SessionID == ""
+	disabled := chat.Connecting || chat.Streaming || chat.Busy != "" || chat.ConfigBusy != "" || chat.Info.SessionID == ""
 	mui.Row(c).Gap(10).Wrap().AlignItems(mui.Center).Padding(0, 20, 8, 20).Children(func() {
-		if len(a.Info.Modes) > 0 {
-			labels := make([]string, 0, len(a.Info.Modes))
+		if len(chat.Info.Modes) > 0 {
+			labels := make([]string, 0, len(chat.Info.Modes))
 			current := ""
-			for _, mode := range a.Info.Modes {
+			for _, mode := range chat.Info.Modes {
 				label := mode.Name
 				if label == "" {
 					label = mode.ID
 				}
 				labels = append(labels, label)
-				if mode.ID == a.Info.CurrentModeID {
+				if mode.ID == chat.Info.CurrentModeID {
 					current = label
 				}
 			}
@@ -116,7 +116,7 @@ func (a *App) configControls(c *mui.Context) {
 				Label("Mode").
 				Disabled(disabled).
 				Changed() {
-				for _, mode := range a.Info.Modes {
+				for _, mode := range chat.Info.Modes {
 					label := mode.Name
 					if label == "" {
 						label = mode.ID
@@ -127,14 +127,14 @@ func (a *App) configControls(c *mui.Context) {
 					}
 				}
 			}
-			for _, mode := range a.Info.Modes {
-				if mode.ID == a.Info.CurrentModeID && mode.Description != "" {
+			for _, mode := range chat.Info.Modes {
+				if mode.ID == chat.Info.CurrentModeID && mode.Description != "" {
 					mui.Text(c, truncate(mode.Description, 120)).FontSize(10).TextColor(t.TextMuted)
 					break
 				}
 			}
 		}
-		for _, option := range a.Info.ConfigOptions {
+		for _, option := range chat.Info.ConfigOptions {
 			if len(option.Options) == 0 || (option.Type != "" && option.Type != "select") {
 				continue
 			}
@@ -162,8 +162,8 @@ func (a *App) configControls(c *mui.Context) {
 				}
 			}
 		}
-		if a.ConfigBusy != "" {
-			mui.Text(c, "Updating "+a.ConfigBusy+"…").FontSize(11).TextColor(t.TextMuted)
+		if chat.ConfigBusy != "" {
+			mui.Text(c, "Updating "+chat.ConfigBusy+"…").FontSize(11).TextColor(t.TextMuted)
 		}
 	})
 }
