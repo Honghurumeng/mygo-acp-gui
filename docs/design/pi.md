@@ -5,7 +5,7 @@
 pi-acp 已按「单文件 bundle」方式 vendor 到仓库，构建一次后固定使用：
 
 ```
-gui/resources/agents/pi-acp/
+resources/agents/pi-acp/
   pi-acp.bundle.mjs      唯一运行时入口（~453 KiB）
   package.json           生成的元数据，仅供 agentInfo 读取（不要删）
   VERSION                0.4.0
@@ -55,7 +55,7 @@ scripts/vendor-pi-acp.sh 0.4.1        # 指定版本
 node scripts/pi-acp-smoke.mjs         # 单独复跑 initialize 冒烟
 ```
 
-脚本流程：临时目录 `npm install --save-exact` → esbuild `--bundle --platform=node --format=esm --target=node22` → `node --check` → initialize 冒烟 → 原子替换 `gui/resources/agents/pi-acp/` → 生成 NOTICE 和 `SHA256SUMS`。
+脚本流程：临时目录 `npm install --save-exact` → esbuild `--bundle --platform=node --format=esm --target=node22` → `node --check` → initialize 冒烟 → 原子替换 `resources/agents/pi-acp/` → 生成 NOTICE 和 `SHA256SUMS`。
 
 直接依赖版本锁在脚本里，可用环境变量覆盖：
 
@@ -76,9 +76,9 @@ PI_ACP_VERSION=0.4.0 ACP_SDK_VERSION=0.26.0 ZOD_VERSION=3.25.76 \
 
 ## 为什么旁边要放 package.json
 
-pi-acp 在 `initialize` 里用 `readNearestPackageJson(import.meta.url)` 向上最多 6 层找 `package.json`，据此返回 `agentInfo`。如果 bundle 旁没有这个文件，会一路读到仓库根目录的 `package.json`，UI 就会显示 `acp-pi-gui@0.1.0`。
+pi-acp 在 `initialize` 里用 `readNearestPackageJson(import.meta.url)` 向上最多 6 层找 `package.json`，据此返回 `agentInfo`。如果 bundle 旁没有这个文件，会一路读到上层目录的 `package.json`，UI 就会显示错误的 `agentInfo.name/version`。
 
-因此脚本生成一个最小的 `gui/resources/agents/pi-acp/package.json`（`name: @geohar/pi-acp`，`version` 与 VERSION 一致）。它不参与 npm 安装，**不要删**。
+因此脚本生成一个最小的 `resources/agents/pi-acp/package.json`（`name: @geohar/pi-acp`，`version` 与 VERSION 一致）。它不参与 npm 安装，**不要删**。
 
 ## 运行时要求
 

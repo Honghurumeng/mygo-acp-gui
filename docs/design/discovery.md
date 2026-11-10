@@ -33,7 +33,7 @@ ACP 有官方 agent registry：
 - `npx` / `uvx` 是包名，适合安装或按需运行，不等于本机已安装。
 - 注册表负责“有哪些 agent、怎么装”，**不负责“本机装没装”**；后者由本应用解决。
 - registry 里的 `pi-acp` 指向上游；本应用对 pi 使用 vendored 的 `@geohar/pi-acp`，需要覆盖该条目。
-- 建议把 registry 快照打进 `resources/registry.json`；启动先读快照，联网刷新失败时用 last-known-good。
+- registry 快照计划打进 `resources/registry.json`；启动先读快照，联网刷新失败时用 last-known-good。
 
 ## 启动描述（launch spec）
 
@@ -60,7 +60,7 @@ ACP 有官方 agent registry：
 
 | id | 候选命令 / 参数 | 说明 |
 | --- | --- | --- |
-| `pi` | vendored `node .../pi-acp/dist/index.js` | 特例，见 [pi.md](pi.md) |
+| `pi` | vendored `node resources/agents/pi-acp/pi-acp.bundle.mjs` | 特例，见 [pi.md](pi.md) |
 | `command-code` | `command-code acp` | 本机已验证；不在官方 registry 中 |
 | `opencode` | `opencode acp` | registry binary 参数 |
 | `goose` | `goose acp` | registry binary 参数 |
@@ -157,7 +157,7 @@ Windows PowerShell：
 
 `command-code` 会把 `[acp] initialize: ...` 写到 stderr。stdout 必须只有协议 JSON；探测时 stderr 单独收集，不能当作响应。
 
-建议补一个跨平台 `scripts/probe-agent.mjs`（或 Go 版 `cmd/probe`）：发送 `initialize`、5 秒超时、打印 result/stderr、杀掉进程组。
+建议补一个跨平台 Go 版 `cmd/probe`（计划）：发送 `initialize`、5 秒超时、打印 result/stderr、杀掉进程组。
 
 ## 缓存与刷新
 

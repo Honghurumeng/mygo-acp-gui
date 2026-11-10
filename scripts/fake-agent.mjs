@@ -1,6 +1,6 @@
 /**
- * 极简假 ACP agent，用于在没有 pi 的环境里调试 Web 层与 UI。
- *   ACP_AGENT_CMD=node ACP_AGENT_ARGS="scripts/fake-agent.mjs" npm start
+ * 极简假 ACP agent，用于在没有 pi 的环境里调试 ACP 客户端与 UI。
+ *   node scripts/fake-agent.mjs
  */
 import readline from 'node:readline';
 

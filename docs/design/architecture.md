@@ -4,7 +4,7 @@
 
 原生桌面 ACP GUI：Go + [MyGo](https://github.com/egoist/mygo) 写界面，自动发现本机已安装的 ACP agent，选择 agent 和工作区后聊天。
 
-现有 Node 版本（`server/` + `public/`）是协议和交互的参考实现，不是最终形态。新实现放在 `gui/`。
+早期 Node 原型（`server/` + `public/`）已移除，只保留在 git 历史中；当前实现是仓库根目录的 Go + MyGo 工程。
 
 ## 整体架构
 
@@ -25,21 +25,32 @@ MyGo 原生窗口 (Go + ui)
 ## Go 包划分
 
 ```
-gui/
-  cmd/                     MyGo 应用入口
-  internal/acp/            JSON-RPC、请求/通知、权限、行分帧
-  internal/agent/          launch spec、目录、探测、缓存
-  internal/session/        每个 agent 进程 + 会话生命周期
-  internal/catalog/        官方 registry + 内置覆盖 + 用户自定义
-  internal/ui/             MyGo 视图与状态
+仓库根/
+  main.go                  MyGo 应用入口与根视图
+  main_test.go             UI 冒烟测试
+  mygo.json                App 元数据与打包配置
+  internal/acp/            JSON-RPC、请求/通知、权限、行分帧（已实现）
+  internal/agent/          launch spec、目录、探测、缓存（计划）
+  internal/session/        每个 agent 进程 + 会话生命周期（计划）
+  internal/catalog/        官方 registry + 内置覆盖 + 用户自定义（计划）
+  internal/ui/             MyGo 视图与状态（计划）
   resources/
     agents/pi-acp/
       pi-acp.bundle.mjs    单文件 bundle，启动时直接 node 执行（见 pi.md）
       package.json/VERSION/LICENSE/licenses/THIRD_PARTY_NOTICES.md/SHA256SUMS
-    registry.json          官方 registry 快照
+    registry.json          官方 registry 快照（计划）
 ```
 
 分层原则：`internal/acp` 不 import UI；探测/目录逻辑可独立测试；UI 只读状态、发命令。
+
+## 工程与构建
+
+- `go.mod`：module `github.com/reed/acp-gui`，Go 1.27.3（`GOTOOLCHAIN=auto` 会自动拉取）。
+- MyGo CLI 通过 `tool github.com/egoist/mygo/cmd/mygo` 固定在 `go.mod`，统一用 `go tool mygo`。
+- 无前端构建：原生 UI，入口 `main.go`，配置在 `mygo.json`。
+- App：name `ACP GUI`、slug `acp-gui`、identifier `dev.reed.acp-gui`、version `0.1.0`。
+- `go tool mygo build` 产物在 `build/<os>-<arch>/`（已 gitignore）；`resources/` 整目录进 `.app`。
+- 当前已实现 `internal/acp`：行分帧、请求/响应匹配、通知、agent→client 请求、权限结果、能力固定 `fs:false`/`terminal:false`。
 
 ## ACP 客户端
 
@@ -108,7 +119,7 @@ probe-cache.json     探测结果（路径、mtime、版本、能力、时间）
 logs/                每个 agent 的 stderr / 协议日志（滚动）
 ```
 
-registry 快照放 `resources/registry.json`；联网刷新成功后写回数据目录作为缓存，失败时回退内置快照，不阻塞启动。
+registry 快照计划放 `resources/registry.json`；联网刷新成功后写回数据目录作为缓存，失败时回退内置快照，不阻塞启动。
 
 ## 安全与边界
 

@@ -47,9 +47,10 @@ ACP_REAL_AGENTS=1 go test ./internal/agent -run TestRealAgents -v
 
 ```bash
 go test ./...
-mygo vet
+go tool mygo vet
 go tool mygo dev
 go tool mygo build
+go tool mygo build -skip-dmg   # 本地快速打包
 node scripts/pi-acp-smoke.mjs        # vendored pi-acp 冒烟
 scripts/vendor-pi-acp.sh             # 仅在升级 pi-acp 时运行
 ```
@@ -61,7 +62,7 @@ scripts/vendor-pi-acp.sh             # 仅在升级 pi-acp 时运行
 - [ ] agent 选择 + 工作区选择 + 最近使用
 - [ ] ACP 会话：流式 Markdown、思考、工具调用、计划、权限、取消、新会话
 - [ ] 模型/思考强度配置
-- [x] pi-acp 单文件 bundle vendored（`gui/resources/agents/pi-acp/`）
+- [x] pi-acp 单文件 bundle vendored（`resources/agents/pi-acp/`）
 - [ ] 系统 Node 定位 + 认证引导
 - [ ] 退出清理、错误诊断、日志
 - [ ] 基础测试：framing、探测、目录、UI 关键行为
@@ -86,12 +87,11 @@ scripts/vendor-pi-acp.sh             # 仅在升级 pi-acp 时运行
 
 ## 待定问题
 
-1. Go/MyGo 工程放在 `gui/` 还是替换仓库根目录？建议先 `gui/`，Node 原型保留为 reference。
-2. registry 刷新策略：内置快照 + 每周检查？还是只在用户点“刷新”时联网？
-3. 是否要把 Node 运行时也打进 app？MVP 建议依赖系统 Node，打包阶段再评估。
-4. 首批要保证的 agent 列表（建议：pi、command-code、opencode、goose、cursor、gemini、claude-acp、codex-acp）。
-5. 认证统一用内嵌 terminal，还是先只展示命令、让用户自己去终端登录？
-6. Windows 的进程树清理与 PATH 解析优先级。
+1. registry 刷新策略：内置快照 + 每周检查？还是只在用户点“刷新”时联网？
+2. 是否要把 Node 运行时也打进 app？MVP 建议依赖系统 Node，打包阶段再评估。
+3. 首批要保证的 agent 列表（建议：pi、command-code、opencode、goose、cursor、gemini、claude-acp、codex-acp）。
+4. 认证统一用内嵌 terminal，还是先只展示命令、让用户自己去终端登录？
+5. Windows 的进程树清理与 PATH 解析优先级。
 
 ## 参考
 
@@ -101,4 +101,4 @@ scripts/vendor-pi-acp.sh             # 仅在升级 pi-acp 时运行
 - pi RPC 文档（本机安装包内）：`docs/rpc.md`、`docs/rpc-commands.md`、`docs/json.md`、`docs/rpc-extension-ui.md`
 - MyGo 文档：`github.com/egoist/mygo/docs`，重点是 `docs/native.md`、`docs/ui/markdown.md`、`docs/ui/list.md`、`docs/ui/views.md`、`docs/distribution.md`、`docs/plugins/terminal.md`
 - MyGo 示例：`examples/markdown-chat`、`examples/terminal`
-- 本仓库参考实现：`server/acp-client.mjs`、`public/app.js`、`scripts/fake-agent.mjs`
+- 早期 Node 参考实现（已移除，见 git 历史）；假 agent fixture：`scripts/fake-agent.mjs`

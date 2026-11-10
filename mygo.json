@@ -1,0 +1,10 @@
+{
+  "name": "ACP GUI",
+  "slug": "acp-gui",
+  "identifier": "dev.reed.acp-gui",
+  "version": "0.1.0",
+  "out": "build",
+  "linux": {
+    "webview": false
+  }
+}

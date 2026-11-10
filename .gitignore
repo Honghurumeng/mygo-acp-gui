@@ -1,24 +1,27 @@
 # macOS / Windows
 .DS_Store
 Thumbs.db
+desktop.ini
 
-# Node（仅参考原型）
+# Node（仅 vendor / 测试脚本使用）
 node_modules/
 *.log
 .env
 
-# Go / MyGo
-gui/build/
-gui/.mygo/
-gui/dist/
-/gui/gui
+# Go / MyGo 构建产物
+/build/
+/.mygo/
+/dist/
+/acp-gui
 *.test
+*.out
 coverage.out
 *.prof
 
 # 本地进程
 *.pid
 
-# 注意：gui/resources/agents/pi-acp/ 是 vendored bundle，必须提交，不要忽略
-
+# 本地设计稿
 docs/*.png
+
+# 注意：resources/agents/pi-acp/ 是 vendored bundle，必须提交，不要忽略

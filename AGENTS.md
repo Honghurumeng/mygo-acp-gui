@@ -2,7 +2,7 @@
 
 ## 目标
 用 Go + MyGo 做原生 ACP GUI：自动发现本机已安装的 ACP agent，选择 agent 和工作区后聊天。
-现有 Node 版本（`server/`、`public/`）只作为参考，新代码放在 `gui/`。
+当前实现是仓库根目录的 Go + MyGo 工程；早期 Node 原型已移除，仅保留在 git 历史中。
 
 ## 文档规则
 - 本文件最多 30 行，只放目标、铁律和文档索引。
@@ -18,4 +18,4 @@
 ## 铁律
 - 客户端能力保持 `fs: false`、`terminal: false`；只做展示和权限审批。
 - 退出清理 agent 进程组；探测 5 秒超时，失败不阻塞启动。
-- pi 不走 npx；直接用 `gui/resources/agents/pi-acp/pi-acp.bundle.mjs`，不重复打包；升级只跑 `scripts/vendor-pi-acp.sh`。
+- pi 不走 npx；直接用 `resources/agents/pi-acp/pi-acp.bundle.mjs`，不重复打包；升级只跑 `scripts/vendor-pi-acp.sh`。

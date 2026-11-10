@@ -11,7 +11,7 @@
 #   ZOD_VERSION      zod version                       (default 3.25.76)
 #   ESBUILD_VERSION  esbuild version                   (default 0.28.2)
 #
-# Output: gui/resources/agents/pi-acp/
+# Output: resources/agents/pi-acp/
 #   pi-acp.bundle.mjs   single-file ESM bundle (the app runs this directly)
 #   package.json        generated metadata so agentInfo.name/version stay correct
 #   VERSION             pinned @geohar/pi-acp version
@@ -25,7 +25,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OUT_DIR="$ROOT/gui/resources/agents/pi-acp"
+OUT_DIR="$ROOT/resources/agents/pi-acp"
 BUNDLE_NAME="pi-acp.bundle.mjs"
 
 VERSION="${1:-${PI_ACP_VERSION:-0.4.0}}"

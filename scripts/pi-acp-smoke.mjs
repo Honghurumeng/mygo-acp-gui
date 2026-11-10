@@ -16,7 +16,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const defaultBundle = join(here, '..', 'gui', 'resources', 'agents', 'pi-acp', 'pi-acp.bundle.mjs');
+const defaultBundle = join(here, '..', 'resources', 'agents', 'pi-acp', 'pi-acp.bundle.mjs');
 const bundle = resolve(process.argv[2] || defaultBundle);
 
 if (!existsSync(bundle)) {
