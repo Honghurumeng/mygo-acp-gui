@@ -86,31 +86,35 @@ pi-acp 在 `initialize` 里用 `readNearestPackageJson(import.meta.url)` 向上�
 - **pi 已安装并在 PATH 上**：pi-acp 会 spawn `pi --mode rpc`。
 - pi 版本以 pinned pi-acp 的 README 为准（0.4.0 要求 0.81.0+）。
 - pi 已配置模型凭据（`~/.pi/agent` 或 `PI_CODING_AGENT_DIR`）。
+- Node 与 pi 都由用户自备：应用不捆绑、不下载、不安装、不升级 Node，也不检测或代管模型凭据/配额。
 
 ## PATH
 
-GUI 从 Finder 启动时 PATH 往往不含 `/usr/local/bin`、`~/.npm-global/bin`。必须：
+GUI 从 Finder 启动时 PATH 往往不含 `/usr/local/bin`、`~/.npm-global/bin`。`internal/agent` 已实现：
 
-1. 用登录 shell 解析一次环境（如 `/bin/zsh -lc 'command -v node; command -v pi'`），或
-2. 在设置里让用户显式选择 node / pi 路径。
+1. 用 `$SHELL -lc`（默认 zsh/bash/sh，5 秒超时）导出登录 shell 的完整 NUL 分隔环境，再用 `command -v node` / `command -v pi` 解析绝对路径。若 PATH 只写在 `.zshrc` 这类交互配置里，再用 `-ilc` 重试一次；仍找不到则检查 npm 全局 bin 和常见安装目录。
+2. 支持显式覆盖：`ACP_GUI_NODE`、`ACP_GUI_PI`（必须是绝对路径），`ACP_GUI_SHELL` 可换登录 shell。
+3. 启动前校验 Node 22+、bundle 存在、pi 可执行；把 node/pi 所在目录补进子进程 PATH。
+4. 把解析到的完整环境和绝对路径传给 agent 子进程；`PI_CODING_AGENT_DIR` 等变量自然透传。
+5. 状态栏显示 Node/pi 版本；解析失败不阻塞窗口，错误显示在工具栏并可重试（重启/重新连接）。
 
-把解析到的绝对路径和必要环境变量传给 agent 子进程。`PI_CODING_AGENT_DIR` 要透传。
+这里只负责“找到已有的 Node/pi”，不做版本管理或安装引导。未实现：设置界面里的选择器；目前用环境变量覆盖。
 
 ## 认证
 
-`session/new` 失败且带 `authMethods` 时，展示登录卡片：
+**应用不处理登录**：不实现登录流程、不内嵌终端、不代跑登录命令、不检测凭据是否可用。模型可用性（凭据、订阅、配额）完全由用户自己解决。
 
-- `terminal` 类型：pi 给出的参数是 `--terminal-login`，等价命令：
+`session/new` 失败且带 `authMethods` 时只做展示：
+
+- 列出每个 method 的 `name` / `description`；`terminal` 类型把 `args` 拼成可复制的命令行，例如：
 
 ```bash
 node <resources>/agents/pi-acp/pi-acp.bundle.mjs --terminal-login
 ```
 
-  该进程会 spawn `pi` 并继承终端（已验证会使用 PATH 上的 `pi`）。
-- 可选：用 MyGo 的 `plugins/terminal` 内嵌终端执行上面的命令，让用户直接完成 `/login`。
-- 完成后重新走 `initialize` / `session/new`。
-
-不要把 API key 写进应用配置；沿用 pi 自己的凭据存储。
+- 提示“请在终端执行后重新连接”；应用不代跑、不监听、不轮询登录结果。用户重新连接时才重新走 `initialize` / `session/new`。
+- 不使用 MyGo `plugins/terminal`，也不声明 ACP `terminal` 能力。
+- 不要把 API key 写进应用配置；沿用 pi 自己的凭据存储。
 
 ## 更新
 
@@ -123,7 +127,7 @@ node <resources>/agents/pi-acp/pi-acp.bundle.mjs --terminal-login
 - `agentInfo.name` 显示成 `acp-pi-gui`：bundle 旁的 `package.json` 丢了。
 - `ERR_MODULE_NOT_FOUND: @agentclientprotocol/sdk`：不是 bundle 启动，或 bundle 被手改 / 没打全；重跑 vendor 脚本。
 - `spawn pi ENOENT`：GUI 的 PATH 没解析到 pi；用登录 shell 或设置绝对路径。
-- `-32000` / `authMethods`：pi 没有可用凭据，走上面的认证引导。
+- `-32000` / `authMethods`：pi 没有可用凭据；应用只展示 `authMethods` 和命令，由用户自行在终端登录后重连。
 - `Lock file is already being held` / `Invalid settings file`：检查 `~/.pi/agent/*.lock` 残留。
 
 ## 来源

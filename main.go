@@ -1,7 +1,7 @@
 // ACP GUI is a native desktop client for the Agent Client Protocol.
 //
-// The window is drawn by MyGo's native UI; agents are discovered and driven
-// over newline-delimited JSON-RPC on stdio (see docs/design).
+// The window is drawn by MyGo's native UI; agents are started from absolute
+// paths over newline-delimited JSON-RPC on stdio (see docs/design).
 package main
 
 import (
@@ -9,41 +9,15 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	appui "github.com/reed/acp-gui/internal/ui"
 )
-
-// appState is the root state the window shows. Agent and workspace state will
-// be added here as the ACP client lands.
-type appState struct {
-	version string
-}
-
-// view builds the window's interface from the state.
-func (s *appState) view(c *ui.Context) {
-	t := c.Theme()
-	ui.Column(c).Fill().Padding(24).Gap(14).Children(func() {
-		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "ACP GUI").FontSize(28).Bold()
-			ui.Text(c, "v"+s.version).FontSize(12).TextColor(t.TextMuted)
-		})
-		ui.Text(c, "Native client for the Agent Client Protocol").FontSize(15).TextColor(t.TextMuted)
-
-		ui.Column(c).Fill().Center().Gap(10).Children(func() {
-			ui.Text(c, "No agent connected yet").FontSize(18)
-			ui.Text(c, "Agent discovery and the chat view land in the next step.").
-				FontSize(13).TextColor(t.TextMuted)
-		})
-	})
-}
 
 func main() {
 	app := mygo.App
 	// Set the name before anything reads the data directory.
 	app.SetName("ACP GUI")
 
-	state := &appState{version: app.Version()}
-	if state.version == "" {
-		state.version = "dev"
-	}
+	var gui *appui.App
 
 	app.WhenReady(func() {
 		app.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
@@ -51,14 +25,30 @@ func main() {
 			{Role: mygo.RoleEditMenu},
 			{Role: mygo.RoleWindowMenu},
 		}))
-		mygo.NewWindow(mygo.WindowOptions{
-			Title:     "ACP GUI",
-			Width:     980,
-			Height:    680,
-			MinWidth:  720,
-			MinHeight: 480,
-			Content:   ui.View(state.view),
+
+		resources, err := app.Path(mygo.PathResources)
+		if err != nil {
+			log.Printf("resources: %v", err)
+		}
+		gui = appui.New(appui.Options{
+			Version:   app.Version(),
+			Resources: resources,
 		})
+
+		win := mygo.NewWindow(mygo.WindowOptions{
+			Title:     "ACP GUI",
+			Width:     1060,
+			Height:    760,
+			MinWidth:  760,
+			MinHeight: 520,
+			Content:   ui.View(gui.View),
+		})
+		gui.Attach(win)
+
+		// Closing the window and quitting the app both clean up the agent
+		// process group. Session.Close is idempotent, so both may run.
+		win.OnClose(func(*mygo.CloseEvent) { gui.Shutdown() })
+		app.OnWillQuit(func(*mygo.QuitEvent) { gui.Shutdown() })
 	})
 
 	if err := app.Run(); err != nil {

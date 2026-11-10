@@ -55,11 +55,40 @@ type AuthMethod struct {
 	Env         map[string]string `json:"env,omitempty"`
 }
 
-// InitializeResult is the agent's initialize response. Capabilities are kept
-// raw: callers only need a few fields now, and unknown fields must not fail.
+// InitializeResult is the agent's initialize response. Unknown fields are
+// ignored so newer adapters do not break the client.
 type InitializeResult struct {
-	ProtocolVersion   int             `json:"protocolVersion"`
-	AgentInfo         *Implementation `json:"agentInfo,omitempty"`
-	AgentCapabilities json.RawMessage `json:"agentCapabilities,omitempty"`
-	AuthMethods       []AuthMethod    `json:"authMethods,omitempty"`
+	ProtocolVersion   int               `json:"protocolVersion"`
+	AgentInfo         *Implementation   `json:"agentInfo,omitempty"`
+	AgentCapabilities AgentCapabilities `json:"agentCapabilities,omitempty"`
+	AuthMethods       []AuthMethod      `json:"authMethods,omitempty"`
+}
+
+// PromptCapabilities says which prompt content kinds the agent accepts.
+type PromptCapabilities struct {
+	Audio           bool `json:"audio"`
+	Image           bool `json:"image"`
+	EmbeddedContext bool `json:"embeddedContext"`
+}
+
+// MCPCapabilities says which MCP transports the agent supports.
+type MCPCapabilities struct {
+	HTTP bool `json:"http"`
+	SSE  bool `json:"sse"`
+}
+
+// SessionCapabilities marks optional session methods. A present field (even
+// an empty object) means the agent supports it.
+type SessionCapabilities struct {
+	List   json.RawMessage `json:"list,omitempty"`
+	Resume json.RawMessage `json:"resume,omitempty"`
+	Close  json.RawMessage `json:"close,omitempty"`
+}
+
+// AgentCapabilities is the initialize capability block.
+type AgentCapabilities struct {
+	LoadSession         bool                `json:"loadSession"`
+	PromptCapabilities  PromptCapabilities  `json:"promptCapabilities"`
+	MCPCapabilities     MCPCapabilities     `json:"mcpCapabilities"`
+	SessionCapabilities SessionCapabilities `json:"sessionCapabilities"`
 }

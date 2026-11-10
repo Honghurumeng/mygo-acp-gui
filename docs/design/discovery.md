@@ -1,99 +1,59 @@
 # Agent 发现
 
-## 官方 registry
+## 范围
 
-ACP 有官方 agent registry：
+**不做 ACP registry 全量发现**，也不扫描本机所有可能的 agent。应用只支持**内置表**里的 agent，目前两个：
 
-- 运行时 JSON：`https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json`
-- Schema：`https://github.com/agentclientprotocol/registry/blob/main/agent.schema.json`
-- 仓库：`https://github.com/agentclientprotocol/registry`
-
-当前快照（2026-11 观测）：约 45 个 agent，schema `v1.0.0`。条目包含：
-
-```json
-{
-  "id": "codex-acp",
-  "name": "Codex",
-  "version": "2.6.0",
-  "description": "ACP adapter for OpenAI's coding assistant",
-  "license": "Apache-2.0",
-  "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/codex-acp.svg",
-  "distribution": {
-    "npx": { "package": "@agentclientprotocol/codex-acp@2.6.0" },
-    "binary": {
-      "darwin-aarch64": { "archive": "...", "sha256": "...", "cmd": "./binary", "args": [] }
-    }
-  }
-}
-```
-
-要点：
-
-- `binary.cmd` 是**解压后的相对路径**，不是 PATH 命令；不能直接拿它做“已安装”检测。
-- `npx` / `uvx` 是包名，适合安装或按需运行，不等于本机已安装。
-- 注册表负责“有哪些 agent、怎么装”，**不负责“本机装没装”**；后者由本应用解决。
-- registry 里的 `pi-acp` 指向上游；本应用对 pi 使用 vendored 的 `@geohar/pi-acp`，需要覆盖该条目。
-- registry 快照计划打进 `resources/registry.json`；启动先读快照，联网刷新失败时用 last-known-good。
-
-## 启动描述（launch spec）
-
-每个可探测 agent 需要一条本地启动描述，registry 元数据只是补充：
-
-```json
-{
-  "id": "command-code",
-  "name": "Command Code",
-  "command": "command-code",
-  "args": ["acp"],
-  "env": {},
-  "detect": ["command-code"],
-  "versionArgs": ["--version"],
-  "source": "builtin",
-  "registryId": null,
-  "installHint": "npm i -g command-code"
-}
-```
-
-`source` 取值：`builtin`（手工维护）、`registry`（从 registry 生成）、`user`（用户添加）、`vendored`（随应用分发，如 pi）。
-
-首批建议支持（命令以实际探测为准，不要只信名字）：
-
-| id | 候选命令 / 参数 | 说明 |
+| id | 名称 | 启动方式 |
 | --- | --- | --- |
-| `pi` | vendored `node resources/agents/pi-acp/pi-acp.bundle.mjs` | 特例，见 [pi.md](pi.md) |
-| `command-code` | `command-code acp` | 本机已验证；不在官方 registry 中 |
-| `opencode` | `opencode acp` | registry binary 参数 |
-| `goose` | `goose acp` | registry binary 参数 |
-| `cursor` | `cursor-agent acp` | registry binary 参数 |
-| `gemini` | `gemini --acp` | registry npx 参数 |
-| `qwen-code` | `qwen --acp --experimental-skills` | registry npx 参数 |
-| `auggie` | `auggie --acp` | registry npx 参数 |
-| `cline` | `cline --acp` | registry npx 参数 |
-| `codebuddy-code` | `codebuddy --acp` | registry npx 参数 |
-| `claude-acp` | `claude-agent-acp` / npx `@agentclientprotocol/claude-agent-acp` | 不是 `claude` 本身 |
-| `codex-acp` | `codex-acp` / npx `@agentclientprotocol/codex-acp` | 不是 `codex` 本身 |
-| `github-copilot` | npx `@github/copilot-language-server --acp` | 以实际 bin 为准 |
+| `pi` | pi | vendored `pi-acp` bundle；需要系统 Node 22+ 和 PATH 上的 `pi`（见 [pi.md](pi.md)） |
+| `command-code` | Command Code | `command-code acp` |
 
-注意：
+- 不联网拉取/刷新 agent 目录，不内置 `registry.json`。
+- 不扫描 npm / pnpm / bun / uv 全局包，不导入 Zed `agent_servers`。
+- 不自动安装 agent；未安装时只显示安装提示。
+- 新增 agent = 修改内置表 + 测试 + 发版；运行时不会发现表外的 agent。
 
-- **`pi` 本身不是 ACP agent**，必须有 `pi-acp` 适配器。
-- **`codex` 本身不是 ACP agent**，需要 `@agentclientprotocol/codex-acp`。
-- 用户自定义 agent 必须支持“命令 + 参数 + 环境变量 + 工作目录”的编辑和测试。
+`command-code` 是本机已验证的第二个 agent；其余 agent 不进入默认实现范围。
 
-## 候选生成顺序
+## 内置表
 
-对 catalog 中每个条目：
+内置表是编译进 `internal/agent` 的 Go 常量，不读资源文件，也不合并用户覆盖。每条需要：
 
-1. 用户自定义覆盖（最高优先级）
-2. 应用托管目录（`mygo.App.Path(mygo.PathData)` 下的 agents）
-3. `resources/agents/...`（vendored，如 pi）
-4. PATH 中的已知命令（`exec.LookPath`）
-5. 全局包管理器安装的包：
-   - `npm ls -g --json --depth=0` + `npm root -g`，读包 `package.json` 的 `bin` 映射
-   - `pnpm ls -g --json`、`bun pm ls -g`、`uv tool list`（按需）
-6. （可选，后续）导入 Zed `~/.config/zed/settings.json` 的 `agent_servers`
+```go
+type BuiltinAgent struct {
+	ID          string
+	Name        string
+	InstallHint string
+}
+```
 
-去重后得到候选列表。每个候选保存**绝对路径**，不要只存命令名。
+具体 command/args/version 在 `BuiltinLaunchResults` 里按 ID 分派（pi 是 vendored 特例）。示意：
+
+| id | command | args | versionArgs | installHint |
+| --- | --- | --- | --- | --- |
+| `pi` | （vendored，不走 command） | — | `pi --version` / `node --version` | 见 pi.md |
+| `command-code` | `command-code` | `acp` | `--version` | 以官方安装文档为准；需要 Node 22+ |
+
+pi 是特例：命令由解析后的 `node` + `resources/agents/pi-acp/pi-acp.bundle.mjs` 拼成，不使用 `Command` 字段；Node/pi 的定位与版本要求见 [pi.md](pi.md)。
+
+只有两个 agent，所以表保持手写、可读；不引入 JSON 目录、registry 解析或 catalog 包。
+
+## 启动检测
+
+对内置表逐条执行：
+
+1. 解析绝对路径：继承登录 shell 环境；pi 需要 node、bundle 和 `pi`，command-code 用 `command -v command-code`。
+2. 版本：跑 `versionArgs`，5 秒超时；失败只影响版本显示。
+3. `initialize` 探测（5 秒），确认它真的是 ACP agent。
+4. 结果写入内存状态；启动异步执行，不阻塞窗口。
+5. “重新检测”重跑以上流程。
+
+当前实现：`agent.BuiltinLaunchResults` 解析 pi 和 command-code 的路径/版本；对每个成功的 spec 并行执行 `session.Probe`（仅 `initialize`，5 秒）。单个 agent 失败只记录状态，不隐藏另一个。状态行展示 `ready` / `not-installed` / `installed-not-acp` / `needs-auth` / `error`。
+
+路径覆盖：`ACP_GUI_NODE`、`ACP_GUI_PI`、`ACP_GUI_COMMAND_CODE` 必须是绝对路径；`ACP_GUI_SHELL` 可换登录 shell。
+
+不写探测缓存文件：只有两个 agent，启动探测成本可控；缓存会额外引入 mtime/TTL 失效逻辑，收益低。
 
 ## 探测（probe）
 
@@ -113,33 +73,39 @@ ACP 有官方 agent registry：
    - stdout 出现非 JSON → 标记“不是 ACP / 输出污染”
    - 超时 / 退出 → 标记失败，保留 stderr 末尾
 5. 关闭 stdin，先 SIGTERM，宽限后杀**进程组**。
-6. 缓存：绝对路径、文件 mtime、版本、`agentInfo`、`capabilities`、`authMethods`、探测时间、结果。
-   - 文件变了或用户点“重新检测”就重新探测。
-   - 失败结果也要有 TTL，避免每次启动都等超时。
 
 探测时声明 `fs: false`、`terminal: false`，与本应用实际能力一致；不要为了“探测成功”而声明用不到的能力。
 
-`session/new` 是第二层验证（是否已登录、能否真正开会话），只在用户选中 agent / 点“连接”时做，不在启动扫描时对每个 agent 都做。`session/new` 返回 `-32000` 或 `auth_required` 时进入“需要登录”状态，展示 agent 的 `authMethods`。
+`session/new` 是第二层验证（能否真正开会话），只在用户选中 agent / 点“连接”时做。`session/new` 返回 `-32000` 或 `auth_required` 时进入“需要登录”状态，只展示 agent 的 `authMethods`（名称、描述、可复制命令）；应用不代登录、不内嵌终端，由用户自己在外部终端解决后重连。
 
 ## 状态模型
 
 | 状态 | 含义 | 动作 |
 | --- | --- | --- |
-| `ready` | 探测成功，已知路径和版本 | 可连接 |
-| `needs-auth` | `initialize` 成功，但 `session/new` 要求认证 | 展示登录/配置指引 |
+| `ready` | 路径解析成功，`initialize` 探测通过 | 可连接 |
+| `needs-auth` | `initialize` 成功，但 `session/new` 要求认证 | 展示 `authMethods`/命令，用户自行在终端登录后重连 |
 | `installed-not-acp` | 命令存在但握手失败 | 显示 stderr，提示不是 ACP |
-| `not-installed` | registry 有，但本机没找到 | 显示安装命令 |
+| `not-installed` | 内置表有，但本机没找到 | 显示安装提示 |
 | `error` | 超时/崩溃/协议错误 | 重试、查看日志 |
-| `custom` | 用户手动添加 | 可编辑、可删除、可测试 |
+
+实现：`ready` 通过 initialize 探测；路径解析失败为 `not-installed`；握手失败/非 JSON 为 `installed-not-acp`；超时/崩溃为 `error`；`needs-auth` 在用户点 Connect 后由 `session/new` 触发，并更新该 agent 状态。只有 `ready` 的 agent 进入可连接下拉框。
 
 ## 手动命令行测试
 
 macOS/Linux（需有 `timeout`；否则用 probe 脚本）：
 
 ```bash
+# command-code
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false}}}' \
   | timeout 5 command-code acp
+```
+
+```bash
+# pi（路径按实际资源目录替换）
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false}}}' \
+  | timeout 5 node resources/agents/pi-acp/pi-acp.bundle.mjs
 ```
 
 Windows PowerShell：
@@ -155,20 +121,13 @@ Windows PowerShell：
 {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentInfo":{"name":"Command Code","version":"1.88.5"},"agentCapabilities":{"loadSession":true,"promptCapabilities":{"audio":false,"image":true,"embeddedContext":true}},"authMethods":[{"id":"command-code-cli","name":"Command Code CLI login","description":"Sign in once with `cmd login` in a terminal; this session reuses that account."}]}}
 ```
 
-`command-code` 会把 `[acp] initialize: ...` 写到 stderr。stdout 必须只有协议 JSON；探测时 stderr 单独收集，不能当作响应。
+`command-code` 会把 `[acp] initialize: ...` 写到 stderr。stdout 必须只有协议 JSON；探测时 stderr 单独收集，不能当作响应。Command Code 的完整实测流程、权限选项、未登录错误与测试命令见 [command-code.md](command-code.md)。
 
-建议补一个跨平台 Go 版 `cmd/probe`（计划）：发送 `initialize`、5 秒超时、打印 result/stderr、杀掉进程组。
-
-## 缓存与刷新
-
-- 缓存文件：`probe-cache.json`，按绝对路径索引。
-- 失效条件：mtime 变化、版本变化、用户手动刷新、TTL 过期。
-- registry 刷新：内置快照 + 成功联网后写回缓存；失败静默回退。
-- 探测失败也缓存（带 TTL），避免每次启动都等 5 秒。
+跨平台探测已由 `internal/session.Probe` 提供：发送 `initialize`、5 秒超时、收集 stderr、关闭进程组；UI 在发现阶段并行调用。
 
 ## 安全
 
-- 只探测目录中已知或被用户显式添加的命令，不遍历全盘。
+- 只探测内置表里的两个 agent，不遍历全盘，不接受运行时的表外 agent。
 - 每次探测都必须能杀掉进程组。
-- 不自动安装 registry agent；MVP 只展示安装命令。
+- 不自动安装 agent；MVP 只展示安装提示/命令。
 - 不把 API key 写入应用配置或日志。
