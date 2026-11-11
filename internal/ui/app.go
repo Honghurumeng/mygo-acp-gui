@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -17,7 +18,9 @@ import (
 	"github.com/egoist/mygo/ui/markdown"
 	"github.com/reed/acp-gui/internal/acp"
 	"github.com/reed/acp-gui/internal/agent"
+	"github.com/reed/acp-gui/internal/logs"
 	"github.com/reed/acp-gui/internal/session"
+	"github.com/reed/acp-gui/internal/settings"
 )
 
 // Options configures the app. A non-nil Agents slice skips discovery, which
@@ -28,6 +31,9 @@ type Options struct {
 	Agents    []agent.LaunchSpec
 	Workspace string
 	Resolve   agent.ResolveOptions
+	// DataDir enables settings.json persistence; empty keeps everything in
+	// memory (tests, portable runs).
+	DataDir string
 }
 
 // MessageRole is how a chat row is drawn.
@@ -120,6 +126,11 @@ type App struct {
 	HistorySelected int
 	HistoryList     mui.ListState
 
+	SettingsWarning string
+
+	DiagOpen bool
+	DiagChat *Chat
+
 	Permission      *permissionPrompt
 	PermissionOpen  bool
 	permissionQueue []*permissionPrompt
@@ -147,6 +158,15 @@ type App struct {
 	injectedAgents bool
 	resolveOpts    agent.ResolveOptions
 
+	settings         *settings.Store
+	settingsPaths    settings.Paths
+	preferredAgentID string
+
+	logDir     string
+	logsMu     sync.Mutex
+	logs       map[string]*logs.Log
+	logsClosed bool
+
 	next int
 }
 
@@ -173,6 +193,7 @@ func New(opts Options) *App {
 		Active:         -1,
 		MD:             markdown.Options{},
 		sessions:       make(map[*session.Session]struct{}),
+		logs:           make(map[string]*logs.Log),
 		resolveOpts:    opts.Resolve,
 		injectedAgents: opts.Agents != nil,
 	}
@@ -187,19 +208,55 @@ func New(opts Options) *App {
 	}
 	a.MCPServers = []any{}
 	a.MCPText = "[]"
+	a.loadSettings(opts.DataDir, strings.TrimSpace(opts.Workspace) == "")
+	if opts.Agents != nil {
+		a.AgentIndex = a.agentIndex(a.preferredAgentID)
+	}
 	if a.resolveOpts.Shell == "" {
-		a.resolveOpts.Shell = os.Getenv("ACP_GUI_SHELL")
+		a.resolveOpts.Shell = firstNonEmpty(os.Getenv("ACP_GUI_SHELL"), a.settingsPaths.Shell)
 	}
 	if a.resolveOpts.NodePath == "" {
-		a.resolveOpts.NodePath = os.Getenv("ACP_GUI_NODE")
+		a.resolveOpts.NodePath = firstNonEmpty(os.Getenv("ACP_GUI_NODE"), a.settingsPaths.Node)
 	}
 	if a.resolveOpts.PiPath == "" {
-		a.resolveOpts.PiPath = os.Getenv("ACP_GUI_PI")
+		a.resolveOpts.PiPath = firstNonEmpty(os.Getenv("ACP_GUI_PI"), a.settingsPaths.Pi)
 	}
 	if a.resolveOpts.CommandCodePath == "" {
-		a.resolveOpts.CommandCodePath = os.Getenv("ACP_GUI_COMMAND_CODE")
+		a.resolveOpts.CommandCodePath = firstNonEmpty(os.Getenv("ACP_GUI_COMMAND_CODE"), a.settingsPaths.CommandCode)
 	}
 	return a
+}
+
+// loadSettings restores saved preferences. Its warnings never block startup:
+// defaults stay in place and the toolbar shows the problem.
+func (a *App) loadSettings(dataDir string, workspaceDefault bool) {
+	if strings.TrimSpace(dataDir) == "" {
+		return
+	}
+	a.settings = settings.Open(filepath.Join(dataDir, "settings.json"))
+	a.logDir = filepath.Join(dataDir, "logs")
+	file, err := a.settings.Load()
+	if err != nil {
+		a.SettingsWarning = err.Error()
+	}
+	a.settingsPaths = file.Paths
+	a.preferredAgentID = file.LastAgent
+	if workspaceDefault && file.LastWorkspace != "" {
+		a.Workspace = file.LastWorkspace
+	}
+	if len(file.MCPServers) > 0 {
+		a.MCPServers = file.MCPServers
+		a.MCPText = prettyJSON(file.MCPServers)
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 // Attach gives the app its window and starts discovery once. Call it on the
@@ -251,6 +308,7 @@ func (a *App) Flush() {
 // It is safe to call from OnClose and OnWillQuit.
 func (a *App) Shutdown() {
 	a.shutdownOnce.Do(func() {
+		a.persistSettings()
 		// Set closed and take the session snapshot under the same lock
 		// trackSession uses, so a session cannot slip in after the
 		// snapshot and escape cleanup.
@@ -271,6 +329,7 @@ func (a *App) Shutdown() {
 			_ = s.Close()
 		}
 		a.cleanup.Wait()
+		a.closeLogs()
 	})
 }
 
@@ -343,6 +402,7 @@ func (a *App) View(c *mui.Context) {
 	a.permissionDialog(c)
 	a.historyDialog(c)
 	a.settingsDialog(c)
+	a.diagnosticsDialog(c)
 }
 
 // chatTabs draws the open chats. Each tab keeps its own process, so a
@@ -399,6 +459,9 @@ func (a *App) toolbar(c *mui.Context) {
 			mui.Text(c, "ACP GUI").FontSize(21).Bold()
 			mui.Text(c, "v"+a.Version).FontSize(11).TextColor(t.TextMuted)
 			mui.Spacer(c)
+			if mui.Button(c, "Logs").Label("Diagnostics").FontSize(11).Clicked() {
+				a.openDiagnostics()
+			}
 			mui.Text(c, a.statusLine()).FontSize(11).TextColor(t.TextMuted)
 		})
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Padding(0, 20, 10, 20).Children(func() {
@@ -423,6 +486,7 @@ func (a *App) toolbar(c *mui.Context) {
 					for i, name := range names {
 						if name == choice {
 							a.AgentIndex = i
+							a.preferredAgentID = a.Agents[i].ID
 							if chat != nil {
 								chat.Agent = a.Agents[i]
 								chat.WorkspaceError = ""
@@ -430,6 +494,7 @@ func (a *App) toolbar(c *mui.Context) {
 							break
 						}
 					}
+					a.persistSettings()
 				}
 			}
 
@@ -497,6 +562,13 @@ func (a *App) toolbar(c *mui.Context) {
 		}
 		if len(a.Env.Warnings) > 0 {
 			mui.Text(c, strings.Join(a.Env.Warnings, "; ")).
+				FontSize(11).
+				TextColor(t.Warning).
+				Padding(0, 20, 8, 20).
+				Selectable()
+		}
+		if a.SettingsWarning != "" {
+			mui.Text(c, "Settings: "+a.SettingsWarning).
 				FontSize(11).
 				TextColor(t.Warning).
 				Padding(0, 20, 8, 20).

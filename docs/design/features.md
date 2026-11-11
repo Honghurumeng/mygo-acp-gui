@@ -66,7 +66,25 @@
 - 保存前校验：必须是对象数组、必须有 `name`，stdio 必须有 `command`，http 必须有 `url`。
 - 每个标签各有一份列表；设置窗口修改当前标签，并作为新标签的默认值。列表传给该标签后续的 `session/new` / `session/load` / `session/resume`；已连接时也更新 Session 的待用列表。
 - 不启动、不管理 MCP 进程；由 agent 自己拉起。
-- 当前只保存在内存，不写 settings.json。
+- Apply 后的列表写入 settings.json，成为下次启动的默认值（见“设置持久化”）。
+
+## 设置持久化
+
+- `internal/settings` 读写 `PathUserData/settings.json`；`ui.Options.DataDir` 为空时完全不落盘（测试、便携运行）。
+- 保存内容：最后使用的 agent、工作区、MCP 默认列表，以及 `paths` 里的显式工具覆盖。
+- 保存时机：切换标签、选择 agent/目录、Connect 校验成功、MCP Apply、退出。
+- 启动恢复：工作区、MCP 列表、上次 agent；显式传入的 `ui.Options.Workspace` 优先（测试用）。
+- `paths` 只保存配置里的覆盖值；`ACP_GUI_*` 环境变量优先，且不会被写回文件。
+- 容错：文件缺失用默认值；损坏 JSON、MCP 不是数组、相对路径、未来版本只显示工具栏警告，其余字段照常生效。
+- 不保存多标签布局、草稿、附件和消息；历史会话仍由 agent 保存。
+
+## 诊断与日志
+
+- 顶部 “Logs” 打开 Diagnostics 模态；没有聊天时显示发现状态，有聊天时额外显示当前标签的 agent、工作区、命令行、连接错误和 stderr 尾部。
+- 每个标签在内存中保留最近 64 KiB stderr（`Chat.Stderr` / `StderrBytes`），超过部分只留在日志文件。
+- 同时写入 `<data>/logs/<agent>.log`：连接头、stderr 原样、`[protocol]`、`[probe]`、`[exit]`。单文件 1 MiB，滚动为 `.1` 备份，模式 0600。
+- “Reveal log” 在文件管理器中定位日志；stderr 以只读等宽 TextArea 展示，可选中复制。
+- 写日志失败或未设置数据目录时不影响聊天，只看不到文件副本。
 
 ## 命令面板
 
@@ -79,8 +97,9 @@
 
 - `plan` → composer 上方的可折叠计划列表，显示状态。
 - `session_info_update.title` → 标题显示在会话栏。
-- `usage_update` → context used/size 与费用显示在会话栏和 composer。
-- prompt 结果里的 `usage` / `_meta` 保留在 `acp.PromptResult`，当前不展示明细。
+- `usage_update` → context used/size 与费用显示在所属标签的会话栏（每个标签独立；当前没有 composer 副本）。agent 不发时没有上下文数字；ACP 没有主动查询的方法。
+- prompt 结果里的 `usage` 解析为 `acp.PromptUsage`，显示为 `turn 1.2k in · 100 out · 40 thought`（只在 agent 返回时出现），与 `context` 分开；`_meta` 保留在 `acp.PromptResult`，不展示明细。
+- 当前 command-code 会发 `usage_update`；pi-acp 0.4.0 不发，也不返回 prompt `usage`（见 [pi.md](pi.md#用量)）。
 
 ## 事件顺序与生命周期
 
@@ -94,7 +113,10 @@
 
 ```bash
 go test ./... -race
-go test ./internal/ui -run 'TestSessionConfig|TestHistory|TestCloseChat|TestSendImage|TestMCP|TestMultipleChats|TestBackgroundChat|TestPermissionFrom|TestCloseTab' -v
+go test ./internal/ui -run 'TestSessionConfig|TestHistory|TestCloseChat|TestSendImage|TestMCP|TestPromptUsageFallback|TestMultipleChats|TestBackgroundChat|TestPermissionFrom|TestCloseTab' -v
+go test ./internal/settings -v
+go test ./internal/logs -v
+go test ./internal/ui -run 'TestSettings|TestShutdownPersists|TestCorruptSettings|TestExplicitWorkspace|TestDiagnostics' -v
 ACP_REAL_COMMAND_CODE=1 go test ./internal/session -run '^TestRealCommandCode$' -v -count=1
 ```
 

@@ -34,6 +34,11 @@ type Chat struct {
 	ConnectError   string
 	WorkspaceError string
 
+	// Stderr is the tail of this chat's agent stderr, shown in Diagnostics.
+	// StderrBytes counts everything received, including the trimmed prefix.
+	Stderr      string
+	StderrBytes int64
+
 	Messages   []*Message
 	Input      string
 	Streaming  bool
@@ -46,6 +51,7 @@ type Chat struct {
 	Plan         []session.PlanEntry
 	PlanOpen     bool
 	Usage        *acp.Usage
+	TurnUsage    *acp.PromptUsage
 	Title        string
 	ConfigBusy   string
 
@@ -156,6 +162,7 @@ type conversationState struct {
 	plan        []session.PlanEntry
 	planOpen    bool
 	usage       *acp.Usage
+	turnUsage   *acp.PromptUsage
 	attachments []Attachment
 	lastStop    string
 }
@@ -170,6 +177,7 @@ func (c *Chat) snapshot() conversationState {
 		plan:        c.Plan,
 		planOpen:    c.PlanOpen,
 		usage:       c.Usage,
+		turnUsage:   c.TurnUsage,
 		attachments: c.Attachments,
 		lastStop:    c.LastStop,
 	}
@@ -184,6 +192,7 @@ func (c *Chat) restore(state conversationState) {
 	c.Plan = state.plan
 	c.PlanOpen = state.planOpen
 	c.Usage = state.usage
+	c.TurnUsage = state.turnUsage
 	c.Attachments = state.attachments
 	c.LastStop = state.lastStop
 	c.replaying = false
@@ -287,6 +296,7 @@ func (a *App) selectChat(chat *Chat) {
 	chat.Unread = false
 	a.AgentIndex = a.agentIndex(chat.Agent.ID)
 	a.Workspace = chat.Workspace
+	a.persistSettings()
 }
 
 func (a *App) agentIndex(id string) int {
@@ -321,6 +331,7 @@ func (a *App) removeChat(chat *Chat) {
 		a.AgentIndex = a.agentIndex(current.Agent.ID)
 		a.Workspace = current.Workspace
 	}
+	a.persistSettings()
 
 	if s := chat.Session; s != nil {
 		chat.Session = nil

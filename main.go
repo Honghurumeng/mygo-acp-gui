@@ -30,9 +30,14 @@ func main() {
 		if err != nil {
 			log.Printf("resources: %v", err)
 		}
+		dataDir, err := app.Path(mygo.PathUserData)
+		if err != nil {
+			log.Printf("data: %v", err)
+		}
 		gui = appui.New(appui.Options{
 			Version:   app.Version(),
 			Resources: resources,
+			DataDir:   dataDir,
 		})
 
 		win := mygo.NewWindow(mygo.WindowOptions{

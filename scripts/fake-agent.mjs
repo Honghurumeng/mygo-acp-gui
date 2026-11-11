@@ -8,6 +8,7 @@
  *   /thought      先流一段 agent_thought_chunk
  *   /mcp          回复最近一次 session/new 收到的 MCP server 数
  *   /image        回复收到的图片内容块数量
+ *   /turnusage    不发 usage_update，只在 prompt 结果里返回 usage
  *
  * 环境变量：
  *   FAKE_AGENT_CHILD_PID_FILE  启动一个子进程并把 pid 写入该文件，
@@ -111,12 +112,14 @@ function publishCommands(sessionId) {
   });
 }
 
-function finishTurn(turn, reason = 'end_turn') {
+function finishTurn(turn, reason = 'end_turn', usage = null) {
   if (!turn || turn.finished) return;
   turn.finished = true;
   if (turn.timer) clearTimeout(turn.timer);
   if (active === turn) active = null;
-  send({ jsonrpc: '2.0', id: turn.id, result: { stopReason: reason } });
+  const result = { stopReason: reason };
+  if (usage) result.usage = usage;
+  send({ jsonrpc: '2.0', id: turn.id, result });
 }
 
 function sendChunk(turn, text) {
@@ -190,15 +193,18 @@ function startTurn(turn, text, images = 0, mcpCount = 0) {
   const permission = text.includes('/permission');
   const thought = text.includes('/thought');
   const plan = text.includes('/plan');
+  const turnUsage = text.includes('/turnusage');
 
   sendUpdate({
     sessionId: turn.sessionId,
     update: { sessionUpdate: 'session_info_update', title: 'Fake session title' },
   });
-  sendUpdate({
-    sessionId: turn.sessionId,
-    update: { sessionUpdate: 'usage_update', used: 1200, size: 10000, cost: { amount: 0.0012, currency: 'USD' } },
-  });
+  if (!turnUsage) {
+    sendUpdate({
+      sessionId: turn.sessionId,
+      update: { sessionUpdate: 'usage_update', used: 1200, size: 10000, cost: { amount: 0.0012, currency: 'USD' } },
+    });
+  }
   if (plan) {
     sendUpdate({
       sessionId: turn.sessionId,
@@ -239,7 +245,13 @@ function startTurn(turn, text, images = 0, mcpCount = 0) {
       return;
     }
     if (offset >= chars.length) {
-      finishTurn(turn);
+      finishTurn(turn, 'end_turn', turnUsage ? {
+        totalTokens: 1300,
+        inputTokens: 1200,
+        outputTokens: 100,
+        thoughtTokens: 40,
+        cachedReadTokens: 900,
+      } : null);
       return;
     }
     sendChunk(turn, chars.slice(offset, offset + chunkSize).join(''));

@@ -98,7 +98,11 @@ GUI 从 Finder 启动时 PATH 往往不含 `/usr/local/bin`、`~/.npm-global/bin
 4. 把解析到的完整环境和绝对路径传给 agent 子进程；`PI_CODING_AGENT_DIR` 等变量自然透传。
 5. 状态栏显示 Node/pi 版本；解析失败不阻塞窗口，错误显示在工具栏并可重试（重启/重新连接）。
 
-这里只负责“找到已有的 Node/pi”，不做版本管理或安装引导。未实现：设置界面里的选择器；目前用环境变量覆盖。
+这里只负责“找到已有的 Node/pi”，不做版本管理或安装引导。未实现：设置界面里的选择器；目前用 `settings.json` 的 `paths.node` / `paths.pi` 或环境变量覆盖。
+
+## 用量
+
+pi 底层 RPC 的 `get_session_stats` 有 `contextUsage.tokens/contextWindow/percent`，但 vendored `@geohar/pi-acp@0.4.0`（当前最新）没有把它映射成 ACP `usage_update`，`session/prompt` 也不返回 `usage`。因此 pi 标签目前没有上下文或单轮 token 用量；command-code 会发 `usage_update`。pi-acp 上游补上映射后，升级 bundle 即可生效，客户端不需要改。
 
 ## 认证
 

@@ -78,9 +78,11 @@ func (a *App) discover(ctx context.Context) {
 			case errors.Is(err, context.DeadlineExceeded):
 				statuses[i].Status = AgentError
 				statuses[i].Detail = "initialize probe timed out after 5s"
+				a.appendAgentLog(result.ID, []byte("[probe] timeout after 5s\n"))
 			default:
 				statuses[i].Status = AgentNotACP
 				statuses[i].Detail = truncate(err.Error(), 600)
+				a.appendAgentLog(result.ID, []byte("[probe] "+err.Error()+"\n"))
 			}
 		}(i, result)
 	}
@@ -90,8 +92,8 @@ func (a *App) discover(ctx context.Context) {
 		if a.closed.Load() {
 			return
 		}
-		selected := ""
-		if a.AgentIndex >= 0 && a.AgentIndex < len(a.Agents) {
+		selected := a.preferredAgentID
+		if selected == "" && a.AgentIndex >= 0 && a.AgentIndex < len(a.Agents) {
 			selected = a.Agents[a.AgentIndex].ID
 		}
 		a.Resolving = false
@@ -172,6 +174,9 @@ func (a *App) Connect() {
 	chat.Connecting = true
 	chat.Busy = "connect"
 	chat.Unread = false
+	chat.Stderr = ""
+	chat.StderrBytes = 0
+	a.persistSettings()
 
 	action := chat.pendingSessionAction
 	sessionID := chat.pendingSessionID
@@ -194,6 +199,7 @@ func (a *App) Connect() {
 	case "resume":
 		cfg.ResumeSessionID = sessionID
 	}
+	a.logSessionStart(spec, workspace, action, sessionID)
 
 	ctx, gen, cancel := chat.beginConnect()
 	a.cleanup.Add(1)
@@ -211,9 +217,27 @@ func (a *App) Connect() {
 		cfg.OnPermission = func(ctx context.Context, req session.PermissionRequest) (acp.RequestPermissionResult, error) {
 			return a.askPermission(chat, ctx, req)
 		}
+		cfg.OnStderr = func(chunk string) {
+			a.appendAgentLog(spec.ID, []byte(chunk))
+			a.Post(func() {
+				if a.connectIsCurrent(chat, gen) {
+					a.appendStderr(chat, chunk)
+				}
+			})
+		}
+		cfg.OnProtocolError = func(err error) {
+			line := "[protocol] " + err.Error() + "\n"
+			a.appendAgentLog(spec.ID, []byte(line))
+			a.Post(func() {
+				if a.connectIsCurrent(chat, gen) {
+					a.appendStderr(chat, line)
+				}
+			})
+		}
 		cfg.OnExit = func(exit session.Exit) {
 			// The process is already gone and its descendants have been
 			// signalled; it no longer needs shutdown tracking.
+			a.appendAgentLog(spec.ID, []byte(fmt.Sprintf("[exit] expected=%t err=%v\n\n", exit.Expected, exit.Err)))
 			a.untrackSession(exit.Session)
 			a.Post(func() {
 				a.applyExit(chat, exit)
@@ -221,6 +245,7 @@ func (a *App) Connect() {
 		}
 		s, err := session.Start(ctx, cfg)
 		if err != nil {
+			a.appendAgentLog(spec.ID, []byte("connect failed: "+err.Error()+"\n"))
 			a.Post(func() {
 				if a.closed.Load() || !a.connectIsCurrent(chat, gen) {
 					return
@@ -356,6 +381,7 @@ func (a *App) resetConversation(chat *Chat) {
 	chat.Plan = nil
 	chat.PlanOpen = false
 	chat.Usage = nil
+	chat.TurnUsage = nil
 	chat.Title = ""
 	chat.Unread = false
 	chat.replaying = false
@@ -378,6 +404,7 @@ func (a *App) send() bool {
 	chat.Input = ""
 	chat.Attachments = nil
 	chat.ConnectError = ""
+	chat.TurnUsage = nil
 
 	a.addMessage(chat, &Message{
 		ID:          a.nextID(),
@@ -818,6 +845,9 @@ func (a *App) applyPromptResult(chat *Chat, turn *turnState, res acp.PromptResul
 	if res.StopReason != "" {
 		chat.LastStop = res.StopReason
 	}
+	if usage, ok := res.Tokens(); ok {
+		chat.TurnUsage = &usage
+	}
 	if err != nil && !errors.Is(err, acp.ErrClosed) {
 		a.addError(chat, err)
 	}
@@ -829,6 +859,11 @@ func (a *App) applyPromptResult(chat *Chat, turn *turnState, res acp.PromptResul
 func (a *App) applyExit(chat *Chat, exit session.Exit) {
 	if chat == nil || chat.Closed || chat.Session != exit.Session {
 		return
+	}
+	if exit.Err != nil {
+		a.appendStderr(chat, fmt.Sprintf("\n[agent exited: %v]\n", exit.Err))
+	} else {
+		a.appendStderr(chat, "\n[agent exited]\n")
 	}
 	chat.Session = nil
 	chat.Connected = false

@@ -6,6 +6,8 @@
 
 - `internal/acp`：行分帧（多 chunk、CRLF、非 JSON、U+2028 内容）、请求/响应匹配、权限回执
 - `internal/agent`：内置表、launch spec 解析、路径解析、探测超时与进程组清理
+- `internal/settings`：缺失/损坏/未来版本、坏 MCP、相对路径、原子写入
+- `internal/logs`：追加、1 MiB 滚动与备份、超大 chunk、并发写入
 - 探测 fixture：正常 agent、慢 agent、只打印 stderr 的 agent、立即退出的 agent、stdout 混入日志的 agent
 
 复用 `scripts/fake-agent.mjs` 作为假 agent，跑 UI/客户端集成测试；fixture 放在 `testdata/`。
@@ -64,7 +66,10 @@ Command Code 的协议细节见 [command-code.md](command-code.md)；UI 能力�
 Feature tests:
 
 ```bash
-go test ./internal/ui -run 'TestSessionConfig|TestHistory|TestCloseChat|TestSendImage|TestMCP' -v
+go test ./internal/ui -run 'TestSessionConfig|TestHistory|TestCloseChat|TestSendImage|TestMCP|TestPromptUsageFallback' -v
+go test ./internal/settings -v
+go test ./internal/logs -v
+go test ./internal/ui -run 'TestSettings|TestShutdownPersists|TestCorruptSettings|TestExplicitWorkspace|TestDiagnostics' -v
 ```
 
 
@@ -74,13 +79,15 @@ go test ./internal/ui -run 'TestSessionConfig|TestHistory|TestCloseChat|TestSend
 2. 本机已装 `command-code`：应出现在 Agent 列表，能 Connect、流式回复、审批权限、取消。
 3. 本机未装 `command-code`：不应阻塞 pi，也不应出现空列表崩溃。
 4. 本机未登录 Command Code：Connect 显示 `authMethods` + `command-code login`，应用不代登录。
-5. 用 fixture 模拟同名非 ACP 命令：Connect 失败并显示 stderr（逐 agent 的 `installed-not-acp` 状态仍待做）。
+5. 用 fixture 模拟同名非 ACP 命令：Connect 失败并显示 stderr，该 agent 状态显示 `installed-not-acp`。
 6. 界面只列出 pi、command-code，不出现 registry 里的其他 agent。
 7. pi：离线（断网）启动，仍能连接（vendored pi-acp），且能聊天。
 8. 权限弹窗、取消、关闭窗口：无残留 `pi` / `command-code` / agent 进程。
 9. 退出再启动：上次 agent / 工作区恢复。
 10. pi 未登录：只显示 `authMethods` / 登录命令，应用不尝试登录、不打开内嵌终端。
 11. 多会话：开两个标签分别发 `/slow` 和普通消息，切换标签时后台继续流式；后台标签请求权限时弹窗标明标签，回答不影响另一个标签。
+12. 设置持久化：改 agent/工作区/MCP 后退出，再启动应恢复；手工损坏 `settings.json` 或写入相对路径，应正常启动并在工具栏显示警告。
+13. 诊断：点顶部 “Logs” 能看到当前标签的 stderr；`logs/<agent>.log` 有连接头和 stderr，超过 1 MiB 后生成 `.1` 备份。
 
 ### 常用命令
 
@@ -98,7 +105,7 @@ scripts/vendor-pi-acp.sh             # 仅在升级 pi-acp 时运行
 
 - [x] 内置 agent（pi、command-code）路径/版本解析 + 可选列表 + 单 agent 失败不阻塞另一个
 - [x] 内置 agent 的 `initialize` 探测（5 秒，不缓存）+ `ready` / `not-installed` / `installed-not-acp` / `needs-auth` 状态展示
-- [x] agent 选择 + 工作区选择 + 绝对路径/可写校验（最近使用仍待做）
+- [x] agent 选择 + 工作区选择 + 绝对路径/可写校验（上次使用由 settings.json 恢复）
 - [x] ACP 会话：initialize、session/new、session/prompt、agent_message_chunk 流式 Markdown、思考、工具调用、权限、取消
 - [x] 计划面板、配置选择、历史会话（list/load/resume/close）
 - [x] 模型/effort/模式配置 + `session/set_config_option` / `set_mode`
@@ -107,16 +114,17 @@ scripts/vendor-pi-acp.sh             # 仅在升级 pi-acp 时运行
 - [x] 系统 Node / pi / command-code 定位（登录 shell + 绝对路径覆盖）+ 登录指引（只展示，不代登录）
 - [x] Command Code 启动与完整聊天流程：initialize、session/new、流式、权限、取消、退出清理
 - [x] 退出清理（Setpgid + 进程组 SIGTERM/SIGKILL）
-- [ ] 错误诊断面板、stderr 日志滚动（错误与 stderr 目前显示在连接错误/退出错误里）
+- [x] settings.json 持久化（上次 agent/工作区、MCP 默认值、paths 覆盖；原子写入 + 容错加载）
+- [x] 错误诊断面板、stderr 日志滚动（Diagnostics 模态 + `logs/<agent>.log`，1 MiB 滚动）
 - [x] 基础测试：framing、launch spec、登录 shell 解析、fake agent 会话、UI 发送/流式/停止/权限、进程组清理
-- [x] 新能力测试：probe、config/mode、list/load/resume/close、图片 prompt、MCP 校验、命令面板、历史 UI、图片发送 UI
+- [x] 新能力测试：probe、config/mode、list/load/resume/close、图片 prompt、MCP 校验、命令面板、历史 UI、图片发送 UI、设置持久化、诊断面板与日志滚动
 
 ## 后续
 
 - [x] `session/load` / `resume` / `close` 历史会话列表
 - [x] 图片输入
 - [x] 多会话并行（标签各自一个 agent 进程；后台流式、权限按标签路由、标签关闭/切换）
-- [ ] settings.json 持久化（MCP、上次 agent/工作区）
+- [x] settings.json 持久化（MCP、上次 agent/工作区）
 - [ ] MCP 行编辑器（当前是校验过的 JSON）
 - [ ] ACP 报文监视器
 - [ ] Windows / Linux 打包验证

@@ -33,6 +33,8 @@ MyGo 原生窗口 (Go + ui)
   internal/acp/            JSON-RPC、请求/通知、权限、行分帧（已实现）
   internal/agent/          内置 agent 表、launch spec、登录 shell 路径解析、工作区校验、状态探测
   internal/session/        进程组 + ACP 会话生命周期 + update/permission 分发（已实现）
+  internal/settings/       settings.json 读写、容错与原子落盘（已实现）
+  internal/logs/           每个 agent 的滚动日志文件（已实现）
   internal/ui/             多标签会话、聊天、流式 Markdown、权限队列、窗口更新（已实现）
   resources/
     agents/pi-acp/
@@ -55,7 +57,8 @@ MyGo 原生窗口 (Go + ui)
 
 ```
 启动 app
-  → internal/agent.ResolveEnvironment（登录 shell 环境 + node/pi/command-code 绝对路径）
+  → internal/settings 读取 PathUserData/settings.json（上次 agent/工作区/MCP、路径覆盖）
+  → internal/agent.ResolveEnvironment（环境变量 > settings paths > 登录 shell；node/pi/command-code 绝对路径）
   → internal/agent.BuiltinLaunchResults
       pi: vendored bundle + Node 22+
       command-code: <绝对路径>/command-code acp
@@ -72,7 +75,7 @@ MyGo 原生窗口 (Go + ui)
 ```
 
 - 解析并探测 pi、command-code；单个 agent 缺失不会隐藏另一个，状态行展示 `ready` / `not-installed` / `installed-not-acp` / `needs-auth` / `error`。内置 agent 表固定为 pi、command-code，不做 registry 发现。
-- 路径解析优先使用 `ACP_GUI_NODE` / `ACP_GUI_PI` / `ACP_GUI_COMMAND_CODE` 的绝对路径覆盖；否则用登录 shell 的 `PATH`。只定位已有安装，不安装、不捆绑 Node。
+- 路径解析优先使用 `ACP_GUI_NODE` / `ACP_GUI_PI` / `ACP_GUI_COMMAND_CODE` 的绝对路径覆盖，其次是 `settings.json` 的 `paths`，否则用登录 shell 的 `PATH`。只定位已有安装，不安装、不捆绑 Node。
 - UI 状态只在主线程修改。session 回调通过 `Window.Update`（测试中通过队列）提交，不直接改状态。
 - 每个标签是一个 `ui.Chat`，保存自己的 Session、Info、消息、输入草稿、配置、附件和连接代数；App 持有 `Chats` 与 `Active`。回调捕获 chat 指针，因此后台标签仍能流式更新。
 - 测试用 `scripts/fake-agent.mjs`：prompt 流式输出、`/slow` + cancel、`/permission`、config/mode、list/load/resume/close、图片/MCP 计数、命令/plan/usage、子进程清理。
@@ -133,29 +136,47 @@ pi 自己的工具在工作区内读写执行；客户端只负责展示和审�
 - 权限：全局模态但带 `Chat: …` 标签，后台请求排队；回答按所属 `Chat` 路由，标签 `!` 提醒未答请求。
 - 历史：`session/list` 模态；当前标签已有消息或流式时，Open/Resume 在新标签连接，否则就地 load/resume；Close chat 走 `session/close`。
 - MCP：JSON 模态，校验后传给 new/load/resume；命令面板解析 `available_commands_update`。
+- 诊断：顶部 “Logs” 打开 `Diagnostics`，显示发现状态、当前标签的 stderr 尾部、日志路径与 Reveal；stderr 同时写入滚动日志文件。
 - 计划/用量：composer 上方 plan，会话栏显示 usage/title。
 - 跨 goroutine 改状态：`win.Update(func(){ ... })`；没有窗口的测试用 `App.Flush` 排队应用。
-- 资源：`mygo.App.Path(mygo.PathResources)`；数据：`mygo.App.Path(mygo.PathData)`。
+- 资源：`mygo.App.Path(mygo.PathResources)`；数据与设置：`mygo.App.Path(mygo.PathUserData)`。
 - 登录：只展示 agent 的 `authMethods` / 命令，由用户在外部终端自行解决；不内嵌终端。
 - 参考 MyGo 示例：`examples/markdown-chat`。
 
 ## 数据与配置
 
-存储在 `mygo.App.Path(mygo.PathData)`：
+存储在 `mygo.App.Path(mygo.PathUserData)`：
 
 ```
-settings.json        上次使用的 agent、工作区、node/pi 路径
-logs/                每个 agent 的 stderr / 协议日志（滚动）
+settings.json        lastAgent、lastWorkspace、mcpServers、paths 覆盖
+logs/                每个 agent 的 stderr / 协议日志（1 MiB 滚动，保留一个 .1 备份）
 ```
 
-当前实现没有写 settings.json：MCP、图片草稿、上次 agent/工作区都只在内存；历史会话由 agent 自己保存。不存 registry 快照，也不缓存探测结果：启动时重新检测。
+`settings.json` 由 `internal/settings` 读写：
+
+- 结构：`{version, lastAgent, lastWorkspace, mcpServers, paths:{shell,node,pi,commandCode}}`。
+- 保存时机：切换标签、选择 agent/目录、Connect 校验成功（也覆盖手输工作区）、MCP Apply、退出。写入是原子的（同目录临时文件 + rename，0600），父目录不存在时创建。
+- 加载容错：文件缺失用默认值；JSON 损坏、MCP 不是数组、相对路径、未来版本只产生警告（工具栏显示），其余字段照常使用，绝不阻塞启动。
+- 路径优先级：`ACP_GUI_*` 环境变量 > `settings.json` 的 `paths` > 登录 shell 解析。显式覆盖无效时保留 shell 结果并警告，不会把可用的路径清空。
+- 只保存最后一次状态（当前标签的 agent/工作区/MCP），不保存多标签布局、图片草稿或消息；历史会话仍由 agent 自己保存。
+- 不存 registry 快照，也不缓存探测结果：启动时重新检测。
+
+`main.go` 把 `mygo.App.Path(mygo.PathUserData)` 传给 `ui.Options.DataDir`；`DataDir` 为空时完全不落盘（测试、便携运行）。
+
+日志由 `internal/logs` 写入 `<data>/logs/<agent>.log`：
+
+- 记录连接头（时间、agent、动作、工作区、命令行）、agent stderr 原样输出、`[protocol]` 错误、`[probe]` 发现失败和 `[exit]` 退出原因。
+- 单文件上限 1 MiB；写满时旧文件改名为 `<agent>.log.1`（覆盖上一份备份），新文件继续写。文件模式 0600。
+- UI 每个标签另保留最近 64 KiB stderr 供 Diagnostics 展示；完整历史看日志文件。
+- 日志可能包含 agent 输出里的敏感信息，只在用户打开 Diagnostics 时显示，不在主界面展开。
+- 写日志失败不影响会话，只丢掉文件副本。
 
 ## 安全与边界
 
 - 只探测内置表里的 pi / command-code，不遍历可执行文件，也不接受表外 agent。
 - 探测超时 5 秒；每次探测都要能杀掉进程组，不能残留。
 - 不静默安装任何 agent；未安装时只展示安装提示/命令。
-- agent 继承用户环境；不在日志里打印 API key。stderr 可能含敏感信息，默认折叠。
+- agent 继承用户环境；不在日志里主动打印 API key。stderr 可能含敏感信息：主界面不展开，Diagnostics 里可查看，日志文件 0600。
 - 不声明 `fs/*`、`terminal/*` 能力；未知 agent→client 请求一律拒绝。
 - 不管登录与模型可用性：不检测凭据/配额，不代跑登录命令，不在应用内打开终端。
 - 不管理 Node 运行时（不捆绑、不安装、不升级），只定位用户已有的 Node。

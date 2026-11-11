@@ -51,7 +51,7 @@ pi 是特例：命令由解析后的 `node` + `resources/agents/pi-acp/pi-acp.bu
 
 当前实现：`agent.BuiltinLaunchResults` 解析 pi 和 command-code 的路径/版本；对每个成功的 spec 并行执行 `session.Probe`（仅 `initialize`，5 秒）。单个 agent 失败只记录状态，不隐藏另一个。状态行展示 `ready` / `not-installed` / `installed-not-acp` / `needs-auth` / `error`。
 
-路径覆盖：`ACP_GUI_NODE`、`ACP_GUI_PI`、`ACP_GUI_COMMAND_CODE` 必须是绝对路径；`ACP_GUI_SHELL` 可换登录 shell。
+路径覆盖：`ACP_GUI_NODE`、`ACP_GUI_PI`、`ACP_GUI_COMMAND_CODE` 必须是绝对路径；`ACP_GUI_SHELL` 可换登录 shell。优先级为环境变量 > `settings.json` 的 `paths` > 登录 shell 解析；无效覆盖保留 shell 结果并警告。
 
 不写探测缓存文件：只有两个 agent，启动探测成本可控；缓存会额外引入 mtime/TTL 失效逻辑，收益低。
 

@@ -159,8 +159,11 @@ func ResolveEnvironment(ctx context.Context, opts ResolveOptions) Environment {
 	if opts.NodePath != "" {
 		path, err := absoluteExecutable(opts.NodePath, "node")
 		if err != nil {
-			env.Warnings = append(env.Warnings, err.Error())
-			env.NodePath = ""
+			warning := err.Error()
+			if env.NodePath != "" {
+				warning += "; using " + env.NodePath
+			}
+			env.Warnings = append(env.Warnings, warning)
 		} else {
 			env.NodePath = path
 		}
@@ -168,8 +171,11 @@ func ResolveEnvironment(ctx context.Context, opts ResolveOptions) Environment {
 	if opts.PiPath != "" {
 		path, err := absoluteExecutable(opts.PiPath, "pi")
 		if err != nil {
-			env.Warnings = append(env.Warnings, err.Error())
-			env.PiPath = ""
+			warning := err.Error()
+			if env.PiPath != "" {
+				warning += "; using " + env.PiPath
+			}
+			env.Warnings = append(env.Warnings, warning)
 		} else {
 			env.PiPath = path
 		}
@@ -177,8 +183,11 @@ func ResolveEnvironment(ctx context.Context, opts ResolveOptions) Environment {
 	if opts.CommandCodePath != "" {
 		path, err := absoluteExecutable(opts.CommandCodePath, "command-code")
 		if err != nil {
-			env.Warnings = append(env.Warnings, err.Error())
-			env.CommandCodePath = ""
+			warning := err.Error()
+			if env.CommandCodePath != "" {
+				warning += "; using " + env.CommandCodePath
+			}
+			env.Warnings = append(env.Warnings, warning)
 		} else {
 			env.CommandCodePath = path
 		}

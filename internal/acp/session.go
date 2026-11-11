@@ -26,11 +26,40 @@ type PromptParams struct {
 }
 
 // PromptResult is the end of a turn. StopReason is "end_turn",
-// "max_tokens", "refusal", "cancelled" and similar.
+// "max_tokens", "refusal", "cancelled" and similar. Usage is the optional
+// per-turn token report; it is not the context window (usage_update carries
+// used/size).
 type PromptResult struct {
 	StopReason string          `json:"stopReason"`
 	Usage      json.RawMessage `json:"usage,omitempty"`
 	Meta       json.RawMessage `json:"_meta,omitempty"`
+}
+
+// PromptUsage is the per-turn token report some agents return with
+// session/prompt. Fields are zero when the agent does not report them.
+type PromptUsage struct {
+	TotalTokens       int `json:"totalTokens"`
+	InputTokens       int `json:"inputTokens"`
+	OutputTokens      int `json:"outputTokens"`
+	ThoughtTokens     int `json:"thoughtTokens,omitempty"`
+	CachedReadTokens  int `json:"cachedReadTokens,omitempty"`
+	CachedWriteTokens int `json:"cachedWriteTokens,omitempty"`
+}
+
+// Tokens decodes the optional usage block. ok is false when it is absent,
+// malformed, or reports no tokens at all.
+func (r PromptResult) Tokens() (PromptUsage, bool) {
+	if len(r.Usage) == 0 || string(r.Usage) == "null" {
+		return PromptUsage{}, false
+	}
+	var usage PromptUsage
+	if err := json.Unmarshal(r.Usage, &usage); err != nil {
+		return PromptUsage{}, false
+	}
+	if usage.TotalTokens == 0 && usage.InputTokens == 0 && usage.OutputTokens == 0 && usage.ThoughtTokens == 0 {
+		return PromptUsage{}, false
+	}
+	return usage, true
 }
 
 // CancelParams is the session/cancel notification.

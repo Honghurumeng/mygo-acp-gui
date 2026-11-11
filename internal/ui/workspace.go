@@ -35,10 +35,12 @@ func (a *App) chooseWorkspace() {
 			if chat != nil && a.chatIndex(chat) >= 0 {
 				chat.Workspace = paths[0]
 				chat.WorkspaceError = ""
+				a.persistSettings()
 				return
 			}
 			a.Workspace = paths[0]
 			a.WorkspaceError = ""
+			a.persistSettings()
 		})
 	}()
 }

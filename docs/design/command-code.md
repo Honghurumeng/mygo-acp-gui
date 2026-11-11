@@ -49,8 +49,8 @@ Command Code 是用户自备的 CLI，应用只定位已有安装，不安装、
 - `agent_thought_chunk`：思考流
 - `agent_message_chunk`：正文流
 - `tool_call` / `tool_call_update`：`pending → in_progress → completed/failed`；工具内容在 `content` 数组里
-- `usage_update`：token/费用信息；当前 `internal/session` 未知 kind 原样透传，UI 忽略
-- prompt 结果除 `stopReason` 外还带 `usage` / `_meta`；当前只解析 `stopReason`
+- `usage_update`：上下文 used/size 与费用；`internal/session` 解析为 `UpdateUsage`，UI 显示在所属标签的会话栏
+- prompt 结果除 `stopReason` 外还带 `usage` / `_meta`；`usage` 解析为 `acp.PromptUsage` 并显示为 `turn … in · … out`，`_meta` 保留不展示
 
 `session/cancel` 是 notification；取消后 prompt 以 `stopReason: "cancelled"` 结束，同一会话可以继续发下一轮。用户拒绝权限时 agent 会发 `tool_call_update` 并把回合正常结束。
 
@@ -71,7 +71,7 @@ Command Code 是用户自备的 CLI，应用只定位已有安装，不安装、
 
 ### stderr
 
-Command Code 会向 stderr 写 `[acp] ...` 日志，也会打印它自己看到的请求/响应 JSON。应用单独收集 stderr，不把它当协议输出；只有 stdout 的 NDJSON 是 ACP。
+Command Code 会向 stderr 写 `[acp] ...` 日志，也会打印它自己看到的请求/响应 JSON。应用单独收集 stderr，不把它当协议输出；只有 stdout 的 NDJSON 是 ACP。stderr 同时进入当前标签的 Diagnostics 缓冲和 `logs/command-code.log`（1 MiB 滚动）。
 
 ## 当前应用覆盖
 
@@ -80,8 +80,6 @@ Command Code 会向 stderr 写 `[acp] ...` 日志，也会打印它自己看到�
 仍未实现（全局计划，不是 Command Code 特有）：
 
 - MCP servers 的可视化行编辑（当前是校验过的 JSON）
-- settings.json 持久化
-- 多会话并行
 
 ## 测试
 

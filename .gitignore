@@ -21,6 +21,9 @@ coverage.out
 # 本地进程
 *.pid
 
+# 本地 agent 配置/状态
+.commandcode/
+
 # 本地设计稿
 docs/*.png
 

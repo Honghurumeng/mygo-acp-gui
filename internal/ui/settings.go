@@ -70,6 +70,7 @@ func (a *App) settingsDialog(c *mui.Context) {
 						a.MCPText = prettyJSON(servers)
 						a.MCPError = ""
 						a.SettingsOpen = false
+						a.persistSettings()
 					}
 				}
 			})

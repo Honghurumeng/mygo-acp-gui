@@ -245,8 +245,8 @@ func TestResolveEnvironmentLoginShell(t *testing.T) {
 		NodePath: "./node",
 		Timeout:  2 * time.Second,
 	})
-	if rel.NodePath != "" {
-		t.Errorf("relative node override accepted: %q", rel.NodePath)
+	if rel.NodePath != filepath.Join(bin, "node") {
+		t.Errorf("invalid override discarded the shell result: %q; warnings=%v", rel.NodePath, rel.Warnings)
 	}
 	if len(rel.Warnings) == 0 {
 		t.Error("relative node override produced no warning")
