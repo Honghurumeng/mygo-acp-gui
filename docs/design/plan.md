@@ -107,6 +107,7 @@ scripts/vendor-pi-acp.sh             # 仅在升级 pi-acp 时运行
 
 - [x] 内置 agent（pi、command-code）路径/版本解析 + 可选列表 + 单 agent 失败不阻塞另一个
 - [x] 内置 agent 的 `initialize` 探测（5 秒，不缓存）+ `ready` / `not-installed` / `installed-not-acp` / `needs-auth` 状态展示
+- [x] 发现后异步配置探测（临时 `session/new` 读 `configOptions`），草稿即可选 provider / model / thinking，Connect 后自动补齐；provider 列表以 agent 当前返回的 model 选项为准，面板打开时节流刷新
 - [x] agent 选择 + 工作区选择 + 绝对路径/可写校验（上次使用由 settings.json 恢复）
 - [x] ACP 会话：initialize、session/new、session/prompt、agent_message_chunk 流式 Markdown、思考、工具调用、权限、取消
 - [x] 计划面板、配置选择、已保存会话（list/load/close）

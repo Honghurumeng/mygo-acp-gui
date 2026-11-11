@@ -108,6 +108,8 @@ pi 底层 RPC 的 `get_session_stats` 有 `contextUsage.tokens/contextWindow/per
 
 **应用不处理登录**：不实现登录流程、不内嵌终端、不代跑登录命令、不检测凭据是否可用。模型可用性（凭据、订阅、配额）完全由用户自己解决。
 
+ACP 没有独立的 provider 可用性接口。pi-acp 的 model `configOptions` 来自 pi RPC `get_available_models`，只包含已配置凭据的 provider；它是 pi 自己的声明，不是网络健康检查。GUI 只按这份列表展示 provider，打开模型面板时会重读，登录或改配置后列表会跟着变；已配置但已失效的 key/token 仍可能被 pi 列出，只有真正请求时才会报错。
+
 `session/new` 失败且带 `authMethods` 时只做展示：
 
 - 列出每个 method 的 `name` / `description`；`terminal` 类型把 `args` 拼成可复制的命令行，例如：

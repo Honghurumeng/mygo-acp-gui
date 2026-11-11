@@ -36,8 +36,10 @@
 
 `Info` 解析 `configOptions`（model、effort 等）和 `modes`，并兼容只有 `models` 的旧 agent（合成为 `model` 配置项）。
 
-- composer 的模型 chip 打开面板，四列为 agent / provider / model / thinking；provider 由模型值的 `/` 或 `:` 前缀分组，没有前缀时归入 `Models`。
-- agent 只在会话开始前可选；连接后锁定。切换 agent 后重新 Connect 才生效。
+- composer 的模型 chip 打开面板，四列为 agent / provider / model / thinking；provider 由模型值的 `/` 或 `:` 前缀分组，没有前缀时归入 `Models`。可用 provider 只来自 agent 返回的 model `configOptions`：ACP 没有单独的 provider 可用性接口，模型选项就是 agent 对「当前可用模型」的声明。
+- 草稿（还没有 session）也能选 provider / model / thinking：面板数据来自发现阶段的配置探测（`AgentConfigs`），选择存在 `Chat.PendingConfig`，Connect 拿到 session 后按 model 优先的顺序调 `session/set_config_option` 补上；断开连接时把当前值回填为草稿选择，重连不丢。
+- 启动时的配置缓存不是永久事实：草稿每次打开模型面板都会异步重读 agent 的 model 列表（正常 30 秒节流，缓存为空时 5 秒重试；失败保留旧列表，读取中没有 session 也保留），所以登录/改配置后不再出现的 provider 会在刷新后消失；连接成功、`config_option_update`、切换配置和断开时都用真实 session 的 `configOptions` 更新缓存。`PendingConfig` 里已被刷新掉的 model 在 Connect 时跳过，不会静默换用别的模型。
+- agent 只在会话开始前可选；连接后锁定。切换 agent 后重新 Connect 才生效，同时清掉属于旧 agent 的草稿配置选择。
 - 选择 model / thinking 调用 `session/set_config_option` `{sessionId, configId, value}`；其他 select 型配置追加显示在 thinking 列。
 - 模式 chip 显示当前 mode，点击后调用 `session/set_mode` `{sessionId, modeId}`。
 - 两者都更新 `Info`，并接收 agent 的 `config_option_update` / `current_mode_update` 通知。

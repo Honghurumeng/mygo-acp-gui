@@ -13,6 +13,7 @@
  * 环境变量：
  *   FAKE_AGENT_CHILD_PID_FILE  启动一个子进程并把 pid 写入该文件，
  *                              用于验证关闭时会杀掉整个进程组。
+ *   FAKE_AGENT_NO_SESSION      让 session/new 返回 -32000，模拟需要登录的 agent。
  */
 import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
@@ -301,6 +302,14 @@ rl.on('line', (line) => {
       return;
 
     case 'session/new': {
+      if (process.env.FAKE_AGENT_NO_SESSION) {
+        send({
+          jsonrpc: '2.0',
+          id,
+          error: { code: -32000, message: 'authentication required' },
+        });
+        return;
+      }
       sessionCounter += 1;
       lastSessionId = sessionCounter === 1 ? 'fake-session' : `fake-session-${sessionCounter}`;
       lastMCPServers = params.mcpServers ?? [];

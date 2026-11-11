@@ -169,7 +169,8 @@ func modeLabel(mode acp.Mode) string {
 func (a *App) modelChip(c *mui.Context, chat *Chat) {
 	model := ""
 	thinking := ""
-	if option := chat.modelOption(); option != nil {
+	options := a.chatConfigOptions(chat)
+	if option := modelOptionOf(options); option != nil {
 		model = configChoiceName(option, option.CurrentValue)
 	}
 	if model == "" {
@@ -179,7 +180,7 @@ func (a *App) modelChip(c *mui.Context, chat *Chat) {
 			model = chat.agentName()
 		}
 	}
-	if option := chat.thinkingOption(); option != nil {
+	if option := thinkingOptionOf(options); option != nil {
 		thinking = configChoiceName(option, option.CurrentValue)
 	}
 	if model == "" {
@@ -195,6 +196,12 @@ func (a *App) modelChip(c *mui.Context, chat *Chat) {
 	chip.Tooltip("Agent, provider, model and thinking")
 	if chip.Clicked() {
 		chat.ModelOpen = !chat.ModelOpen
+		if chat.ModelOpen {
+			// The startup probe may predate a login or model change. Re-read
+			// the agent's own model list so the provider column only shows
+			// currently advertised models (throttled in probeAgentConfig).
+			a.refreshAgentConfig(chat)
+		}
 	}
 	mui.Popover(c, chip, &chat.ModelOpen, func() {
 		a.modelPanel(c, chat)
@@ -203,10 +210,11 @@ func (a *App) modelChip(c *mui.Context, chat *Chat) {
 
 func (a *App) modelPanel(c *mui.Context, chat *Chat) {
 	t := c.Theme()
-	option := chat.modelOption()
-	thinking := chat.thinkingOption()
+	options := a.chatConfigOptions(chat)
+	option := modelOptionOf(options)
+	thinking := thinkingOptionOf(options)
 	locked := chat.ConfigBusy != "" || chat.Connecting || chat.Streaming || chat.Busy != ""
-	configLocked := locked || chat.Info.SessionID == ""
+	configLocked := locked
 
 	mui.Row(c).Height(252).Gap(1).Children(func() {
 		a.modelColumn(c, "Agent", 122, func(inner *mui.Context) {
@@ -225,6 +233,9 @@ func (a *App) modelPanel(c *mui.Context, chat *Chat) {
 					a.preferredAgentID = spec.ID
 					chat.WorkspaceError = ""
 					chat.ConnectError = ""
+					// Model and thinking belong to the previous agent.
+					chat.clearDraftConfig()
+					a.probeAgentConfig(spec, false)
 					a.persistSettings()
 				}
 			}
@@ -232,11 +243,18 @@ func (a *App) modelPanel(c *mui.Context, chat *Chat) {
 
 		a.modelColumn(c, "Provider", 112, func(inner *mui.Context) {
 			providers := modelProviders(option)
+			if chat.Session == nil && a.agentConfigBusy[chat.Agent.ID] {
+				mui.Text(inner, "Refreshing providers…").FontSize(9).TextColor(t.TextMuted)
+			}
 			if len(providers) == 0 {
-				mui.Text(inner, "Connect first").FontSize(9).TextColor(t.TextMuted)
+				label := "Connect first"
+				if chat.Session == nil {
+					label = "No options yet"
+				}
+				mui.Text(inner, label).FontSize(9).TextColor(t.TextMuted)
 				return
 			}
-			current := chat.currentProvider()
+			current := chat.currentProvider(options)
 			if !containsString(providers, current) {
 				current = providers[0]
 				chat.ModelProvider = current
@@ -252,10 +270,14 @@ func (a *App) modelPanel(c *mui.Context, chat *Chat) {
 
 		a.modelColumn(c, "Model", 162, func(inner *mui.Context) {
 			if option == nil {
-				mui.Text(inner, "No model option").FontSize(9).TextColor(t.TextMuted)
+				label := "No model option"
+				if chat.Session == nil {
+					label = "No options yet"
+				}
+				mui.Text(inner, label).FontSize(9).TextColor(t.TextMuted)
 				return
 			}
-			provider := chat.currentProvider()
+			provider := chat.currentProvider(options)
 			choices := modelChoices(option, provider)
 			if len(choices) == 0 {
 				mui.Text(inner, "No models").FontSize(9).TextColor(t.TextMuted)
@@ -277,7 +299,11 @@ func (a *App) modelPanel(c *mui.Context, chat *Chat) {
 
 		a.modelColumn(c, "Thinking", 132, func(inner *mui.Context) {
 			if thinking == nil || len(thinking.Options) == 0 {
-				mui.Text(inner, "No thinking options").FontSize(9).TextColor(t.TextMuted)
+				label := "No thinking options"
+				if thinking == nil && chat.Session == nil {
+					label = "No options yet"
+				}
+				mui.Text(inner, label).FontSize(9).TextColor(t.TextMuted)
 			} else {
 				for _, choice := range thinking.Options {
 					choice := choice
@@ -288,7 +314,7 @@ func (a *App) modelPanel(c *mui.Context, chat *Chat) {
 					}
 				}
 			}
-			for _, extra := range chat.extraConfigOptions() {
+			for _, extra := range extraConfigOptionsOf(options) {
 				extra := extra
 				mui.Text(inner, configOptionLabel(extra)).FontSize(9).Bold().TextColor(t.TextMuted).Padding(6, 4, 0, 4)
 				for _, choice := range extra.Options {
@@ -480,13 +506,46 @@ func acceptCommand(chat *Chat, command acp.AvailableCommand) {
 	}
 }
 
-// modelOption is the config option that selects the model.
-func (c *Chat) modelOption() *acp.ConfigOption {
-	if c == nil {
+// chatConfigOptions returns the config options to draw: the live session's
+// while connected, otherwise the discovery cache of the chat's agent. Draft
+// picks are applied on top so the panel shows what Connect will send.
+func (a *App) chatConfigOptions(chat *Chat) []acp.ConfigOption {
+	if chat == nil {
 		return nil
 	}
-	for i := range c.Info.ConfigOptions {
-		option := &c.Info.ConfigOptions[i]
+	if chat.Session != nil {
+		return chat.Info.ConfigOptions
+	}
+	cached := a.AgentConfigs[chat.Agent.ID]
+	if len(cached) == 0 {
+		return chat.Info.ConfigOptions
+	}
+	if len(chat.PendingConfig) == 0 {
+		return cached
+	}
+	out := make([]acp.ConfigOption, len(cached))
+	for i, option := range cached {
+		out[i] = option
+		if value, ok := chat.PendingConfig[option.ID]; ok && configHasChoice(option, value) {
+			out[i].CurrentValue = value
+		}
+	}
+	return out
+}
+
+func configHasChoice(option acp.ConfigOption, value string) bool {
+	for _, choice := range option.Options {
+		if choice.Value == value {
+			return true
+		}
+	}
+	return false
+}
+
+// modelOptionOf is the config option that selects the model.
+func modelOptionOf(options []acp.ConfigOption) *acp.ConfigOption {
+	for i := range options {
+		option := &options[i]
 		if option.ID == "model" || option.Category == "model" {
 			return option
 		}
@@ -494,18 +553,17 @@ func (c *Chat) modelOption() *acp.ConfigOption {
 	return nil
 }
 
-// thinkingOption is the config option that selects reasoning effort.
-func (c *Chat) thinkingOption() *acp.ConfigOption {
-	if c == nil {
-		return nil
-	}
+// thinkingOptionOf is the config option that selects reasoning effort.
+func thinkingOptionOf(options []acp.ConfigOption) *acp.ConfigOption {
 	for _, id := range []string{"thought_level", "thinking", "reasoning", "effort"} {
-		if option := c.Info.ConfigOption(id); option != nil {
-			return option
+		for i := range options {
+			if options[i].ID == id {
+				return &options[i]
+			}
 		}
 	}
-	for i := range c.Info.ConfigOptions {
-		option := &c.Info.ConfigOptions[i]
+	for i := range options {
+		option := &options[i]
 		category := strings.ToLower(option.Category)
 		id := strings.ToLower(option.ID)
 		if strings.Contains(category, "thought") || strings.Contains(category, "reason") ||
@@ -516,14 +574,11 @@ func (c *Chat) thinkingOption() *acp.ConfigOption {
 	return nil
 }
 
-func (c *Chat) extraConfigOptions() []acp.ConfigOption {
-	if c == nil {
-		return nil
-	}
-	model := c.modelOption()
-	thinking := c.thinkingOption()
+func extraConfigOptionsOf(options []acp.ConfigOption) []acp.ConfigOption {
+	model := modelOptionOf(options)
+	thinking := thinkingOptionOf(options)
 	var extras []acp.ConfigOption
-	for _, option := range c.Info.ConfigOptions {
+	for _, option := range options {
 		if len(option.Options) == 0 || (option.Type != "" && option.Type != "select") {
 			continue
 		}
@@ -538,14 +593,14 @@ func (c *Chat) extraConfigOptions() []acp.ConfigOption {
 	return extras
 }
 
-func (c *Chat) currentProvider() string {
+func (c *Chat) currentProvider(options []acp.ConfigOption) string {
 	if c == nil {
 		return ""
 	}
 	if c.ModelProvider != "" {
 		return c.ModelProvider
 	}
-	option := c.modelOption()
+	option := modelOptionOf(options)
 	if option == nil {
 		return ""
 	}

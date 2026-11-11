@@ -179,6 +179,9 @@ func TestProbeAndStandaloneList(t *testing.T) {
 	if info.AgentInfo == nil || info.AgentInfo.Name != "fake-agent" {
 		t.Errorf("probe info = %+v", info)
 	}
+	if info.SessionID != "" {
+		t.Errorf("initialize-only probe opened a session: %q", info.SessionID)
+	}
 
 	sessions, err := ListSessions(ctx, launch, workspace)
 	if err != nil {
@@ -186,5 +189,41 @@ func TestProbeAndStandaloneList(t *testing.T) {
 	}
 	if len(sessions) != 1 || sessions[0].SessionID != "fake-history" {
 		t.Errorf("sessions = %+v", sessions)
+	}
+}
+
+func TestProbeConfigReadsConfigOptions(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns the fake agent")
+	}
+	launch, _ := fakeLaunch(t)
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	defer cancel()
+
+	info, err := ProbeConfig(ctx, launch)
+	if err != nil {
+		t.Fatalf("probe config: %v", err)
+	}
+	if info.SessionID == "" {
+		t.Fatal("probe config returned no session")
+	}
+	model := info.ConfigOption("model")
+	if model == nil || len(model.Options) == 0 {
+		t.Fatalf("config options = %+v", info.ConfigOptions)
+	}
+	if info.ConfigOption("thought_level") == nil {
+		t.Errorf("thinking option missing: %+v", info.ConfigOptions)
+	}
+
+	// The options probe must survive a session/new failure: an agent that
+	// needs a login still has to probe cleanly, just without options.
+	broken := launch
+	broken.Env = append(append([]string(nil), launch.Env...), "FAKE_AGENT_NO_SESSION=1")
+	info, err = ProbeConfig(ctx, broken)
+	if err != nil {
+		t.Fatalf("probe config without session/new: %v", err)
+	}
+	if info.AgentInfo == nil || len(info.ConfigOptions) != 0 {
+		t.Errorf("unexpected fallback info = %+v", info)
 	}
 }

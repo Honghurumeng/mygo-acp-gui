@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/egoist/mygo"
 	mui "github.com/egoist/mygo/ui"
@@ -35,6 +36,10 @@ type Options struct {
 	// DataDir enables settings.json persistence; empty keeps everything in
 	// memory (tests, portable runs).
 	DataDir string
+	// ProbeConfig reads an agent's session config options during discovery
+	// and when the draft model panel needs a refresh. Nil uses
+	// session.ProbeConfig; tests can replace it.
+	ProbeConfig func(context.Context, agent.LaunchSpec) (session.Info, error)
 }
 
 // MessageRole is how a chat row is drawn.
@@ -102,9 +107,16 @@ type App struct {
 	Agents        []agent.LaunchSpec
 	AgentIndex    int
 	AgentStatuses []AgentStatus
-	Env           agent.Environment
-	Resolving     bool
-	ResolveError  string
+	// AgentConfigs caches each ready agent's session config options (the
+	// model/thinking selects behind the composer chip) from a throwaway
+	// session/new during discovery, so a draft can pick them before it
+	// connects. Keyed by agent ID. The cache is refreshed from live sessions
+	// and by reopening the model panel; ACP has no provider-readiness call,
+	// so the agent's current model list is the only availability signal.
+	AgentConfigs map[string][]acp.ConfigOption
+	Env          agent.Environment
+	Resolving    bool
+	ResolveError string
 
 	// Workspace is the draft workspace used when no chat exists. An open
 	// chat carries its own workspace.
@@ -184,6 +196,12 @@ type App struct {
 
 	injectedAgents bool
 	resolveOpts    agent.ResolveOptions
+	probeConfig    func(context.Context, agent.LaunchSpec) (session.Info, error)
+
+	// agentConfigAt and agentConfigBusy throttle config probes. Both are
+	// UI-thread state; background probes only post their result back.
+	agentConfigAt   map[string]time.Time
+	agentConfigBusy map[string]bool
 
 	settings         *settings.Store
 	settingsPaths    settings.Paths
@@ -224,7 +242,11 @@ func New(opts Options) *App {
 		logs:               make(map[string]*logs.Log),
 		resolveOpts:        opts.Resolve,
 		injectedAgents:     opts.Agents != nil,
+		probeConfig:        session.ProbeConfig,
 		Workspaces:         []string{},
+		AgentConfigs:       make(map[string][]acp.ConfigOption),
+		agentConfigAt:      make(map[string]time.Time),
+		agentConfigBusy:    make(map[string]bool),
 		WorkspaceCollapsed: make(map[string]bool),
 		WorkspaceExpanded:  make(map[string]bool),
 		RemovedWorkspaces:  make(map[string]bool),
@@ -238,6 +260,9 @@ func New(opts Options) *App {
 		}
 	} else {
 		a.Resolving = true
+	}
+	if opts.ProbeConfig != nil {
+		a.probeConfig = opts.ProbeConfig
 	}
 	a.MCPServers = []any{}
 	a.MCPText = "[]"

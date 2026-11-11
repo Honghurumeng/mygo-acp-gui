@@ -63,6 +63,11 @@ type Chat struct {
 	ModeOpen      bool
 	MenuOpen      bool
 
+	// PendingConfig holds config choices made while this chat is still a
+	// draft: the composer shows the discovery cache, and Connect applies the
+	// picks right after session/new.
+	PendingConfig map[string]string
+
 	// pendingSend remembers a submit made while the chat was still a draft:
 	// Connect runs first, then the prompt is sent.
 	pendingSend bool
@@ -111,6 +116,45 @@ func (c *Chat) agentName() string {
 
 func (c *Chat) live() bool {
 	return c != nil && (c.Session != nil || c.Connecting)
+}
+
+// draftConfig returns a copy of the draft's config choices, or nil when the
+// chat is not a draft or nothing was picked.
+func (c *Chat) draftConfig() map[string]string {
+	if c == nil || c.Session != nil || len(c.PendingConfig) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(c.PendingConfig))
+	for id, value := range c.PendingConfig {
+		out[id] = value
+	}
+	return out
+}
+
+// seedDraftConfig keeps the live selection visible after a disconnect, so a
+// later reconnect re-applies it instead of falling back to the defaults.
+func (c *Chat) seedDraftConfig() {
+	if c == nil {
+		return
+	}
+	for _, option := range c.Info.ConfigOptions {
+		if len(option.Options) == 0 || option.CurrentValue == "" {
+			continue
+		}
+		if c.PendingConfig == nil {
+			c.PendingConfig = make(map[string]string)
+		}
+		c.PendingConfig[option.ID] = option.CurrentValue
+	}
+}
+
+// clearDraftConfig drops choices that belong to a previous agent.
+func (c *Chat) clearDraftConfig() {
+	if c == nil {
+		return
+	}
+	c.PendingConfig = nil
+	c.ModelProvider = ""
 }
 
 func (c *Chat) clearPendingSession() {

@@ -16,6 +16,19 @@ import (
 // is the discovery check: a valid ACP agent is one that answers initialize.
 // The caller controls the timeout through ctx.
 func Probe(ctx context.Context, launch agent.LaunchSpec) (Info, error) {
+	return probe(ctx, launch, true)
+}
+
+// ProbeConfig is Probe plus a throwaway session/new so callers can read the
+// agent's config options (provider, model, thinking) before the first real
+// connect. A failing session/new is not an error: agents that need a login
+// still probe cleanly, they just report no options. The caller controls the
+// timeout of both round trips through ctx.
+func ProbeConfig(ctx context.Context, launch agent.LaunchSpec) (Info, error) {
+	return probe(ctx, launch, false)
+}
+
+func probe(ctx context.Context, launch agent.LaunchSpec, initializeOnly bool) (Info, error) {
 	dir, err := os.MkdirTemp("", "acp-gui-probe-*")
 	if err != nil {
 		return Info{}, fmt.Errorf("probe: workspace: %w", err)
@@ -49,6 +62,12 @@ func Probe(ctx context.Context, launch agent.LaunchSpec) (Info, error) {
 		return Info{}, err
 	}
 	info := s.Info()
+	if !initializeOnly {
+		// Best effort: the session is only used to read configOptions.
+		if state, sessionErr := s.NewSession(ctx, dir, []any{}); sessionErr == nil {
+			info = state
+		}
+	}
 	closeErr := s.Close()
 	protocolMu.Lock()
 	clean := protocolErr

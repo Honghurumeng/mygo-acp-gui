@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -129,7 +130,130 @@ func (a *App) discover(ctx context.Context) {
 				chat.Agent = a.Agents[a.AgentIndex]
 			}
 		}
+		// Second pass: read each ready agent's config options so the composer
+		// can offer provider, model and thinking without a connect.
+		a.probeAgentConfigs()
 	})
+}
+
+// probeAgentConfig starts one throwaway session per ready agent to cache its
+// config options. It runs after the status check has already been published,
+// so it never delays startup and cannot change an agent's status.
+func (a *App) probeAgentConfigs() {
+	for _, spec := range a.Agents {
+		a.probeAgentConfig(spec, true)
+	}
+}
+
+const (
+	agentConfigProbeTimeout = 12 * time.Second
+	// A draft panel re-reads the agent's model list when it opens, but not
+	// more often than this; each read spawns an agent + session/new.
+	agentConfigRefreshAfter = 30 * time.Second
+	// With an empty cache (for example after login was still missing during
+	// discovery), retry sooner so the panel can populate without a restart.
+	agentConfigRetryAfter = 5 * time.Second
+)
+
+// probeAgentConfig refreshes one agent's cached config options in the
+// background. ACP has no separate provider-readiness method: the model
+// select in session/new is the agent's own list of usable models, so
+// re-reading it is how stale or unauthenticated providers disappear. A
+// failed read keeps the previous cache instead of showing an empty panel.
+// All map access is on the UI thread; the goroutine only posts its result.
+func (a *App) probeAgentConfig(spec agent.LaunchSpec, force bool) {
+	if a.closed.Load() || spec.ID == "" || a.probeConfig == nil {
+		return
+	}
+	if a.agentConfigBusy == nil {
+		a.agentConfigBusy = make(map[string]bool)
+	}
+	if a.agentConfigAt == nil {
+		a.agentConfigAt = make(map[string]time.Time)
+	}
+	if a.agentConfigBusy[spec.ID] {
+		return
+	}
+	if !force {
+		wait := agentConfigRefreshAfter
+		if len(a.AgentConfigs[spec.ID]) == 0 {
+			wait = agentConfigRetryAfter
+		}
+		if at, ok := a.agentConfigAt[spec.ID]; ok && time.Since(at) < wait {
+			return
+		}
+	}
+	a.agentConfigBusy[spec.ID] = true
+	ctx, cancel := context.WithTimeout(a.lifeCtx, agentConfigProbeTimeout)
+	a.cleanup.Add(1)
+	go func() {
+		defer a.cleanup.Done()
+		defer cancel()
+		info, err := a.probeConfig(ctx, spec)
+		// ProbeConfig ignores a failed session/new; an empty SessionID means
+		// the agent did not actually return a session, so keep old options.
+		fresh := err == nil && info.SessionID != ""
+		options := copyConfigOptions(info.ConfigOptions)
+		a.Post(func() {
+			delete(a.agentConfigBusy, spec.ID)
+			if a.closed.Load() {
+				return
+			}
+			// Throttle failed attempts too, so a broken agent is not spawned
+			// every time the panel opens.
+			a.agentConfigAt[spec.ID] = time.Now()
+			if !fresh {
+				return
+			}
+			a.AgentConfigs[spec.ID] = options
+		})
+	}()
+}
+
+// refreshAgentConfig re-reads the provider/model list behind a draft. A
+// connected chat reads its live session instead.
+func (a *App) refreshAgentConfig(chat *Chat) {
+	if chat == nil || chat.Session != nil || chat.Connecting {
+		return
+	}
+	spec := chat.Agent
+	if spec.ID == "" {
+		var ok bool
+		spec, ok = a.preferredAgent()
+		if !ok {
+			return
+		}
+	}
+	a.probeAgentConfig(spec, false)
+}
+
+// cacheAgentConfigs keeps the draft cache in step with a live session, whose
+// configOptions came from a real session/new and therefore already reflect
+// the agent's current model availability.
+func (a *App) cacheAgentConfigs(agentID string, options []acp.ConfigOption) {
+	if agentID == "" || a.closed.Load() {
+		return
+	}
+	if a.AgentConfigs == nil {
+		a.AgentConfigs = make(map[string][]acp.ConfigOption)
+	}
+	if a.agentConfigAt == nil {
+		a.agentConfigAt = make(map[string]time.Time)
+	}
+	a.AgentConfigs[agentID] = copyConfigOptions(options)
+	a.agentConfigAt[agentID] = time.Now()
+}
+
+func copyConfigOptions(options []acp.ConfigOption) []acp.ConfigOption {
+	if len(options) == 0 {
+		return nil
+	}
+	out := make([]acp.ConfigOption, len(options))
+	for i, option := range options {
+		out[i] = option
+		out[i].Options = append([]acp.ConfigOptionValue(nil), option.Options...)
+	}
+	return out
 }
 
 func (a *App) retryDiscovery() {
@@ -138,6 +262,7 @@ func (a *App) retryDiscovery() {
 	}
 	a.Resolving = true
 	a.ResolveError = ""
+	a.AgentConfigs = make(map[string][]acp.ConfigOption)
 	for i := range a.AgentStatuses {
 		a.AgentStatuses[i].Status = AgentProbing
 		a.AgentStatuses[i].Detail = ""
@@ -202,6 +327,7 @@ func (a *App) Connect() {
 	action := chat.pendingSessionAction
 	sessionID := chat.pendingSessionID
 	title := chat.pendingSessionTitle
+	pendingConfig := chat.draftConfig()
 	chat.clearPendingSession()
 	cfg := session.Config{
 		Launch:     spec,
@@ -280,6 +406,7 @@ func (a *App) Connect() {
 		if !a.trackSession(s) {
 			return
 		}
+		a.applyDraftConfig(ctx, s, spec.ID, pendingConfig)
 		a.Post(func() {
 			if a.closed.Load() || !a.connectIsCurrent(chat, gen) {
 				a.untrackSession(s)
@@ -298,6 +425,8 @@ func (a *App) Connect() {
 			}
 			chat.Session = s
 			chat.Info = s.Info()
+			a.cacheAgentConfigs(spec.ID, chat.Info.ConfigOptions)
+			chat.PendingConfig = nil
 			chat.Connecting = false
 			chat.Connected = true
 			chat.ConnectError = ""
@@ -340,6 +469,42 @@ func (a *App) connectIsCurrent(chat *Chat, gen int) bool {
 	return chat != nil && !chat.Closed && a.chatIndex(chat) >= 0 && chat.connectCurrent(gen) && !a.closed.Load()
 }
 
+// applyDraftConfig pushes the choices made in a draft (model, thinking, …)
+// onto the freshly created session, before the first prompt is sent, so the
+// turn uses what the composer showed. It runs on the connect goroutine.
+func (a *App) applyDraftConfig(ctx context.Context, s *session.Session, agentID string, pending map[string]string) {
+	if len(pending) == 0 {
+		return
+	}
+	info := s.Info()
+	ids := make([]string, 0, len(pending))
+	for id := range pending {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool {
+		// The model decides which thinking values exist.
+		if (ids[i] == "model") != (ids[j] == "model") {
+			return ids[i] == "model"
+		}
+		return ids[i] < ids[j]
+	})
+	for _, id := range ids {
+		value := pending[id]
+		option := info.ConfigOption(id)
+		if option == nil || option.CurrentValue == value || !configHasChoice(*option, value) {
+			continue
+		}
+		callCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		_, err := s.SetConfigOption(callCtx, id, value)
+		cancel()
+		if err != nil {
+			a.appendAgentLog(agentID, []byte("[config] "+id+"="+value+": "+err.Error()+"\n"))
+			continue
+		}
+		info = s.Info()
+	}
+}
+
 func (a *App) markAgentAuth(id string, err error) {
 	if session.IsAuthRequired(err) {
 		a.setAgentStatus(id, AgentNeedsAuth, err.Error())
@@ -377,6 +542,10 @@ func (a *App) Disconnect() {
 		a.closeInBackground(chat, s)
 	}
 	chat.Connected = false
+	if chat.Info.SessionID != "" {
+		a.cacheAgentConfigs(chat.Agent.ID, chat.Info.ConfigOptions)
+	}
+	chat.seedDraftConfig()
 	chat.Info = session.Info{}
 	chat.pendingSend = false
 	a.resetConversation(chat)
@@ -522,7 +691,16 @@ func (a *App) stop() {
 
 func (a *App) setConfigOption(id, value string) {
 	chat := a.activeChat()
-	if chat == nil || chat.Session == nil || chat.ConfigBusy != "" || chat.Connecting || chat.Streaming || chat.Busy != "" {
+	if chat == nil || chat.ConfigBusy != "" || chat.Connecting || chat.Streaming || chat.Busy != "" {
+		return
+	}
+	if chat.Session == nil {
+		// Draft: there is no session yet, so remember the choice and let
+		// Connect push it after session/new.
+		if chat.PendingConfig == nil {
+			chat.PendingConfig = make(map[string]string)
+		}
+		chat.PendingConfig[id] = value
 		return
 	}
 	s := chat.Session
@@ -540,6 +718,7 @@ func (a *App) setConfigOption(id, value string) {
 				chat.Info.ConfigOptions = options
 			}
 			chat.Info = s.Info()
+			a.cacheAgentConfigs(chat.Agent.ID, chat.Info.ConfigOptions)
 			if err != nil {
 				a.addError(chat, err)
 			}
@@ -608,6 +787,7 @@ func (a *App) newSession() {
 			}
 			chat.Info = info
 			chat.Title = info.Title
+			a.cacheAgentConfigs(chat.Agent.ID, info.ConfigOptions)
 			a.rememberArchivedSession(chat)
 		})
 	}()
@@ -685,6 +865,7 @@ func (a *App) loadHistory(sessionID, title, cwd string) {
 				return
 			}
 			chat.Info = newInfo
+			a.cacheAgentConfigs(chat.Agent.ID, newInfo.ConfigOptions)
 			if cwd != "" {
 				workspace := a.workspacePath(cwd)
 				chat.Workspace = workspace
@@ -742,6 +923,7 @@ func (a *App) applyUpdate(chat *Chat, ev session.Event) {
 	case session.UpdateConfigOption:
 		if len(ev.ConfigOptions) > 0 {
 			chat.Info.ConfigOptions = ev.ConfigOptions
+			a.cacheAgentConfigs(chat.Agent.ID, ev.ConfigOptions)
 		}
 		chat.ConfigBusy = ""
 		return

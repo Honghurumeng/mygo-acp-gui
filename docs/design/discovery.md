@@ -51,6 +51,12 @@ pi 是特例：命令由解析后的 `node` + `resources/agents/pi-acp/pi-acp.bu
 
 当前实现：`agent.BuiltinLaunchResults` 解析 pi 和 command-code 的路径/版本；对每个成功的 spec 并行执行 `session.Probe`（仅 `initialize`，5 秒）。单个 agent 失败只记录状态，不隐藏另一个。状态行展示 `ready` / `not-installed` / `installed-not-acp` / `needs-auth` / `error`。
 
+状态定下之后再跑一轮**配置探测**（`session.ProbeConfig`）：用临时工作区做 `initialize` + 一次用完即弃的 `session/new`，把 `configOptions` 缓存到内存的 `AgentConfigs[agentID]`，让输入框在连接前就能选 provider / model / thinking。这一轮单独 12 秒预算、异步执行，失败只丢缓存，既不延迟启动也不改变状态。
+
+ACP 没有独立的 provider 可用性查询；`session/new` 返回的 model `configOptions` 是 agent 对当前可用模型的声明（例如 pi-acp 只列出已配置凭据的 provider）。因此缓存会持续更新：草稿打开模型面板时异步重读（正常 30 秒节流，缓存为空时 5 秒重试；失败或无 session 时保留旧列表），连接成功后用真实 session 的选项覆盖，`config_option_update` / `set_config_option` / 断开时也同步。刷新后不存在的 provider 不再展示。
+
+缓存只存在内存，不落盘；用面板刷新 + 真实会话更新代替持久化失效逻辑。
+
 路径覆盖：`ACP_GUI_NODE`、`ACP_GUI_PI`、`ACP_GUI_COMMAND_CODE` 必须是绝对路径；`ACP_GUI_SHELL` 可换登录 shell。优先级为环境变量 > `settings.json` 的 `paths` > 登录 shell 解析；无效覆盖保留 shell 结果并警告。
 
 不写探测缓存文件：只有两个 agent，启动探测成本可控；缓存会额外引入 mtime/TTL 失效逻辑，收益低。
@@ -76,7 +82,9 @@ pi 是特例：命令由解析后的 `node` + `resources/agents/pi-acp/pi-acp.bu
 
 探测时声明 `fs: false`、`terminal: false`，与本应用实际能力一致；不要为了“探测成功”而声明用不到的能力。
 
-`session/new` 是第二层验证（能否真正开会话），只在用户选中 agent / 点“连接”时做。`session/new` 返回 `-32000` 或 `auth_required` 时进入“需要登录”状态，只展示 agent 的 `authMethods`（名称、描述、可复制命令）；应用不代登录、不内嵌终端，由用户自己在外部终端解决后重连。
+`session/new` 是第二层验证（能否真正开会话），用户点“连接”时做；`session/new` 返回 `-32000` 或 `auth_required` 时进入“需要登录”状态，只展示 agent 的 `authMethods`（名称、描述、可复制命令）；应用不代登录、不内嵌终端，由用户自己在外部终端解决后重连。
+
+配置探测同样走 `session/new`，但它只读 `configOptions`：失败被忽略（需要登录的 agent 本来就拿不到），不影响状态机；探测出的选项仅用于草稿的模型面板，草稿上的选择在真正 Connect 后由 `session/set_config_option` 补齐。
 
 ## 状态模型
 

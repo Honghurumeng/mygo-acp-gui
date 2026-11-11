@@ -1,11 +1,127 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+
+	mui "github.com/egoist/mygo/ui"
+	"github.com/reed/acp-gui/internal/acp"
+	"github.com/reed/acp-gui/internal/agent"
+	"github.com/reed/acp-gui/internal/session"
 )
+
+func TestModelPanelRefreshesProviderList(t *testing.T) {
+	stale := []acp.ConfigOption{{
+		ID: "model", Name: "Model", Category: "model", Type: "select", CurrentValue: "stale/old",
+		Options: []acp.ConfigOptionValue{{Value: "stale/old", Name: "stale/old"}},
+	}}
+	fresh := []acp.ConfigOption{{
+		ID: "model", Name: "Model", Category: "model", Type: "select", CurrentValue: "demo/small",
+		Options: []acp.ConfigOptionValue{
+			{Value: "demo/small", Name: "demo/small"},
+			{Value: "other/only", Name: "other/only"},
+		},
+	}}
+	app := New(Options{
+		Version:   "test",
+		Workspace: t.TempDir(),
+		Agents:    []agent.LaunchSpec{{ID: "fake", Name: "fake-agent"}},
+		ProbeConfig: func(context.Context, agent.LaunchSpec) (session.Info, error) {
+			return session.Info{SessionID: "probe-session", ConfigOptions: fresh}, nil
+		},
+	})
+	t.Cleanup(func() {
+		app.Shutdown()
+		app.Flush()
+	})
+	app.AgentConfigs["fake"] = stale
+	tt := mui.NewTester(app.View, 1060, 760)
+	tt.Frame()
+	if !tt.HasText("stale/old") {
+		t.Fatalf("cached provider missing from draft chip; texts: %q", tt.Texts())
+	}
+
+	// Opening the panel re-reads the agent's model list; the stale provider
+	// must disappear and the freshly advertised one must replace it.
+	if err := tt.Click("stale/old"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		options := app.AgentConfigs["fake"]
+		return len(options) == 1 && len(options[0].Options) == 2
+	})
+	tt.Frame()
+	if tt.HasText("stale") {
+		t.Errorf("stale provider is still shown; texts: %q", tt.Texts())
+	}
+	if !tt.HasText("other") {
+		t.Errorf("refreshed provider missing; texts: %q", tt.Texts())
+	}
+}
+
+func TestDraftPicksModelAndThinkingBeforeConnect(t *testing.T) {
+	app, tt := newFakeApp(t)
+	chat := current(app)
+	// Discovery caches each agent's config options; injected agents skip it.
+	app.AgentConfigs["fake"] = []acp.ConfigOption{
+		{
+			ID: "model", Name: "Model", Category: "model", Type: "select", CurrentValue: "demo/small",
+			Options: []acp.ConfigOptionValue{
+				{Value: "demo/small", Name: "demo/small"},
+				{Value: "demo/large", Name: "demo/large"},
+			},
+		},
+		{
+			ID: "thought_level", Name: "Thinking", Category: "thought_level", Type: "select", CurrentValue: "medium",
+			Options: []acp.ConfigOptionValue{
+				{Value: "medium", Name: "medium"},
+				{Value: "high", Name: "high"},
+			},
+		},
+	}
+	tt.Frame()
+	if chat.Session != nil {
+		t.Fatal("draft started connected")
+	}
+	if !tt.HasText("demo/small") {
+		t.Fatalf("chip misses the probed model; texts: %q", tt.Texts())
+	}
+
+	if err := tt.Click("demo/small"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if err := tt.Click("demo/large"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if got := chat.PendingConfig["model"]; got != "demo/large" {
+		t.Fatalf("pending model = %q, want demo/large", got)
+	}
+	if err := tt.Click("high"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if got := chat.PendingConfig["thought_level"]; got != "high" {
+		t.Fatalf("pending thinking = %q, want high", got)
+	}
+
+	// Connecting applies the draft picks to the new session.
+	app.Connect()
+	waitFor(t, app, tt, func() bool {
+		ch := current(app)
+		if !ch.Connected || ch.PendingConfig != nil {
+			return false
+		}
+		model := ch.Info.ConfigOption("model")
+		thinking := ch.Info.ConfigOption("thought_level")
+		return model != nil && model.CurrentValue == "demo/large" &&
+			thinking != nil && thinking.CurrentValue == "high"
+	})
+}
 
 func TestFirstMessageConnectsDraft(t *testing.T) {
 	app, tt := newFakeApp(t)
