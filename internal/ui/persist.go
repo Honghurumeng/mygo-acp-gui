@@ -33,7 +33,7 @@ func (a *App) persistSettings() {
 }
 
 // savedWorkspaces returns the sidebar list plus any workspace currently in
-// use, so a chat moved by history is not lost on restart.
+// use, so a chat moved by opening a saved session is not lost on restart.
 func (a *App) savedWorkspaces() []string {
 	seen := make(map[string]bool, len(a.Workspaces)+len(a.Chats)+1)
 	out := make([]string, 0, len(a.Workspaces)+len(a.Chats)+1)

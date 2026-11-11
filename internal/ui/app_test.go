@@ -15,6 +15,7 @@ import (
 	"github.com/egoist/mygo/ui/markdown"
 	"github.com/reed/acp-gui/internal/acp"
 	"github.com/reed/acp-gui/internal/agent"
+	"github.com/reed/acp-gui/internal/archive"
 	"github.com/reed/acp-gui/internal/session"
 )
 
@@ -128,9 +129,20 @@ func newFakeApp(t *testing.T) (*App, *mui.Tester) {
 	if _, err := os.Stat(script); err != nil {
 		t.Fatalf("fake agent: %v", err)
 	}
+	workspace := t.TempDir()
+	dataDir := t.TempDir()
+	seedSessionArchive(t, dataDir, archive.Session{
+		AgentID:   "fake",
+		SessionID: "fake-history",
+		Cwd:       workspace,
+		Title:     "Fake history",
+		UpdatedAt: "2026-01-01T00:00:00Z",
+		Show:      true,
+	})
 	app := New(Options{
 		Version:   "test",
-		Workspace: t.TempDir(),
+		Workspace: workspace,
+		DataDir:   dataDir,
 		Agents: []agent.LaunchSpec{{
 			ID:      "fake",
 			Name:    "fake-agent",
@@ -147,6 +159,14 @@ func newFakeApp(t *testing.T) (*App, *mui.Tester) {
 		app.Flush()
 	})
 	return app, tt
+}
+
+func seedSessionArchive(t *testing.T, dataDir string, sessions ...archive.Session) {
+	t.Helper()
+	store := archive.Open(filepath.Join(dataDir, archiveFileName))
+	if err := store.Save(archive.File{Version: archive.CurrentVersion, Sessions: sessions}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func connect(t *testing.T, app *App, tt *mui.Tester) {
@@ -177,6 +197,15 @@ func waitFor(t *testing.T, app *App, tt *mui.Tester, cond func() bool) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for UI state; texts: %q", tt.Texts())
+}
+
+func waitSavedSessions(t *testing.T, app *App, tt *mui.Tester, count int) {
+	t.Helper()
+	waitFor(t, app, tt, func() bool {
+		// SavedSessions includes open and hidden records; the sidebar shows
+		// only the rows for the current workspace that are not open/tabs.
+		return !app.SavedLoading && len(app.savedSessionsFor(app.Workspace)) == count
+	})
 }
 
 func lastAssistantHas(app *App, want string) bool {
@@ -280,27 +309,22 @@ func TestSessionConfigModeAndCommands(t *testing.T) {
 	waitFor(t, app, tt, func() bool { return len(current(app).Plan) == 2 && current(app).PlanOpen && !current(app).Streaming })
 }
 
-func TestHistoryBeforeConnectLoadsSession(t *testing.T) {
+func TestSavedSessionsBeforeConnectResumesSession(t *testing.T) {
 	app, tt := newFakeApp(t)
+	waitSavedSessions(t, app, tt, 1)
 	tt.Frame()
-	if err := tt.Click("History"); err != nil {
-		t.Fatal(err)
+	if !tt.HasText("Fake history") {
+		t.Fatalf("saved session not shown in sidebar; texts: %q", tt.Texts())
 	}
-	waitFor(t, app, tt, func() bool {
-		return app.HistoryOpen && !app.HistoryLoading && len(app.HistorySessions) == 1
-	})
-	tt.Frame()
-	if err := tt.Click("Open"); err != nil {
+	if err := tt.Click("Open saved session: Fake history"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, app, tt, func() bool {
 		return current(app).Connected && current(app).Info.SessionID == "fake-history" && !current(app).replaying && current(app).Busy == ""
 	})
-	if !hasRoleText(app, RoleUser, "Question from history") {
-		t.Errorf("user history missing; texts: %q", tt.Texts())
-	}
-	if !lastAssistantHas(app, "Answer from history") {
-		t.Errorf("assistant history missing; texts: %q", tt.Texts())
+	// Opening a saved row always resumes by id; it does not replay history.
+	if hasRoleText(app, RoleUser, "Question from history") || lastAssistantHas(app, "Answer from history") {
+		t.Errorf("resume unexpectedly replayed history; texts: %q", tt.Texts())
 	}
 }
 
@@ -322,6 +346,9 @@ func TestCloseChatThenNewChat(t *testing.T) {
 	waitFor(t, app, tt, func() bool { return current(app).Info.SessionID != "" && current(app).Busy == "" })
 	if current(app).Info.SessionID == "fake-session" {
 		t.Errorf("new chat reused the closed session id: %q", current(app).Info.SessionID)
+	}
+	if app.archiveIndex("fake", current(app).Info.SessionID) < 0 {
+		t.Errorf("new chat was not recorded in the archive: %q", current(app).Info.SessionID)
 	}
 }
 
@@ -400,39 +427,43 @@ func hasRoleText(app *App, role MessageRole, want string) bool {
 	return false
 }
 
-func TestHistoryWhileConnectedLoadsAndResumes(t *testing.T) {
+func TestSavedSessionsWhileConnectedLoadsAndResumes(t *testing.T) {
 	app, tt := newFakeApp(t)
 	connect(t, app, tt)
-	tt.Frame()
-	if err := tt.Click("History"); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, app, tt, func() bool {
-		return app.HistoryOpen && !app.HistoryLoading && len(app.HistorySessions) == 1
-	})
-	tt.Frame()
-	if err := tt.Click("Open"); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, app, tt, func() bool {
-		return current(app).Info.SessionID == "fake-history" && !current(app).replaying && current(app).Busy == ""
-	})
-	if !lastAssistantHas(app, "Answer from history") {
-		t.Errorf("history was not replayed; texts: %q", tt.Texts())
-	}
+	waitSavedSessions(t, app, tt, 1)
 
+	// Resume attaches without replaying the old conversation.
 	tt.Frame()
-	if err := tt.Click("History"); err != nil {
+	if err := tt.Click("Saved session actions for Fake history"); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, app, tt, func() bool {
-		return app.HistoryOpen && !app.HistoryLoading && len(app.HistorySessions) == 1
-	})
 	tt.Frame()
 	if err := tt.Click("Resume"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, app, tt, func() bool {
-		return current(app).Info.SessionID == "fake-history" && current(app).Busy == "" && len(current(app).Messages) == 0
+		return current(app).Info.SessionID == "fake-history" && !current(app).replaying &&
+			current(app).Busy == "" && len(current(app).Messages) == 0
 	})
+
+	// Closing the ACP session makes the saved row available again; opening
+	// it resumes the archived id in the existing agent process without
+	// replaying the old transcript.
+	tt.Frame()
+	if err := tt.Click("Close chat"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		return current(app).Info.SessionID == "" && current(app).Busy == ""
+	})
+	tt.Frame()
+	if err := tt.Click("Open saved session: Fake history"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		return current(app).Info.SessionID == "fake-history" && !current(app).replaying && current(app).Busy == ""
+	})
+	if lastAssistantHas(app, "Answer from history") {
+		t.Errorf("resume unexpectedly replayed history; texts: %q", tt.Texts())
+	}
 }

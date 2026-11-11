@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/reed/acp-gui/internal/acp"
@@ -64,11 +65,23 @@ func Probe(ctx context.Context, launch agent.LaunchSpec) (Info, error) {
 // ListSessions starts a short-lived agent process and asks it for saved
 // sessions. cwd filters to one workspace; empty lists all workspaces.
 func ListSessions(ctx context.Context, launch agent.LaunchSpec, cwd string) ([]acp.SessionSummary, error) {
+	return ListSessionsIn(ctx, launch, cwd, cwd)
+}
+
+// ListSessionsIn is ListSessions with a separate process directory. Some
+// agents report the process cwd on sessions they have no stored cwd for, so
+// the UI passes its current workspace while still asking for all sessions.
+func ListSessionsIn(ctx context.Context, launch agent.LaunchSpec, dir, cwd string) ([]acp.SessionSummary, error) {
 	filter := ""
 	if filepath.IsAbs(cwd) {
 		filter = filepath.Clean(cwd)
 	}
-	dir := filter
+	dir = strings.TrimSpace(dir)
+	if !filepath.IsAbs(dir) {
+		dir = filter
+	} else {
+		dir = filepath.Clean(dir)
+	}
 	if info, err := os.Stat(dir); dir == "" || err != nil || !info.IsDir() {
 		tmp, err := os.MkdirTemp("", "acp-gui-list-*")
 		if err != nil {

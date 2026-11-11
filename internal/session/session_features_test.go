@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -143,6 +144,34 @@ func TestFakeAgentDeferredHistory(t *testing.T) {
 	text, _ := drainEvents(t, updates)
 	if !strings.Contains(text, "Answer from history") || !strings.Contains(text, "Question from history") {
 		t.Errorf("history text = %q", text)
+	}
+}
+
+func TestStandaloneListUsesProcessWorkspace(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns the fake agent")
+	}
+	launch, workspace := fakeLaunch(t)
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	defer cancel()
+
+	sessions, err := ListSessionsIn(ctx, launch, workspace, "")
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("sessions = %+v", sessions)
+	}
+	got, err := filepath.EvalSymlinks(sessions[0].Cwd)
+	if err != nil {
+		t.Fatalf("session cwd %q: %v", sessions[0].Cwd, err)
+	}
+	want, err := filepath.EvalSymlinks(workspace)
+	if err != nil {
+		t.Fatalf("workspace %q: %v", workspace, err)
+	}
+	if got != want {
+		t.Errorf("session cwd = %q, want process workspace %q", got, want)
 	}
 }
 

@@ -1,6 +1,6 @@
 # 会话能力与 UI
 
-本文记录除基础聊天之外的 ACP 能力：多会话、发现探测、配置/模式、历史会话、图片、MCP、命令面板、计划与用量。
+本文记录除基础聊天之外的 ACP 能力：多会话、发现探测、配置/模式、已保存会话、图片、MCP、命令面板、计划与用量。
 
 ## 发现与状态
 
@@ -21,8 +21,8 @@
 
 - `App` 只保存全局状态（内置 agent、发现结果、工作区列表、MCP 默认值、会话列表、当前会话）和 `[]*Chat`。
 - session 回调在创建时捕获所属 `*Chat`，按 session 指针路由，不读取“当前会话”，所以后台会话的 `session/update`、退出和权限都能落到正确位置。
-- 左侧工作区栏按 `Chat.Workspace` 分组显示会话标题（无标题时 `Chat N`）、流式转圈、未读点和权限提醒；工作区名可折叠，超过 5 条会话时只显示前 5 条，并提供展开/收起。
-- 会话右侧 `⋯` 打开重命名/删除；删除会关闭该会话的进程。`New conversation` 新建独立会话，工作区上的 `＋` 在该目录下新建。
+- 左侧工作区栏按 `Chat.Workspace` 分组：先显示打开会话（标题/流式转圈/未读点/权限提醒），再显示该目录的已保存会话。打开会话超过 5 条时只显示前 5 条并可展开/收起；已保存会话直接全部列出，不放在弹窗里。
+- 会话右侧 `⋯` 打开重命名/删除；删除会关闭该会话的进程，并把对应存档记录标为 `show=false`。`New conversation` 新建独立会话，工作区上的 `＋` 在该目录下新建。
 - 启动时默认创建一个草稿会话；在草稿里输入第一条消息时自动 Connect，成功后立即发送，不需要先点 Connect。
 - 每个会话保留自己的消息列表滚动位置、输入草稿、图片附件、配置选择和计划面板。
 - `Disconnect` 关闭当前会话的 agent 进程但保留草稿；`Close chat` 仍是 `session/close`（保留进程）；顶部 `New chat` 在同进程创建新 session。
@@ -42,15 +42,24 @@
 - 流式回合、连接中或即将切换会话时禁用，避免 agent 返回 `-32600`。
 - Command Code 的 `effort` 可能随模型变化；选项一律以 agent 返回为准，不硬编码。
 
-## 历史会话
+## 已保存会话与本地存档
 
-- `session/list` `{cwd?}` → `sessions[{sessionId,cwd,title,updatedAt}]`；UI 可切换“当前工作区/全部工作区”。
-- `session/load` 会重放历史 `session/update`；`session/resume` 只附着不重放。
-- 未连接时，`session.ListSessions` 启动一个 initialize-only 的短进程来列表，然后关闭。
-- 当前会话已连接时，优先在现有 agent 进程里打开历史；成功后对旧 ACP session 发 `session/close`。
-- 当前会话已有消息或正在流式时，Open/Resume 会新建会话并连接，原来的对话继续保留；空的已连接会话则就地 load/resume。
-- 从其他工作区打开历史时，把该 session 的 `cwd` 传给 load/resume、加入侧栏工作区列表，不用当前进程目录冒充。
-- `session/close` 也用于“Close chat”：进程保留，清空当前会话，之后可 New/History。
+本地存档 `<data>/sessions.json` 是侧栏历史列表的来源，由 `internal/archive` 读写。它把会话列表、session ID 和 agent 关联起来，并保存两个纯本地字段：
+
+- `show`：`true` 正常显示；`false` 表示用户删除，只从侧栏隐藏，记录不删。
+- `showName`：用户重命名后的显示名，优先于 agent 返回的 `title`。
+
+记录结构：`{agentId, sessionId, cwd, title, showName, createdAt, updatedAt, show}`；`(agentId, sessionId)` 唯一，这样不同 agent 的相同 session ID 不会互相覆盖。
+
+- 启动时先读存档并立即按 `cwd` 分组展示，不等 agent 发现，也不自动调 `session/list`。已打开会话不重复显示。
+- session/new / load / resume 成功、标题更新和一轮结束后，自动把 session ID、agent、cwd、agent title 和 `updatedAt` 写进存档；不覆盖 `show/showName`。
+- 点击存档行按记录中的 `agentId` 启动/复用对应 agent，并直接 `session/resume`（不重放历史）。当前会话已有消息或流式时在新标签页打开；目标 agent 与当前进程不同也新建标签页。
+- 行尾 `⋯` 可 Resume、Rename、Delete。Rename 写 `showName`；Delete 只写 `show=false`，不关 agent 的外部历史。
+- 默认不显示 `show=false` 的行；侧栏 “Show deleted (N)” 展开，`⋯` → Restore 恢复。
+- `↻` 才按需从当前 agent 拉取 `session/list` 合并进存档（优先复用已连接进程，否则 `session.ListSessionsIn` 短进程）。合并只补 `cwd/title/updatedAt` 和新记录，不改变 `show/showName`，所以已删除/已重命名的会话不会在刷新后复活或改名。升级后首次运行存档为空时，点一次 `↻` 即可导入该 agent 的现有会话。
+- 从其他工作区打开时，把存档里的 `cwd` 传给 resume、加入侧栏工作区列表；路径比较解析 symlink，避免同一目录出现两个分组。
+- `session/close` 也用于“Close chat”：进程保留，清空当前会话；该会话仍在存档里，可直接再 resume。
+- 存档写入是原子的（同目录临时文件 + rename，0600）。文件缺失视为空；损坏 JSON、未来版本、缺少 agentId/sessionId 或重复记录只产生侧栏警告，其余记录照常展示，不阻塞启动。
 - “New chat” 在同进程调用 `session/new`，成功后关闭旧 session；它只影响当前会话。要并行对话用侧栏的 `New conversation`。
 - 历史重放事件在 `Start` 阶段缓冲，UI 安装好 Session 后调用 `Activate` 按顺序消费，避免丢失。
 - 重放中的 `user_message_chunk` 和 `agent_message_chunk` 合并成连续的用户/助手行，结束后统一标记 Done。
@@ -79,7 +88,7 @@
 - 启动恢复：工作区、侧栏工作区列表、MCP 列表、上次 agent；显式传入的 `ui.Options.Workspace` 优先（测试用）。
 - `paths` 只保存配置里的覆盖值；`ACP_GUI_*` 环境变量优先，且不会被写回文件。
 - 容错：文件缺失用默认值；损坏 JSON、MCP 不是数组、相对路径、未来版本只显示侧栏/标题栏警告，其余字段照常生效。
-- 不保存会话布局、草稿、附件和消息；历史会话仍由 agent 保存。
+- 不保存会话布局、草稿、附件和消息；会话索引在单独的 `sessions.json` 里（见“已保存会话与本地存档”）。
 
 ## 诊断与日志
 
@@ -116,7 +125,8 @@
 
 ```bash
 go test ./... -race
-go test ./internal/ui -run 'TestSessionConfig|TestHistory|TestCloseChat|TestSendImage|TestMCP|TestPromptUsageFallback|TestMultipleChats|TestBackgroundChat|TestPermissionFrom|TestCloseTab|TestFirstMessage|TestWorkspaceConversation|TestRename|TestGit|TestComposerHeight' -v
+go test ./internal/ui -run 'TestSessionConfig|TestSaved|TestDeleteSaved|TestDeleteOpen|TestCloseChat|TestSendImage|TestMCP|TestPromptUsageFallback|TestMultipleChats|TestBackgroundChat|TestPermissionFrom|TestCloseTab|TestFirstMessage|TestWorkspaceConversation|TestRename|TestGit|TestComposerHeight' -v
+go test ./internal/archive -v
 go test ./internal/settings -v
 go test ./internal/logs -v
 go test ./internal/ui -run 'TestSettings|TestShutdownPersists|TestCorruptSettings|TestExplicitWorkspace|TestDiagnostics' -v

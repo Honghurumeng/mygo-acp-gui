@@ -2,6 +2,7 @@ package ui
 
 import (
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	mui "github.com/egoist/mygo/ui"
@@ -27,15 +28,17 @@ func (a *App) syncWorkspaces() {
 	}
 }
 
-// ensureWorkspace appends an absolute path to the sidebar list once.
+// ensureWorkspace appends an absolute path to the sidebar list once. Symlink
+// aliases of an existing workspace are not added as a second group.
 func (a *App) ensureWorkspace(path string) {
 	path = strings.TrimSpace(path)
 	if path == "" || !filepath.IsAbs(path) {
 		return
 	}
 	path = filepath.Clean(path)
+	target := canonicalWorkspace(path)
 	for _, existing := range a.Workspaces {
-		if existing == path {
+		if existing == path || sameWorkspace(canonicalWorkspace(existing), target) {
 			return
 		}
 	}
@@ -78,10 +81,16 @@ func (a *App) sidebar(c *mui.Context) {
 				a.newConversationButton(c)
 				mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
 					mui.Text(c, "Workspaces").FontSize(10).Bold().TextColor(t.TextMuted).Grow(1)
+					if mui.Button(c, "↻").Label("Refresh saved sessions").FontSize(12).
+						Disabled(a.Resolving || a.SavedLoading || len(a.Agents) == 0).Clicked() {
+						a.refreshSavedSessions()
+					}
 					if mui.Button(c, "＋").Label("Add workspace").FontSize(13).Clicked() {
 						a.addWorkspace()
 					}
 				})
+				a.savedSessionsStatus(c)
+				a.savedSessionsFilter(c)
 				mui.Scroll(c).Grow(1).Gap(2).Children(func() {
 					for _, workspace := range a.Workspaces {
 						a.workspaceGroup(c, workspace)
@@ -105,6 +114,39 @@ func (a *App) newConversationButton(c *mui.Context) {
 	}
 }
 
+func (a *App) savedSessionsStatus(c *mui.Context) {
+	t := c.Theme()
+	switch {
+	case a.SavedLoading:
+		mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
+			mui.Spinner(c)
+			mui.Text(c, "Syncing saved sessions from agent…").FontSize(9).TextColor(t.TextMuted)
+		})
+	case a.SavedError != "":
+		mui.Text(c, truncate("Saved sessions: "+a.SavedError, 120)).
+			FontSize(9).TextColor(t.Danger).Tooltip(a.SavedError)
+	}
+}
+
+// savedSessionsFilter exposes locally deleted sessions. They stay hidden by
+// default, but a restore affordance should not require editing the archive
+// file by hand.
+func (a *App) savedSessionsFilter(c *mui.Context) {
+	hidden := a.hiddenArchivedCount()
+	if hidden == 0 && !a.ShowDeleted {
+		return
+	}
+	label := "Show deleted (" + strconv.Itoa(hidden) + ")"
+	tip := "Show locally deleted saved sessions"
+	if a.ShowDeleted {
+		label = "Hide deleted"
+		tip = "Hide locally deleted saved sessions"
+	}
+	if mui.Button(c, label).Label(tip).FontSize(9).Clicked() {
+		a.ShowDeleted = !a.ShowDeleted
+	}
+}
+
 func (a *App) workspaceGroup(c *mui.Context, workspace string) {
 	t := c.Theme()
 	collapsed := a.WorkspaceCollapsed[workspace]
@@ -113,6 +155,8 @@ func (a *App) workspaceGroup(c *mui.Context, workspace string) {
 		label = workspace
 	}
 	chats := a.chatsInWorkspace(workspace)
+	saved := a.savedSessionsFor(workspace)
+	total := len(chats) + len(saved)
 
 	mui.Row(c).Gap(2).AlignItems(mui.Center).Children(func() {
 		head := mui.ButtonBase(c).Grow(1).Gap(5).Padding(4, 8).Radius(8).
@@ -124,8 +168,8 @@ func (a *App) workspaceGroup(c *mui.Context, workspace string) {
 			}
 			mui.Text(c, arrow).FontSize(10).TextColor(t.TextMuted)
 			mui.Text(c, label).FontSize(11).Bold().Grow(1).SingleLine()
-			if len(chats) > 0 {
-				mui.Text(c, formatCount(len(chats))).FontSize(9).TextColor(t.TextMuted)
+			if total > 0 {
+				mui.Text(c, formatCount(total)).FontSize(9).TextColor(t.TextMuted)
 			}
 		})
 		head.Tooltip(workspace)
@@ -143,7 +187,8 @@ func (a *App) workspaceGroup(c *mui.Context, workspace string) {
 	}
 
 	chats = a.chatsInWorkspace(workspace)
-	if len(chats) == 0 {
+	saved = a.savedSessionsFor(workspace)
+	if len(chats) == 0 && len(saved) == 0 {
 		mui.Text(c, "No conversations yet").FontSize(9).TextColor(t.TextMuted).Padding(2, 16)
 		return
 	}
@@ -168,6 +213,9 @@ func (a *App) workspaceGroup(c *mui.Context, workspace string) {
 					a.WorkspaceExpanded[workspace] = true
 				}
 			}
+		}
+		for _, item := range saved {
+			a.savedSessionRow(c, item)
 		}
 	})
 }
@@ -224,7 +272,13 @@ func (a *App) openRename(chat *Chat) {
 		return
 	}
 	a.RenameChat = chat
-	a.RenameText = chat.Title
+	a.RenameSaved = false
+	a.RenameAgentID = ""
+	a.RenameSessionID = ""
+	a.RenameText = a.archivedShowName(chat.Agent.ID, chat.Info.SessionID)
+	if strings.TrimSpace(a.RenameText) == "" {
+		a.RenameText = chat.Title
+	}
 	if strings.TrimSpace(a.RenameText) == "" {
 		a.RenameText = chat.name()
 	}
@@ -232,7 +286,7 @@ func (a *App) openRename(chat *Chat) {
 }
 
 func (a *App) renameDialog(c *mui.Context) {
-	if !a.RenameOpen || a.RenameChat == nil {
+	if !a.RenameOpen || (a.RenameChat == nil && !a.RenameSaved) {
 		return
 	}
 	chat := a.RenameChat
@@ -246,19 +300,30 @@ func (a *App) renameDialog(c *mui.Context) {
 				if mui.Button(c, "Cancel").Clicked() {
 					a.RenameOpen = false
 					a.RenameChat = nil
+					a.RenameSaved = false
 				}
 				if mui.PrimaryButton(c, "Save").Clicked() {
 					if title := strings.TrimSpace(a.RenameText); title != "" {
-						chat.Title = title
+						switch {
+						case a.RenameSaved:
+							a.setArchivedShowName(a.RenameAgentID, a.RenameSessionID, title)
+						case chat != nil:
+							chat.Title = title
+							if strings.TrimSpace(chat.Info.SessionID) != "" {
+								a.setArchivedShowName(chat.Agent.ID, chat.Info.SessionID, title)
+							}
+						}
 					}
 					a.RenameOpen = false
 					a.RenameChat = nil
+					a.RenameSaved = false
 				}
 			})
 		})
 	})
 	if !a.RenameOpen {
 		a.RenameChat = nil
+		a.RenameSaved = false
 	}
 }
 

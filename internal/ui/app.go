@@ -18,6 +18,7 @@ import (
 	"github.com/egoist/mygo/ui/markdown"
 	"github.com/reed/acp-gui/internal/acp"
 	"github.com/reed/acp-gui/internal/agent"
+	"github.com/reed/acp-gui/internal/archive"
 	"github.com/reed/acp-gui/internal/logs"
 	"github.com/reed/acp-gui/internal/session"
 	"github.com/reed/acp-gui/internal/settings"
@@ -120,22 +121,29 @@ type App struct {
 	Chats  []*Chat
 	Active int
 
-	RenameOpen bool
-	RenameChat *Chat
-	RenameText string
+	RenameOpen      bool
+	RenameChat      *Chat
+	RenameSaved     bool
+	RenameAgentID   string
+	RenameSessionID string
+	RenameText      string
 
 	MCPText      string
 	MCPServers   []any
 	MCPError     string
 	SettingsOpen bool
 
-	HistoryOpen     bool
-	HistoryLoading  bool
-	HistoryError    string
-	HistoryAll      bool
-	HistorySessions []acp.SessionSummary
-	HistorySelected int
-	HistoryList     mui.ListState
+	SavedLoading  bool
+	SavedError    string
+	SavedSessions []savedSession
+	ShowDeleted   bool
+	SavedMenuOpen string
+	savedVersion  int
+
+	// Archived is the local session index. SavedSessions is the UI view of
+	// it, sorted for the sidebar. archive is nil when DataDir is empty.
+	Archived []archive.Session
+	archive  *archive.Store
 
 	SettingsWarning string
 
@@ -224,6 +232,7 @@ func New(opts Options) *App {
 	a.MCPServers = []any{}
 	a.MCPText = "[]"
 	a.loadSettings(opts.DataDir, strings.TrimSpace(opts.Workspace) == "")
+	a.loadSessionArchive(opts.DataDir)
 	a.ensureWorkspace(a.Workspace)
 	if opts.Agents != nil {
 		a.AgentIndex = a.agentIndex(a.preferredAgentID)
@@ -424,7 +433,6 @@ func (a *App) View(c *mui.Context) {
 	})
 
 	a.permissionDialog(c)
-	a.historyDialog(c)
 	a.settingsDialog(c)
 	a.diagnosticsDialog(c)
 	a.renameDialog(c)
@@ -482,9 +490,6 @@ func (a *App) headerActions(c *mui.Context, chat *Chat) {
 		if action("Logs", "Diagnostics").Clicked() {
 			a.openDiagnostics()
 		}
-		if action("History", "Open a saved conversation").Disabled(a.Resolving || len(a.Agents) == 0).Clicked() {
-			a.openHistory()
-		}
 		if action("MCP…", "MCP servers").Clicked() {
 			a.openMCPSettings()
 		}
@@ -500,9 +505,6 @@ func (a *App) headerActions(c *mui.Context, chat *Chat) {
 	default:
 		if action("Logs", "Diagnostics").Clicked() {
 			a.openDiagnostics()
-		}
-		if action("History", "Open a saved conversation").Disabled(a.Resolving || len(a.Agents) == 0).Clicked() {
-			a.openHistory()
 		}
 		if action("MCP…", "MCP servers").Clicked() {
 			a.openMCPSettings()
@@ -600,7 +602,7 @@ func (a *App) emptyState(c *mui.Context) {
 		switch {
 		case chat != nil && chat.Session != nil && chat.Info.SessionID == "":
 			mui.Text(c, "No active session.").FontSize(16)
-			mui.Text(c, "Create a new chat or open one from History.").FontSize(12).TextColor(t.TextMuted)
+			mui.Text(c, "Create a new chat or open a saved session from the sidebar.").FontSize(12).TextColor(t.TextMuted)
 		case chat != nil && chat.Session != nil:
 			mui.Text(c, "Connected. Send a message to start.").FontSize(16)
 			mui.Text(c, "Agent updates stream into this list.").FontSize(12).TextColor(t.TextMuted)

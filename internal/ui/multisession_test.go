@@ -184,7 +184,7 @@ func TestCloseTabKeepsOtherChats(t *testing.T) {
 	}
 }
 
-func TestHistoryOpensNewTabWhenChatHasMessages(t *testing.T) {
+func TestSavedSessionOpensNewTabWhenChatHasMessages(t *testing.T) {
 	app, tt := newFakeApp(t)
 	first := connectTab(t, app, tt)
 
@@ -194,16 +194,10 @@ func TestHistoryOpensNewTabWhenChatHasMessages(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, app, tt, func() bool { return !first.Streaming && chatAssistantHas(first, "收到：keep this") })
+	waitSavedSessions(t, app, tt, 1)
 
 	tt.Frame()
-	if err := tt.Click("History"); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, app, tt, func() bool {
-		return app.HistoryOpen && !app.HistoryLoading && len(app.HistorySessions) == 1
-	})
-	tt.Frame()
-	if err := tt.Click("Open"); err != nil {
+	if err := tt.Click("Open saved session: Fake history"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, app, tt, func() bool {

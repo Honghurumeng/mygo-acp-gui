@@ -347,6 +347,9 @@ func (a *App) removeChat(chat *Chat) {
 	chat.cancelConnect()
 	chat.pendingSend = false
 	a.cancelPermissionsFor(chat)
+	// Deleting a tab also soft-deletes its archived session. Otherwise the
+	// next session/list sync would put it back in the sidebar.
+	a.hideArchivedSession(chat)
 	if a.RenameChat == chat {
 		a.RenameOpen = false
 		a.RenameChat = nil

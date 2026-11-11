@@ -317,6 +317,10 @@ func (a *App) Connect() {
 			if title != "" {
 				chat.Title = title
 			}
+			a.rememberArchivedSession(chat)
+			if name := a.archivedShowName(chat.Agent.ID, chat.Info.SessionID); name != "" {
+				chat.Title = name
+			}
 			a.markAgentReady(spec.ID)
 			chat.clearConnect(gen)
 
@@ -606,6 +610,7 @@ func (a *App) newSession() {
 			}
 			chat.Info = info
 			chat.Title = info.Title
+			a.rememberArchivedSession(chat)
 		})
 	}()
 }
@@ -674,7 +679,6 @@ func (a *App) loadHistoryMode(sessionID string, resume bool, title, cwd string) 
 		action = "resume"
 	}
 	chat.Busy = action
-	a.HistoryOpen = false
 
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -703,15 +707,20 @@ func (a *App) loadHistoryMode(sessionID string, resume bool, title, cwd string) 
 			}
 			chat.Info = newInfo
 			if cwd != "" {
-				chat.Workspace = cwd
-				a.Workspace = cwd
-				a.ensureWorkspace(cwd)
-				a.WorkspaceCollapsed[cwd] = false
+				workspace := a.workspacePath(cwd)
+				chat.Workspace = workspace
+				a.Workspace = workspace
+				a.ensureWorkspace(workspace)
+				a.WorkspaceCollapsed[workspace] = false
 			}
 			if newInfo.Title != "" {
 				chat.Title = newInfo.Title
 			} else if title != "" {
 				chat.Title = title
+			}
+			a.rememberArchivedSession(chat)
+			if name := a.archivedShowName(chat.Agent.ID, chat.Info.SessionID); name != "" {
+				chat.Title = name
 			}
 			if chat.replaying {
 				a.finishReplay(chat)
@@ -765,8 +774,13 @@ func (a *App) applyUpdate(chat *Chat, ev session.Event) {
 		return
 	case session.UpdateSessionInfo:
 		if ev.Title != "" {
-			chat.Title = ev.Title
 			chat.Info.Title = ev.Title
+			a.setArchivedTitle(chat, ev.Title)
+			if name := a.archivedShowName(chat.Agent.ID, chat.Info.SessionID); name != "" {
+				chat.Title = name
+			} else {
+				chat.Title = ev.Title
+			}
 		}
 		return
 	case session.UpdateUsage:
@@ -902,6 +916,7 @@ func (a *App) applyPromptResult(chat *Chat, turn *turnState, res acp.PromptResul
 	if usage, ok := res.Tokens(); ok {
 		chat.TurnUsage = &usage
 	}
+	a.touchArchivedSession(chat)
 	if err != nil && !errors.Is(err, acp.ErrClosed) {
 		a.addError(chat, err)
 	}
