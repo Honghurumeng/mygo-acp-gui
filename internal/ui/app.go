@@ -134,6 +134,8 @@ type App struct {
 	ShowRemovedWorkspaces bool
 	WorkspaceMenuOpen     string
 	SidebarOpen           bool
+	GitPanelOpen          bool
+	Git                   gitPanelState
 
 	Chats  []*Chat
 	Active int
@@ -237,6 +239,8 @@ func New(opts Options) *App {
 		Workspace:          workspace,
 		Active:             -1,
 		SidebarOpen:        true,
+		GitPanelOpen:       true,
+		Git:                gitPanelState{ChangesHeight: defaultGitChangesHeight},
 		MD:                 markdown.Options{},
 		sessions:           make(map[*session.Session]struct{}),
 		logs:               make(map[string]*logs.Log),
@@ -446,8 +450,8 @@ func (a *App) nextChatID() int {
 	return a.nextChat
 }
 
-// View builds the window: a collapsible workspace sidebar, a title bar and
-// the conversation with its composer.
+// View builds the window: a collapsible workspace sidebar, a title bar, the
+// conversation with its composer, and the collapsible Git panel.
 func (a *App) View(c *mui.Context) {
 	a.syncWorkspaces()
 	chat := a.activeChat()
@@ -480,6 +484,9 @@ func (a *App) View(c *mui.Context) {
 			}
 			a.composer(c)
 		})
+		if a.GitPanelOpen {
+			a.gitPanel(c)
+		}
 	})
 
 	a.permissionDialog(c)
@@ -524,9 +531,7 @@ func (a *App) header(c *mui.Context) {
 				mui.Text(c, truncate(sub, 140)).FontSize(10).TextColor(t.TextMuted).SingleLine()
 			}
 		})
-		if chat != nil {
-			a.headerActions(c, chat)
-		}
+		a.headerActions(c, chat)
 	})
 }
 
@@ -534,6 +539,21 @@ func (a *App) headerActions(c *mui.Context, chat *Chat) {
 	t := c.Theme()
 	action := func(label, tip string) mui.Element {
 		return mui.Button(c, label).Label(tip).FontSize(11)
+	}
+	gitLabel := "Show Git panel"
+	var gitButton mui.Element
+	if a.GitPanelOpen {
+		gitLabel = "Hide Git panel"
+		gitButton = mui.PrimaryButton(c, "Git")
+	} else {
+		gitButton = mui.Button(c, "Git")
+	}
+	gitButton.Label(gitLabel).FontSize(11)
+	if gitButton.Clicked() {
+		a.GitPanelOpen = !a.GitPanelOpen
+	}
+	if chat == nil {
+		return
 	}
 	if chat.Connecting {
 		mui.Text(c, "Connecting…").FontSize(11).TextColor(t.TextMuted)

@@ -25,7 +25,7 @@
 ```bash
 go test ./... -race
 go test ./internal/session -run 'TestFakeAgent|TestCloseKillsProcessGroup' -v
-go test ./internal/ui -run 'TestChatWithFakeAgent|TestMultipleChats|TestBackgroundChat|TestPermissionFrom|TestCloseTab|TestSavedSessionOpensNewTab' -v
+go test ./internal/ui -run 'TestChatWithFakeAgent|TestMultipleChats|TestBackgroundChat|TestPermissionFrom|TestCloseTab|TestSavedSessionOpensNewTab|TestGitPanel' -v
 ```
 
 pi-acp bundle 冒烟（只 `initialize`，不 spawn pi、不碰凭据）：
@@ -66,7 +66,8 @@ Command Code 的协议细节见 [command-code.md](command-code.md)；UI 能力�
 Feature tests:
 
 ```bash
-go test ./internal/ui -run 'TestSessionConfig|TestSaved|TestCloseChat|TestSendImage|TestMCP|TestPromptUsageFallback' -v
+go test ./internal/ui -run 'TestSessionConfig|TestSaved|TestCloseChat|TestSendImage|TestMCP|TestPromptUsageFallback|TestGitPanel' -v
+go test ./internal/git -v
 go test ./internal/settings -v
 go test ./internal/logs -v
 go test ./internal/ui -run 'TestSettings|TestShutdownPersists|TestCorruptSettings|TestExplicitWorkspace|TestDiagnostics' -v
@@ -90,6 +91,7 @@ go test ./internal/ui -run 'TestSettings|TestShutdownPersists|TestCorruptSetting
 12b. 工作区软删除：工作区 `⋯` → `Remove workspace` 后分组隐藏但存档/会话不变，重启仍不出现；“Show removed (N)” → `Restore workspace` 恢复。
 13. 设置持久化：改 agent/工作区/MCP 后退出，再启动应恢复；手工损坏 `settings.json` 或写入相对路径，应正常启动并在工具栏显示警告。
 14. 诊断：点顶部 “Logs” 能看到当前会话的 stderr；`logs/<agent>.log` 有连接头和 stderr，超过 1 MiB 后生成 `.1` 备份。
+15. Git：打开非仓库 workspace，右侧提示 “Not a Git repository” 并可 `git init`；PATH 中无 git 时提示安装；仓库内可 stage/commit、查看提交图、切换 workspace 后不串仓库。
 
 ### 常用命令
 
@@ -117,6 +119,7 @@ scripts/vendor-pi-acp.sh             # 仅在升级 pi-acp 时运行
 - [x] 会话行与标题栏的 agent 品牌图标（pi、Command Code，SVG 内嵌并跟随主题）
 - [x] 本地 `sessions.json` 会话存档：agent/session 关联、启动直接展示、show 软删除、showName 重命名、点击 load 重放历史
 - [x] composer：可拖动高度、附件/git/mode/上下文环/模型面板/thinking/发送；首条消息自动连接
+- [x] 右侧 Git 面板：可折叠、无 git/无仓库提示、status/分支图、stage/commit/fetch/pull/push/undo soft reset
 - [x] pi-acp 单文件 bundle vendored（`resources/agents/pi-acp/`）
 - [x] 系统 Node / pi / command-code 定位（登录 shell + 绝对路径覆盖）+ 登录指引（只展示，不代登录）
 - [x] Command Code 启动与完整聊天流程：initialize、session/new、流式、权限、取消、退出清理

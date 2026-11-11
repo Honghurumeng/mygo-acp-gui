@@ -14,6 +14,7 @@ MyGo 原生窗口 (Go + ui)
   ├─ 顶部会话标题栏 + MCP/诊断操作
   ├─ 消息区 + 可拖动高度的 composer
   ├─ composer 底栏：附件、git 分支、mode、上下文环、agent/model/thinking、发送
+  ├─ 右侧 Git 面板（可折叠）：提交、暂存/更改、分支图与 fetch/pull/push
   ├─ ui/markdown.Stream / View      ← agent_message_chunk
   ├─ ui.List(FollowEnd)             ← 消息列表
   ├─ ui.Collapsible                 ← thought / tool_call
@@ -38,7 +39,8 @@ MyGo 原生窗口 (Go + ui)
   internal/settings/       settings.json 读写、容错与原子落盘（已实现）
   internal/archive/        sessions.json 本地会话存档（agent/session 关系、show/showName）
   internal/logs/           每个 agent 的滚动日志文件（已实现）
-  internal/ui/             多会话侧栏、聊天、流式 Markdown、权限队列、窗口更新（已实现）
+  internal/git/            Git 探测、status 解析、提交与远端操作（不经过 shell）
+  internal/ui/             多会话侧栏、聊天、流式 Markdown、权限队列、Git 面板、窗口更新（已实现）
   internal/ui/icons/       pi / Command Code 品牌图标（SVG，侧栏 + 标题栏）
   resources/
     agents/pi-acp/
@@ -74,6 +76,7 @@ MyGo 原生窗口 (Go + ui)
   → session/update → 所属 *Chat → Window.Update → markdown / tool / plan / usage
   → session/set_config_option / set_mode
   → 点击存档行 → 按记录里的 agent + sessionId 执行 session/load 重放历史；cwd 不同则新建进程
+  → 右侧 Git 面板 → 异步探测 workspace 仓库 → status/log 展示与 stage/commit/fetch/pull/push
   → 首次连接成功 → session/list 合并进存档（保留 show/showName）
   → Stop → session/cancel
   → 删除会话 → 存档 show=false（软删除）+ Session.Close → kill(-pgid)
@@ -143,6 +146,7 @@ pi 自己的工具在工作区内读写执行；客户端只负责展示和审�
 - 权限：全局模态但带 `Chat: …` 标签，后台请求排队；回答按所属 `Chat` 路由，侧栏 `!` 提醒未答请求。
 - 历史：启动直接从 `sessions.json` 展示；点击存档行按记录的 agent + sessionId 执行 `session/load` 重放历史。已打开会话不重复显示，当前会话已有消息或流式时在新标签页打开。`⋯` 可重命名（showName）或软删除（show=false），删除项通过 “Show deleted” 恢复。
 - MCP：JSON 模态，校验后传给 new/load；输入 `/` 时 composer 上方出现命令面板，解析 `available_commands_update`。
+- Git 面板：右侧 300 DIP、可折叠，跟随当前会话 workspace；`internal/git` 异步执行 status/log 与 stage/commit/fetch/pull/push，无 git 或非仓库时只显示安装/`git init` 提示（见 [git.md](git.md)）。
 - 诊断：顶部 “Logs” 打开 `Diagnostics`，显示发现状态、当前会话的 stderr 尾部、日志路径与 Reveal；stderr 同时写入滚动日志文件。
 - 计划/用量：composer 上方 plan；上下文环形进度、turn token 用量和会话标题在 composer/标题栏显示。
 - 跨 goroutine 改状态：`win.Update(func(){ ... })`；没有窗口的测试用 `App.Flush` 排队应用。
@@ -191,6 +195,7 @@ logs/                每个 agent 的 stderr / 协议日志（1 MiB 滚动，保
 - 本地存档含 cwd 和 session id，只写用户数据目录（0600），不上传、不跨设备同步。
 - 不管登录与模型可用性：不检测凭据/配额，不代跑登录命令，不在应用内打开终端。
 - 不管理 Node 运行时（不捆绑、不安装、不升级），只定位用户已有的 Node。
+- Git 面板只调用用户已有的 git，不经过 shell、不代登录、不弹出凭据提示；不执行 force push / hard reset / clean。
 - vendored pi-acp 固定版本并附 LICENSE；更新走显式脚本，不自动跟随 npm。
 
 ## 相关文档
@@ -199,4 +204,5 @@ logs/                每个 agent 的 stderr / 协议日志（1 MiB 滚动，保
 - [pi 集成](pi.md)
 - [Command Code 集成](command-code.md)
 - [会话能力与 UI](features.md)
+- [右侧 Git 面板](git.md)
 - [测试与计划](plan.md)

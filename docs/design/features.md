@@ -82,6 +82,14 @@
 - 不启动、不管理 MCP 进程；由 agent 自己拉起。
 - Apply 后的列表写入 settings.json，成为下次启动的默认值（见“设置持久化”）。
 
+## Git 面板
+
+- 右侧 300 DIP 可折叠面板，跟随当前会话/草稿的 workspace；顶部 MCP 左侧的 `Git` 按钮开关，打开时按钮高亮为主色。
+- 异步探测 `git` 是否存在和 workspace 所属仓库根目录；没有 git 显示安装提示，没有仓库显示 “Initialize Git repository” 按钮（`git init`）。
+- 有仓库时显示 commit message、Staged / Changes 列表、分支状态和提交图；文件可逐项 stage/unstage，也可 Stage all / Unstage all。
+- Commit 只提交暂存内容；Fetch/Pull/Push 不等待凭据终端，Undo 用 soft reset 保留改动；所有命令有超时和 generation 校验，切换会话不会串仓库。
+- 详细设计见 [git.md](git.md)。
+
 ## 设置持久化
 
 - `internal/settings` 读写 `PathUserData/settings.json`；`ui.Options.DataDir` 为空时完全不落盘（测试、便携运行）。
@@ -127,8 +135,9 @@
 
 ```bash
 go test ./... -race
-go test ./internal/ui -run 'TestSessionConfig|TestSaved|TestDeleteSaved|TestDeleteOpen|TestCloseChat|TestSendImage|TestMCP|TestPromptUsageFallback|TestMultipleChats|TestBackgroundChat|TestPermissionFrom|TestCloseTab|TestFirstMessage|TestWorkspaceConversation|TestRename|TestGit|TestComposerHeight|TestRemoveWorkspace|TestRemovedWorkspace|TestAgentIcon|TestAgentBadges' -v
+go test ./internal/ui -run 'TestSessionConfig|TestSaved|TestDeleteSaved|TestDeleteOpen|TestCloseChat|TestSendImage|TestMCP|TestPromptUsageFallback|TestMultipleChats|TestBackgroundChat|TestPermissionFrom|TestCloseTab|TestFirstMessage|TestWorkspaceConversation|TestRename|TestGit|TestGitPanel|TestComposerHeight|TestRemoveWorkspace|TestRemovedWorkspace|TestAgentIcon|TestAgentBadges' -v
 go test ./internal/archive -v
+go test ./internal/git -v
 go test ./internal/settings -v
 go test ./internal/logs -v
 go test ./internal/ui -run 'TestSettings|TestShutdownPersists|TestCorruptSettings|TestExplicitWorkspace|TestDiagnostics' -v
