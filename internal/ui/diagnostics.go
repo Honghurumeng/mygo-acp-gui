@@ -27,7 +27,6 @@ func (a *App) diagnosticsDialog(c *mui.Context) {
 	if !a.DiagOpen {
 		return
 	}
-	t := c.Theme()
 	chat := a.DiagChat
 	if chat != nil && a.chatIndex(chat) < 0 {
 		chat = nil
@@ -41,15 +40,15 @@ func (a *App) diagnosticsDialog(c *mui.Context) {
 			mui.Text(c, title).FontSize(18).Bold()
 			a.diagnosticStatuses(c)
 			if chat == nil {
-				mui.Text(c, "Open a chat to see its stderr buffer.").FontSize(11).TextColor(t.TextMuted)
+				mutedText(c, "Open a chat to see its stderr buffer.", 11)
 				if a.logDir != "" {
-					mui.Text(c, "Log folder: "+a.logDir).FontSize(10).TextColor(t.TextMuted).Selectable()
+					mutedText(c, "Log folder: "+a.logDir, 10).Selectable()
 				}
 			} else {
 				a.chatDiagnostics(c, chat)
 			}
 			mui.Row(c).Gap(8).Justify(mui.End).Children(func() {
-				if mui.Button(c, "Close").Clicked() {
+				if quietButton(c, "Close").Clicked() {
 					a.DiagOpen = false
 				}
 			})
@@ -74,29 +73,20 @@ func (a *App) diagnosticStatuses(c *mui.Context) {
 		}
 		mui.Text(c, status.Name+": "+status.Status).FontSize(11).TextColor(color)
 		if status.Status != AgentReady && strings.TrimSpace(status.Detail) != "" {
-			mui.Text(c, truncate(status.Detail, 2000)).
-				FontSize(10).
-				TextColor(t.TextMuted).
-				Selectable()
+			mutedText(c, truncate(status.Detail, 2000), 10).Selectable()
 		}
 		if a.logDir != "" && status.Status != AgentReady {
-			mui.Text(c, "log: "+a.agentLogPath(status.ID)).
-				FontSize(10).
-				TextColor(t.TextMuted).
-				Selectable()
+			mutedText(c, "log: "+a.agentLogPath(status.ID), 10).Selectable()
 		}
 	}
 }
 
 func (a *App) chatDiagnostics(c *mui.Context, chat *Chat) {
 	t := c.Theme()
-	mui.Text(c, "Agent: "+chat.agentName()).FontSize(11).TextColor(t.TextMuted)
-	mui.Text(c, "Workspace: "+chat.Workspace).FontSize(11).TextColor(t.TextMuted).Selectable()
+	mutedText(c, "Agent: "+chat.agentName(), 11)
+	mutedText(c, "Workspace: "+chat.Workspace, 11).Selectable()
 	if chat.Agent.Command != "" {
-		mui.Text(c, "Command: "+chat.Agent.CommandLine()).
-			FontSize(10).
-			TextColor(t.TextMuted).
-			Selectable()
+		mutedText(c, "Command: "+chat.Agent.CommandLine(), 10).Selectable()
 	}
 	if chat.ConnectError != "" {
 		mui.Text(c, chat.ConnectError).FontSize(11).TextColor(t.Danger).Selectable()
@@ -105,23 +95,19 @@ func (a *App) chatDiagnostics(c *mui.Context, chat *Chat) {
 		mui.Text(c, chat.WorkspaceError).FontSize(11).TextColor(t.Danger).Selectable()
 	}
 	if chat.Agent.LoginHint != "" {
-		mui.Text(c, "Login: "+chat.Agent.LoginHint).FontSize(10).TextColor(t.TextMuted).Selectable()
+		mutedText(c, "Login: "+chat.Agent.LoginHint, 10).Selectable()
 	}
 	if path := a.agentLogPath(chat.Agent.ID); path != "" {
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-			mui.Text(c, "Log: "+path).
-				FontSize(10).
-				TextColor(t.TextMuted).
-				Selectable().
-				Grow(1)
-			if mui.Button(c, "Reveal log").FontSize(10).Clicked() {
+			mutedText(c, "Log: "+path, 10).Selectable().Grow(1)
+			if quietButton(c, "Reveal log").FontSize(10).Clicked() {
 				mygo.Shell.ShowItemInFolder(path)
 			}
 		})
 	}
 	mui.Text(c, stderrLabel(chat)).FontSize(12)
 	if chat.Stderr == "" {
-		mui.Text(c, "No stderr output.").FontSize(11).TextColor(t.TextMuted)
+		mutedText(c, "No stderr output.", 11)
 		return
 	}
 	mui.TextArea(c, &chat.Stderr).

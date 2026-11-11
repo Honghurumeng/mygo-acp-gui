@@ -5,7 +5,6 @@ import (
 	"strings"
 	"sync"
 
-	crybutton "github.com/ELY-Open-Source/CrychicUI/button"
 	crycode "github.com/ELY-Open-Source/CrychicUI/code"
 	cryoverlay "github.com/ELY-Open-Source/CrychicUI/overlay"
 	mui "github.com/egoist/mygo/ui"
@@ -177,7 +176,6 @@ func (a *App) permissionDialog(c *mui.Context) {
 	}
 	p := a.Permission
 	req := p.Request
-	t := c.Theme()
 
 	// answered keeps the dismissal branch below from cancelling a request the
 	// buttons already settled.
@@ -185,7 +183,7 @@ func (a *App) permissionDialog(c *mui.Context) {
 	cryoverlay.Modal(c, "Permission required", &a.PermissionOpen, cryoverlay.ModalOptions{}, func() {
 		mui.Column(c).FillWidth().Gap(10).Children(func() {
 			if p.Chat != nil {
-				mui.Text(c, "Chat: "+p.Chat.name()).FontSize(11).TextColor(t.TextMuted)
+				mutedText(c, "Chat: "+p.Chat.name(), 11)
 			}
 			title := req.ToolCall.Title
 			if title == "" {
@@ -193,14 +191,12 @@ func (a *App) permissionDialog(c *mui.Context) {
 			}
 			mui.Text(c, title).FontSize(14)
 			if req.ToolCall.Kind != "" || req.ToolCall.Status != "" {
-				mui.Text(c, strings.TrimSpace(req.ToolCall.Kind+" · "+req.ToolCall.Status)).
-					FontSize(11).
-					TextColor(t.TextMuted)
+				mutedText(c, strings.TrimSpace(req.ToolCall.Kind+" · "+req.ToolCall.Status), 11)
 			}
 			if detail := compactJSON(req.ToolCall.RawInput); detail != "" {
 				crycode.CodeBlock(c, "json", detail, crycode.CodeBlockOptions{Title: "Input"})
 			}
-			mui.Text(c, "Choose what the agent may do.").FontSize(12).TextColor(t.TextMuted)
+			mutedText(c, "Choose what the agent may do.", 12)
 
 			mui.Row(c).Gap(8).Wrap().Justify(mui.End).Children(func() {
 				for _, option := range req.Options {
@@ -211,11 +207,11 @@ func (a *App) permissionDialog(c *mui.Context) {
 					var button mui.Element
 					switch {
 					case strings.Contains(option.Kind, "allow"):
-						button = crybutton.Solid(c, label)
+						button = primaryButton(c, label)
 					case strings.Contains(option.Kind, "reject"):
-						button = crybutton.Destructive(c, label)
+						button = dangerButton(c, label)
 					default:
-						button = crybutton.Outline(c, label)
+						button = quietButton(c, label)
 					}
 					if button.Clicked() {
 						answered = true
@@ -223,7 +219,7 @@ func (a *App) permissionDialog(c *mui.Context) {
 						return
 					}
 				}
-				if crybutton.Ghost(c, "Cancel").Clicked() {
+				if quietButton(c, "Cancel").Clicked() {
 					answered = true
 					a.finishPermission(p, acp.CancelledPermission())
 				}

@@ -117,20 +117,19 @@ func (a *App) attachmentPicker(c *mui.Context, chat *Chat) {
 	if len(chat.Attachments) == 0 {
 		return
 	}
-	t := c.Theme()
 	mui.Row(c).Gap(8).Wrap().Children(func() {
 		for i, attachment := range chat.Attachments {
 			i := i
 			attachment := attachment
-			mui.Row(c).Gap(6).AlignItems(mui.Center).Padding(4, 6).Radius(8).Background(t.Surface).Children(func() {
+			surfaceCard(c, mui.Row(c).Gap(6).AlignItems(mui.Center).Padding(4, 6)).Children(func() {
 				if attachment.Bitmap != nil {
 					mui.Image(c, attachment.Bitmap).Size(48, 48).Fit(mui.Cover).Radius(5)
 				}
 				mui.Column(c).Gap(2).Children(func() {
 					mui.Text(c, truncate(attachment.Name, 28)).FontSize(11)
-					mui.Text(c, attachment.MimeType).FontSize(9).TextColor(t.TextMuted)
+					mutedText(c, attachment.MimeType, 9)
 				})
-				if mui.Button(c, "×").Label("Remove " + attachment.Name).Clicked() {
+				if quietButton(c, "×").Label("Remove " + attachment.Name).Clicked() {
 					a.removeAttachment(chat, i)
 				}
 			})
@@ -142,14 +141,13 @@ func (a *App) messageAttachments(c *mui.Context, attachments []Attachment) {
 	if len(attachments) == 0 {
 		return
 	}
-	t := c.Theme()
 	mui.Row(c).Gap(6).Wrap().Children(func() {
 		for _, attachment := range attachments {
 			mui.Column(c).Gap(2).Children(func() {
 				if attachment.Bitmap != nil {
 					mui.Image(c, attachment.Bitmap).Size(160, 120).Fit(mui.Contain).Radius(6)
 				}
-				mui.Text(c, truncate(attachment.Name, 32)).FontSize(9).TextColor(t.TextMuted)
+				mutedText(c, truncate(attachment.Name, 32), 9)
 			})
 		}
 	})

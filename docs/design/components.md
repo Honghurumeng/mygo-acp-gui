@@ -22,7 +22,6 @@ require (
 `internal/ui` 里 CrychicUI 的包统一加 `cry` 前缀，避免与 `internal/agent`、`internal/session` 以及局部变量（`chat := a.activeChat()`）重名：
 
 ```go
-crybutton  "github.com/ELY-Open-Source/CrychicUI/button"
 crycode    "github.com/ELY-Open-Source/CrychicUI/code"
 cryfeedback "github.com/ELY-Open-Source/CrychicUI/feedback"
 crykit      "github.com/ELY-Open-Source/CrychicUI/kit"
@@ -33,8 +32,8 @@ cryoverlay "github.com/ELY-Open-Source/CrychicUI/overlay"
 ## 已替换
 
 - 权限弹窗 `internal/ui/permission.go`：`cryoverlay.Modal` + `crycode.CodeBlock`（工具入参）+ 按 `option.kind` 选按钮
-  （`allow*` → `button.Solid`，`reject*` → `button.Destructive`，其余与 `Cancel` → `button.Outline`/`button.Ghost`）。
-  ACP 的 option 列表原样保留，不压缩成 Allow/Deny 两键。
+  （`allow*` → `primaryButton`，`reject*` → `dangerButton`，其余与 `Cancel` → `quietButton`）。
+  ACP 的 option 列表原样保留，不压缩成 Allow/Deny 两键；按钮改用项目统一样式后不再有 `crybutton` 的音效。
 - 空状态 `internal/ui/app.go`：`crylayout.Centered` + `cryfeedback.EmptyState`；连接/探测中用 `cryfeedback.Busy` 转圈。
   图标必须是 Lucide 里存在的名字，否则 `icon.Must` 会 panic。
 - Git diff 预览 `internal/ui/gitpanel.go`：`cryoverlay.FullscreenModal` + `crycode.DiffView`，加载/错误/无变化用
@@ -42,6 +41,48 @@ cryoverlay "github.com/ELY-Open-Source/CrychicUI/overlay"
 - Git 提交图 `internal/ui/gitpanel.go`：`crycode.CommitGraph`，数据来自 `internal/git.LogCommit` 的结构化 log + lane。
   300 DIP 的面板里只传第一个 ref（截 12 字）并留空 author，把宽度给 subject；组件要求 hash 唯一、lane 0..7、父提交在子提交之后，
   否则 panic（`internal/git` 用 `--topo-order` 和 `assignLanes` 保证）。
+
+## 自有组件层
+
+CrychicUI 只覆盖通用外观；界面里反复出现的「小样式」放在 `internal/ui/widgets.go`，一处定义、处处调用（MyGo
+没有样式表，组件就是给元素设好样式的 Go 函数）：
+
+- `mutedText(c, text, size)`：次要文字的基元，颜色取 `c.Theme().TextMuted`；返回元素，调用方继续
+  `.Selectable()` / `.Grow()` / `.Tooltip()`。
+- `caption(c, text)`：9px 单行次要文字，用于计数、状态、微提示。
+- `sectionLabel(c, text)`：9px 加粗组标题；padding、Grow、旁边的数量由调用方叠加。
+- `surfaceCard(c, e)`：给任意元素加 8 DIP 圆角与 `t.Surface` 背景；Gap/Padding/方向仍由调用方决定，
+  用于工具调用卡片和附件行。
+- `buttonBase(c, label)`：所有按钮的共同形状，取自侧栏「⋯」按钮：8 DIP 圆角、`Padding(4, 6)`、无边框；
+  只设 label 与几何，文字和填充由下面三个变体加。
+- `quietButton(c, label)`：默认按钮（「⋯」那种扁平胶囊）：`t.Background` 填充、hover/pressed 变色、无边框；
+  `Cancel`、`Refresh`、菜单/弹窗里的普通动作都用它。
+- `primaryButton(c, label)`：主操作，同一形状但用 `t.Accent` 填充；窗口非激活时退回 `quietButton` 的灰底，
+  与 MyGo 自带 `PrimaryButton` 行为一致。`Send`、`Save`、`Apply`、`Commit`、`New conversation` 用它。
+- `dangerButton(c, label)`：破坏性操作，`quietButton` 形状 + `t.Danger` 文字颜色（`Delete`、`Stop`、拒绝授权）。
+- `chipBase(c)`：composer 的模型/模式/用量/分支胶囊，与按钮同形状、无边框，padding 收紧为 `3, 8`。
+- `menuTrigger(c, label, background)`：行尾「⋯」菜单按钮；label 供无障碍与 `Tester` 使用，背景跟随所在行。
+
+按钮约定：项目里不再直接调用 `mui.Button` / `mui.PrimaryButton` / `crybutton.*`；新增按钮一律走上面三个变体，
+需要更宽的点击区或字号时在返回值上叠加 `.Padding` / `.FontSize`，不要另起一套背景和边框。ButtonBase 的列表行
+（会话、存档、workspace 标题、git 文件行）不是按钮外观，保留各自的选中/hover 背景。
+
+权限弹窗里原本由 `crybutton` 播的点击音效随之去掉；CrychicUI 的其它组件（`crycode`、`cryfeedback`、`cryoverlay`）
+仍按需播音效。", 
+
+约定：
+
+- 只抽颜色、尺寸、圆角这类会被复制粘贴的样式，不抽业务状态和布局。函数返回 `mui.Element`，调用方
+  继续链式覆盖，后写的生效（等价于外部覆盖 class）。
+- 有跨帧状态的组件才用 `mui.Local`/`mui.Key`；上面这些样式函数保持无状态。
+- `caption` 强制 `SingleLine`，可能很长、需要换行的文本用 `mutedText`。
+- `a.composerChip(c)` 已并入 `chipBase(c)`，不要再按 App 方法添加同类样式。
+- 新增共享组件先加进 `widgets.go`，并在本文件补一行；可交互组件保留 label，现有 `Tester` 断言
+  （`tt.Click("Allow once")` 一类）不依赖样式。
+
+已迁移：`app.go`、`composer.go`、`attachments.go`、`diagnostics.go`、`gitpanel.go`、`permission.go`、
+`saved.go`、`settings.go`、`sidebar.go` 中的重复次要文字、工具卡片、胶囊、「⋯」菜单，以及全部
+`mui.Button` / `mui.PrimaryButton` / `crybutton` 调用（统一为 `quietButton` / `primaryButton` / `dangerButton`）。
 
 ## 不替换
 

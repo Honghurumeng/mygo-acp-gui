@@ -513,7 +513,7 @@ func (a *App) header(c *mui.Context) {
 		if a.SidebarOpen {
 			toggle, tip = "‹", "Hide sidebar"
 		}
-		if mui.Button(c, toggle).Label(tip).FontSize(15).Clicked() {
+		if quietButton(c, toggle).Label(tip).FontSize(15).Clicked() {
 			a.SidebarOpen = !a.SidebarOpen
 		}
 		mui.Column(c).Gap(1).Grow(1).Children(func() {
@@ -531,7 +531,7 @@ func (a *App) header(c *mui.Context) {
 				sub += filepath.Base(chat.Workspace)
 			}
 			if sub != "" {
-				mui.Text(c, truncate(sub, 140)).FontSize(10).TextColor(t.TextMuted).SingleLine()
+				mutedText(c, truncate(sub, 140), 10).SingleLine()
 			}
 		})
 		a.headerActions(c, chat)
@@ -539,17 +539,16 @@ func (a *App) header(c *mui.Context) {
 }
 
 func (a *App) headerActions(c *mui.Context, chat *Chat) {
-	t := c.Theme()
 	action := func(label, tip string) mui.Element {
-		return mui.Button(c, label).Label(tip).FontSize(11)
+		return quietButton(c, label).Label(tip).FontSize(11)
 	}
 	gitLabel := "Show Git panel"
 	var gitButton mui.Element
 	if a.GitPanelOpen {
 		gitLabel = "Hide Git panel"
-		gitButton = mui.PrimaryButton(c, "Git")
+		gitButton = primaryButton(c, "Git")
 	} else {
-		gitButton = mui.Button(c, "Git")
+		gitButton = quietButton(c, "Git")
 	}
 	gitButton.Label(gitLabel).FontSize(11)
 	if gitButton.Clicked() {
@@ -559,7 +558,7 @@ func (a *App) headerActions(c *mui.Context, chat *Chat) {
 		return
 	}
 	if chat.Connecting {
-		mui.Text(c, "Connecting…").FontSize(11).TextColor(t.TextMuted)
+		mutedText(c, "Connecting…", 11)
 		if action("Cancel", "Cancel connecting").Clicked() {
 			a.Disconnect()
 		}
@@ -735,16 +734,13 @@ func (a *App) message(c *mui.Context, m *Message) {
 		mui.Column(c).MaxWidth(760).Children(func() {
 			if m.Thought != "" {
 				mui.Collapsible(c, "Thinking", &m.ShowThought, func() {
-					mui.Text(c, m.Thought).
-						TextColor(t.TextMuted).
-						FontSize(12).
-						Selectable()
+					mutedText(c, m.Thought, 12).Selectable()
 				})
 			}
 			if m.Text == "" && !m.Done {
 				mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
 					mui.Spinner(c)
-					mui.Text(c, "Waiting for the agent…").TextColor(t.TextMuted).FontSize(12)
+					mutedText(c, "Waiting for the agent…", 12)
 				})
 				return
 			}
@@ -764,7 +760,7 @@ func (a *App) message(c *mui.Context, m *Message) {
 		case "in_progress", "pending":
 			statusColor = t.Warning
 		}
-		mui.Column(c).Gap(3).Padding(8, 10).Radius(8).Background(t.Surface).Children(func() {
+		surfaceCard(c, mui.Column(c).Gap(3).Padding(8, 10)).Children(func() {
 			mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
 				mui.Text(c, m.Title).Bold().FontSize(12)
 				if m.Status != "" {
@@ -772,7 +768,7 @@ func (a *App) message(c *mui.Context, m *Message) {
 				}
 			})
 			if m.Detail != "" {
-				mui.Text(c, m.Detail).FontSize(11).TextColor(t.TextMuted).Selectable()
+				mutedText(c, m.Detail, 11).Selectable()
 			}
 		})
 	case RoleError:

@@ -292,12 +292,12 @@ func (a *App) gitPanelHeader(c *mui.Context) {
 					mui.Spinner(c)
 				}
 				if a.Git.Busy != "" {
-					mui.Text(c, a.Git.Busy+"…").FontSize(9).TextColor(t.TextMuted).SingleLine()
+					caption(c, a.Git.Busy+"…")
 				}
 			})
 			line, tip := a.gitHeaderLine()
 			if line != "" {
-				text := mui.Text(c, line).FontSize(9).TextColor(t.TextMuted).SingleLine()
+				text := caption(c, line)
 				if tip != "" {
 					text.Tooltip(tip)
 				}
@@ -363,10 +363,9 @@ func (a *App) gitPanelBody(c *mui.Context) {
 }
 
 func (a *App) gitLoading(c *mui.Context) {
-	t := c.Theme()
 	mui.Column(c).Grow(1).Center().Gap(8).Children(func() {
 		mui.Spinner(c)
-		mui.Text(c, "Reading repository…").FontSize(10).TextColor(t.TextMuted)
+		mutedText(c, "Reading repository…", 10)
 	})
 }
 
@@ -375,24 +374,21 @@ func (a *App) gitUnavailable(c *mui.Context) {
 	workspace := a.Git.Workspace
 	mui.Column(c).Grow(1).Padding(14, 14).Gap(8).Children(func() {
 		mui.Text(c, "Git is not installed.").FontSize(13).Bold().TextColor(t.Warning)
-		mui.Text(c, "Install Git, make sure it is on PATH, then refresh.").
-			FontSize(10).TextColor(t.TextMuted)
-		if mui.Button(c, "Refresh").FontSize(10).Clicked() {
+		mutedText(c, "Install Git, make sure it is on PATH, then refresh.", 10)
+		if quietButton(c, "Refresh").FontSize(10).Clicked() {
 			a.startGitLoad(workspace, true)
 		}
 	})
 }
 
 func (a *App) gitNoRepository(c *mui.Context) {
-	t := c.Theme()
 	workspace := a.Git.Workspace
 	busy := a.Git.Busy != "" || a.Git.Loading
 	mui.Column(c).Grow(1).Padding(14, 14).Gap(8).Children(func() {
 		mui.Text(c, "Not a Git repository").FontSize(13).Bold()
-		mui.Text(c, "This workspace is not inside a Git repository.").
-			FontSize(10).TextColor(t.TextMuted)
-		mui.Text(c, workspace).FontSize(9).TextColor(t.TextMuted).Selectable()
-		button := mui.PrimaryButton(c, "Initialize Git repository").FontSize(10)
+		mutedText(c, "This workspace is not inside a Git repository.", 10)
+		mutedText(c, workspace, 9).Selectable()
+		button := primaryButton(c, "Initialize Git repository").FontSize(10)
 		button.Disabled(busy)
 		button.Tooltip("Run git init in this workspace")
 		if button.Clicked() && !busy {
@@ -403,7 +399,7 @@ func (a *App) gitNoRepository(c *mui.Context) {
 		if a.Git.Busy != "" {
 			mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
 				mui.Spinner(c)
-				mui.Text(c, a.Git.Busy+"…").FontSize(9).TextColor(t.TextMuted)
+				caption(c, a.Git.Busy+"…")
 			})
 		}
 		if a.Git.Error != "" {
@@ -419,14 +415,13 @@ func (a *App) gitInitialError(c *mui.Context) {
 		mui.Text(c, "Git unavailable").FontSize(13).Bold().TextColor(t.Danger)
 		message := truncate(singleLine(a.Git.Error), 240)
 		mui.Text(c, message).FontSize(10).TextColor(t.Danger).Selectable().Tooltip(a.Git.Error)
-		if mui.Button(c, "Refresh").FontSize(10).Clicked() {
+		if quietButton(c, "Refresh").FontSize(10).Clicked() {
 			a.startGitLoad(workspace, true)
 		}
 	})
 }
 
 func (a *App) gitCommitBox(c *mui.Context) {
-	t := c.Theme()
 	busy := a.Git.Busy != "" || a.Git.Loading
 	staged := len(a.Git.Staged)
 	mui.Column(c).Gap(6).Padding(6, 12, 6, 12).Children(func() {
@@ -449,10 +444,10 @@ func (a *App) gitCommitBox(c *mui.Context) {
 				mui.Spinner(c)
 			}
 			if status != "" {
-				mui.Text(c, status).FontSize(9).TextColor(t.TextMuted).SingleLine()
+				caption(c, status)
 			}
 		})
-		button := mui.PrimaryButton(c, "Commit").FontSize(10).FillWidth()
+		button := primaryButton(c, "Commit").FontSize(10).FillWidth()
 		disabled := busy || staged == 0 || strings.TrimSpace(a.Git.Message) == ""
 		button.Disabled(disabled)
 		button.Tooltip("Commit the staged changes")
@@ -490,7 +485,6 @@ func (a *App) gitHistorySplit(c *mui.Context) {
 }
 
 func (a *App) gitChanges(c *mui.Context) {
-	t := c.Theme()
 	staged := a.Git.Staged
 	changes := a.Git.Changes
 	mui.Column(c).FillHeight().Padding(6, 12, 4, 12).Children(func() {
@@ -502,7 +496,7 @@ func (a *App) gitChanges(c *mui.Context) {
 					})
 				})
 				if len(staged) == 0 {
-					mui.Text(c, "No staged changes").FontSize(9).TextColor(t.TextMuted)
+					caption(c, "No staged changes")
 				} else {
 					for _, file := range staged {
 						a.gitFileRow(c, file, true)
@@ -516,7 +510,7 @@ func (a *App) gitChanges(c *mui.Context) {
 					})
 				})
 				if len(changes) == 0 {
-					mui.Text(c, "No changes").FontSize(9).TextColor(t.TextMuted)
+					caption(c, "No changes")
 				} else {
 					for _, file := range changes {
 						a.gitFileRow(c, file, false)
@@ -528,14 +522,13 @@ func (a *App) gitChanges(c *mui.Context) {
 }
 
 func (a *App) gitSectionHeader(c *mui.Context, title string, count int, action string, showAction bool, fn func()) {
-	t := c.Theme()
 	busy := a.Git.Busy != "" || a.Git.Loading
 	mui.Row(c).Gap(4).AlignItems(mui.Center).Children(func() {
-		mui.Text(c, title).FontSize(9).Bold().TextColor(t.TextMuted)
-		mui.Text(c, strconv.Itoa(count)).FontSize(8).TextColor(t.TextMuted)
+		sectionLabel(c, title)
+		mutedText(c, strconv.Itoa(count), 8)
 		mui.Spacer(c)
 		if showAction {
-			button := mui.Button(c, action).FontSize(8)
+			button := quietButton(c, action).FontSize(8)
 			button.Disabled(busy)
 			button.Tooltip(action + " files in this section")
 			if button.Clicked() && !busy {
@@ -585,7 +578,7 @@ func (a *App) gitFileRow(c *mui.Context, file git.File, staged bool) {
 			text := mui.Text(c, truncate(name, 30)).FontSize(10).SingleLine()
 			text.Tooltip(tip)
 			if dir != "" {
-				mui.Text(c, truncate(dir, 34)).FontSize(8).TextColor(t.TextMuted).SingleLine()
+				mutedText(c, truncate(dir, 34), 8).SingleLine()
 			}
 		})
 		if preview.Clicked() {
@@ -595,7 +588,7 @@ func (a *App) gitFileRow(c *mui.Context, file git.File, staged bool) {
 		if staged {
 			label, action = "－", "Unstage "
 		}
-		button := mui.Button(c, label).Label(action + path).FontSize(9)
+		button := quietButton(c, label).Label(action + path).FontSize(9)
 		button.Disabled(busy)
 		if button.Clicked() && !busy {
 			if staged {
@@ -714,7 +707,7 @@ func (a *App) gitGraph(c *mui.Context) {
 		})
 		mui.Scroll(c).Grow(1).Padding(5, 4, 8, 6).Children(func() {
 			if len(a.Git.Commits) == 0 {
-				mui.Text(c, "No commits yet.").FontSize(10).TextColor(t.TextMuted).Padding(0, 6)
+				mutedText(c, "No commits yet.", 10).Padding(0, 6)
 				return
 			}
 			crycode.CommitGraph(c, "History", gitGraphCommits(a.Git.Commits))
@@ -784,7 +777,7 @@ func (a *App) gitDiffBody(c *mui.Context) {
 }
 
 func (a *App) gitToolButton(c *mui.Context, label, tip string, disabled bool, fn func()) {
-	button := mui.Button(c, label).FontSize(8)
+	button := quietButton(c, label).FontSize(8)
 	button.Disabled(disabled)
 	button.Tooltip(tip)
 	if button.Clicked() && !disabled {

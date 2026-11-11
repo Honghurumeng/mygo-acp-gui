@@ -63,14 +63,14 @@ func (a *App) composer(c *mui.Context) {
 				})
 
 			mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
-				attach := mui.Button(c, "＋").Label("Attach images").FontSize(14).Tooltip("Attach images")
+				attach := quietButton(c, "＋").Label("Attach images").FontSize(14).Tooltip("Attach images")
 				attach.Disabled(!chat.canAttach())
 				if attach.Clicked() {
 					a.chooseImages()
 				}
 
 				if branch := chat.gitBranch(); branch != "" {
-					chip := a.composerChip(c)
+					chip := chipBase(c)
 					chip.Children(func() {
 						mui.Text(c, "⑂ "+truncate(branch, 24)).FontSize(9).SingleLine()
 					})
@@ -79,7 +79,7 @@ func (a *App) composer(c *mui.Context) {
 
 				a.modeChip(c, chat)
 				if text := formatTurnUsage(chat.TurnUsage); text != "" {
-					mui.Text(c, text).FontSize(9).TextColor(t.TextMuted).SingleLine()
+					caption(c, text)
 				}
 				mui.Spacer(c)
 				a.usageChip(c, chat)
@@ -88,12 +88,6 @@ func (a *App) composer(c *mui.Context) {
 			})
 		})
 	})
-}
-
-func (a *App) composerChip(c *mui.Context) mui.Element {
-	t := c.Theme()
-	return mui.ButtonBase(c).Padding(3, 8).Gap(3).Radius(8).
-		Background(t.Background).Border(1, t.Border)
 }
 
 func (c *Chat) composerHeight() float32 {
@@ -127,7 +121,7 @@ func (a *App) modeChip(c *mui.Context, chat *Chat) {
 	if current == "" {
 		current = modeLabel(chat.Info.Modes[0])
 	}
-	chip := a.composerChip(c)
+	chip := chipBase(c)
 	chip.Children(func() {
 		mui.Text(c, current).FontSize(9).SingleLine()
 	})
@@ -186,11 +180,11 @@ func (a *App) modelChip(c *mui.Context, chat *Chat) {
 	if model == "" {
 		model = "Agent"
 	}
-	chip := a.composerChip(c).MaxWidth(230)
+	chip := chipBase(c).MaxWidth(230)
 	chip.Children(func() {
 		mui.Text(c, truncate(model, 28)).FontSize(9).SingleLine()
 		if thinking != "" {
-			mui.Text(c, "· "+truncate(thinking, 12)).FontSize(9).TextColor(c.Theme().TextMuted).SingleLine()
+			caption(c, "· "+truncate(thinking, 12))
 		}
 	})
 	chip.Tooltip("Agent, provider, model and thinking")
@@ -209,7 +203,6 @@ func (a *App) modelChip(c *mui.Context, chat *Chat) {
 }
 
 func (a *App) modelPanel(c *mui.Context, chat *Chat) {
-	t := c.Theme()
 	options := a.chatConfigOptions(chat)
 	option := modelOptionOf(options)
 	thinking := thinkingOptionOf(options)
@@ -219,7 +212,7 @@ func (a *App) modelPanel(c *mui.Context, chat *Chat) {
 	mui.Row(c).Height(252).Gap(1).Children(func() {
 		a.modelColumn(c, "Agent", 122, func(inner *mui.Context) {
 			if len(a.Agents) == 0 {
-				mui.Text(inner, "No agents").FontSize(9).TextColor(t.TextMuted)
+				caption(inner, "No agents")
 				return
 			}
 			agentLocked := chat.Session != nil || chat.Connecting
@@ -244,14 +237,14 @@ func (a *App) modelPanel(c *mui.Context, chat *Chat) {
 		a.modelColumn(c, "Provider", 112, func(inner *mui.Context) {
 			providers := modelProviders(option)
 			if chat.Session == nil && a.agentConfigBusy[chat.Agent.ID] {
-				mui.Text(inner, "Refreshing providers…").FontSize(9).TextColor(t.TextMuted)
+				caption(inner, "Refreshing providers…")
 			}
 			if len(providers) == 0 {
 				label := "Connect first"
 				if chat.Session == nil {
 					label = "No options yet"
 				}
-				mui.Text(inner, label).FontSize(9).TextColor(t.TextMuted)
+				caption(inner, label)
 				return
 			}
 			current := chat.currentProvider(options)
@@ -274,13 +267,13 @@ func (a *App) modelPanel(c *mui.Context, chat *Chat) {
 				if chat.Session == nil {
 					label = "No options yet"
 				}
-				mui.Text(inner, label).FontSize(9).TextColor(t.TextMuted)
+				caption(inner, label)
 				return
 			}
 			provider := chat.currentProvider(options)
 			choices := modelChoices(option, provider)
 			if len(choices) == 0 {
-				mui.Text(inner, "No models").FontSize(9).TextColor(t.TextMuted)
+				caption(inner, "No models")
 				return
 			}
 			for _, choice := range choices {
@@ -303,7 +296,7 @@ func (a *App) modelPanel(c *mui.Context, chat *Chat) {
 				if thinking == nil && chat.Session == nil {
 					label = "No options yet"
 				}
-				mui.Text(inner, label).FontSize(9).TextColor(t.TextMuted)
+				caption(inner, label)
 			} else {
 				for _, choice := range thinking.Options {
 					choice := choice
@@ -316,7 +309,7 @@ func (a *App) modelPanel(c *mui.Context, chat *Chat) {
 			}
 			for _, extra := range extraConfigOptionsOf(options) {
 				extra := extra
-				mui.Text(inner, configOptionLabel(extra)).FontSize(9).Bold().TextColor(t.TextMuted).Padding(6, 4, 0, 4)
+				sectionLabel(inner, configOptionLabel(extra)).Padding(6, 4, 0, 4)
 				for _, choice := range extra.Options {
 					choice := choice
 					selected := choice.Value == extra.CurrentValue
@@ -331,9 +324,8 @@ func (a *App) modelPanel(c *mui.Context, chat *Chat) {
 }
 
 func (a *App) modelColumn(c *mui.Context, title string, width float32, build func(*mui.Context)) {
-	t := c.Theme()
 	mui.Column(c).Width(width).FillHeight().Gap(2).Padding(4, 4, 6, 4).Children(func() {
-		mui.Text(c, title).FontSize(9).Bold().TextColor(t.TextMuted).Padding(0, 4)
+		sectionLabel(c, title).Padding(0, 4)
 		mui.Scroll(c).Grow(1).Gap(1).Children(func() { build(c) })
 	})
 }
@@ -362,7 +354,7 @@ func (a *App) usageChip(c *mui.Context, chat *Chat) {
 	}
 	t := c.Theme()
 	pct, known := usagePercent(chat.Usage)
-	chip := a.composerChip(c).Padding(3, 7)
+	chip := chipBase(c).Padding(3, 7)
 	chip.Children(func() {
 		ring := mui.Box(c).Size(14, 14)
 		ring.Draw(func(p *mui.Painter, r mui.Rect) {
@@ -425,18 +417,15 @@ func drawUsageRing(p *mui.Painter, r mui.Rect, percent int, track, fill mui.Colo
 }
 
 func (a *App) sendButton(c *mui.Context, chat *Chat) {
-	t := c.Theme()
-	label, background := "Send", t.Accent
+	label := "Send"
 	disabled := !chat.canSend() || !chat.hasPrompt()
+	button := primaryButton(c, label)
 	if chat.Streaming {
-		label, background = "Stop", t.Danger
+		label = "Stop"
+		button = dangerButton(c, label)
 		disabled = chat.Cancelling
 	}
-	button := mui.ButtonBase(c).Padding(4, 12).Radius(8).
-		Background(background).TextColor(t.AccentText).Label(label).Disabled(disabled)
-	button.Children(func() {
-		mui.Text(c, label).FontSize(10).Bold()
-	})
+	button.FontSize(10).Bold().Disabled(disabled)
 	if button.Clicked() {
 		if chat.Streaming {
 			a.stop()
@@ -481,13 +470,12 @@ func (a *App) commandPalette(c *mui.Context, chat *Chat) {
 						item.Children(func() {
 							mui.Text(c, "/"+command.Name).FontSize(11).Bold().Shrink(0)
 							if command.Description != "" {
-								mui.Text(c, truncate(command.Description, 90)).FontSize(9).
-									TextColor(t.TextMuted).Grow(1).SingleLine()
+								mutedText(c, truncate(command.Description, 90), 9).Grow(1).SingleLine()
 							} else {
 								mui.Spacer(c)
 							}
 							if command.Input != nil && command.Input.Hint != "" {
-								mui.Text(c, command.Input.Hint).FontSize(9).TextColor(t.TextMuted)
+								mutedText(c, command.Input.Hint, 9)
 							}
 						})
 						if item.Clicked() {

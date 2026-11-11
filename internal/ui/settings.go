@@ -36,26 +36,24 @@ func (a *App) settingsDialog(c *mui.Context) {
 	mui.Modal(c, &a.SettingsOpen, func() {
 		mui.Column(c).Gap(10).Width(620).Children(func() {
 			mui.Text(c, "MCP servers").FontSize(18).Bold()
-			mui.Text(c, "Applies to the active chat and new tabs created from it. Each tab keeps its own list.").
-				FontSize(11).TextColor(t.TextMuted)
+			mutedText(c, "Applies to the active chat and new tabs created from it. Each tab keeps its own list.", 11)
 			mui.TextArea(c, &a.MCPText).
 				Label("JSON array").
 				Lines(8, 20).
 				Placeholder(mcpExample)
-			mui.Text(c, "stdio: name + command + args + env; HTTP: type \"http\" + name + url + headers.").
-				FontSize(10).TextColor(t.TextMuted)
+			mutedText(c, "stdio: name + command + args + env; HTTP: type \"http\" + name + url + headers.", 10)
 			if a.MCPError != "" {
 				mui.Text(c, a.MCPError).FontSize(12).TextColor(t.Danger).Selectable()
 			}
 			mui.Row(c).Gap(8).Wrap().Justify(mui.End).Children(func() {
-				if mui.Button(c, "Insert example").Clicked() {
+				if quietButton(c, "Insert example").Clicked() {
 					a.MCPText = mcpExample
 					a.MCPError = ""
 				}
-				if mui.Button(c, "Cancel").Clicked() {
+				if quietButton(c, "Cancel").Clicked() {
 					a.SettingsOpen = false
 				}
-				if mui.PrimaryButton(c, "Apply").Clicked() {
+				if primaryButton(c, "Apply").Clicked() {
 					servers, err := parseMCPServers(a.MCPText)
 					if err != nil {
 						a.MCPError = err.Error()

@@ -74,14 +74,14 @@ func (a *App) sidebar(c *mui.Context) {
 		Children(func() {
 			mui.Row(c).Gap(8).AlignItems(mui.Center).Padding(14, 14, 8, 14).Children(func() {
 				mui.Text(c, "ACP GUI").FontSize(16).Bold().Grow(1)
-				mui.Text(c, "v"+a.Version).FontSize(10).TextColor(t.TextMuted)
+				mutedText(c, "v"+a.Version, 10)
 			})
 
 			mui.Column(c).Gap(8).Padding(0, 12, 10, 12).Grow(1).Children(func() {
 				a.newConversationButton(c)
 				mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
 					mui.Text(c, "Workspaces").FontSize(10).Bold().TextColor(t.TextMuted).Grow(1)
-					if mui.Button(c, "＋").Label("Add workspace").FontSize(13).Clicked() {
+					if quietButton(c, "＋").Label("Add workspace").FontSize(13).Clicked() {
 						a.addWorkspace()
 					}
 				})
@@ -98,13 +98,10 @@ func (a *App) sidebar(c *mui.Context) {
 }
 
 func (a *App) newConversationButton(c *mui.Context) {
-	t := c.Theme()
-	button := mui.ButtonBase(c).FillWidth().Height(38).Gap(6).Center().
-		Radius(10).Background(t.Accent).TextColor(t.AccentText).
+	button := primaryButton(c, "＋  New conversation").
+		FillWidth().Height(38).Gap(6).
+		FontSize(12).Bold().
 		Label("New conversation")
-	button.Children(func() {
-		mui.Text(c, "＋  New conversation").FontSize(12).Bold()
-	})
 	if button.Clicked() {
 		a.newChatTabIn(a.defaultWorkspace())
 	}
@@ -116,7 +113,7 @@ func (a *App) savedSessionsStatus(c *mui.Context) {
 	case a.SavedLoading:
 		mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
 			mui.Spinner(c)
-			mui.Text(c, "Syncing saved sessions from agent…").FontSize(9).TextColor(t.TextMuted)
+			caption(c, "Syncing saved sessions from agent…")
 		})
 	case a.SavedError != "":
 		mui.Text(c, truncate("Saved sessions: "+a.SavedError, 120)).
@@ -140,7 +137,7 @@ func (a *App) sidebarFilters(c *mui.Context) {
 				label = "Hide deleted"
 				tip = "Hide locally deleted saved sessions"
 			}
-			if mui.Button(c, label).Label(tip).FontSize(9).Clicked() {
+			if quietButton(c, label).Label(tip).FontSize(9).Clicked() {
 				a.ShowDeleted = !a.ShowDeleted
 			}
 		}
@@ -151,7 +148,7 @@ func (a *App) sidebarFilters(c *mui.Context) {
 				label = "Hide removed"
 				tip = "Hide locally removed workspaces"
 			}
-			if mui.Button(c, label).Label(tip).FontSize(9).Clicked() {
+			if quietButton(c, label).Label(tip).FontSize(9).Clicked() {
 				a.ShowRemovedWorkspaces = !a.ShowRemovedWorkspaces
 			}
 		}
@@ -182,13 +179,13 @@ func (a *App) workspaceGroup(c *mui.Context, workspace string) {
 			if !collapsed {
 				arrow = "▾"
 			}
-			mui.Text(c, arrow).FontSize(10).TextColor(t.TextMuted)
+			mutedText(c, arrow, 10)
 			title := mui.Text(c, display).FontSize(11).Bold().Grow(1).SingleLine()
 			if removed {
 				title.TextColor(t.TextMuted)
 			}
 			if total > 0 {
-				mui.Text(c, formatCount(total)).FontSize(9).TextColor(t.TextMuted)
+				mutedText(c, formatCount(total), 9)
 			}
 		})
 		tip := workspace
@@ -200,11 +197,7 @@ func (a *App) workspaceGroup(c *mui.Context, workspace string) {
 			a.WorkspaceCollapsed[workspace] = !collapsed
 		}
 
-		menu := mui.ButtonBase(c).Padding(4, 6).Radius(8).Background(t.Background).
-			Label("Workspace actions for " + label)
-		menu.Children(func() {
-			mui.Text(c, "⋯").FontSize(11).TextColor(t.TextMuted)
-		})
+		menu := menuTrigger(c, "Workspace actions for "+label, t.Background)
 		if menu.Clicked() {
 			if a.WorkspaceMenuOpen == workspace {
 				a.WorkspaceMenuOpen = ""
@@ -216,13 +209,13 @@ func (a *App) workspaceGroup(c *mui.Context, workspace string) {
 		mui.Popover(c, menu, &open, func() {
 			mui.Column(c).Width(168).Gap(2).Children(func() {
 				if removed {
-					if mui.Button(c, "Restore workspace").FillWidth().FontSize(11).Clicked() {
+					if quietButton(c, "Restore workspace").FillWidth().FontSize(11).Clicked() {
 						open = false
 						a.restoreWorkspace(workspace)
 					}
 					return
 				}
-				if mui.Button(c, "Remove workspace").FillWidth().FontSize(11).
+				if quietButton(c, "Remove workspace").FillWidth().FontSize(11).
 					TextColor(t.Danger).Clicked() {
 					open = false
 					a.removeWorkspace(workspace)
@@ -234,7 +227,7 @@ func (a *App) workspaceGroup(c *mui.Context, workspace string) {
 		}
 
 		if !removed {
-			plus := mui.Button(c, "＋").Label("New conversation in " + label).FontSize(12)
+			plus := quietButton(c, "＋").Label("New conversation in " + label).FontSize(12)
 			if plus.Clicked() {
 				a.newChatTabIn(workspace)
 			}
@@ -248,7 +241,7 @@ func (a *App) workspaceGroup(c *mui.Context, workspace string) {
 	chats = a.chatsInWorkspace(workspace)
 	saved = a.savedSessionsFor(workspace)
 	if len(chats) == 0 && len(saved) == 0 {
-		mui.Text(c, "No conversations yet").FontSize(9).TextColor(t.TextMuted).Padding(2, 16)
+		caption(c, "No conversations yet").Padding(2, 16)
 		return
 	}
 
@@ -263,12 +256,12 @@ func (a *App) workspaceGroup(c *mui.Context, workspace string) {
 		}
 		if len(chats) > workspacePreviewLimit {
 			if expanded {
-				if mui.Button(c, "Show less").Label("Show less in " + label).FontSize(9).Clicked() {
+				if quietButton(c, "Show less").Label("Show less in " + label).FontSize(9).Clicked() {
 					a.WorkspaceExpanded[workspace] = false
 				}
 			} else {
 				more := len(chats) - workspacePreviewLimit
-				if mui.Button(c, "Show "+formatCount(more)+" more").Label("Show more in " + label).FontSize(9).Clicked() {
+				if quietButton(c, "Show "+formatCount(more)+" more").Label("Show more in " + label).FontSize(9).Clicked() {
 					a.WorkspaceExpanded[workspace] = true
 				}
 			}
@@ -304,21 +297,17 @@ func (a *App) conversationRow(c *mui.Context, chat *Chat) {
 			a.selectChat(chat)
 		}
 
-		menu := mui.ButtonBase(c).Padding(4, 6).Radius(8).Background(background).
-			Label("Conversation actions for " + chat.name())
-		menu.Children(func() {
-			mui.Text(c, "⋯").FontSize(11).TextColor(t.TextMuted)
-		})
+		menu := menuTrigger(c, "Conversation actions for "+chat.name(), background)
 		if menu.Clicked() {
 			chat.MenuOpen = !chat.MenuOpen
 		}
 		mui.Popover(c, menu, &chat.MenuOpen, func() {
 			mui.Column(c).Width(132).Gap(2).Children(func() {
-				if mui.Button(c, "Rename").FillWidth().FontSize(11).Clicked() {
+				if quietButton(c, "Rename").FillWidth().FontSize(11).Clicked() {
 					chat.MenuOpen = false
 					a.openRename(chat)
 				}
-				if mui.Button(c, "Delete").FillWidth().FontSize(11).TextColor(t.Danger).Clicked() {
+				if quietButton(c, "Delete").FillWidth().FontSize(11).TextColor(t.Danger).Clicked() {
 					chat.MenuOpen = false
 					a.removeChat(chat)
 				}
@@ -357,12 +346,12 @@ func (a *App) renameDialog(c *mui.Context) {
 				Label("Conversation name").
 				Placeholder("Conversation name")
 			mui.Row(c).Gap(8).Justify(mui.End).Children(func() {
-				if mui.Button(c, "Cancel").Clicked() {
+				if quietButton(c, "Cancel").Clicked() {
 					a.RenameOpen = false
 					a.RenameChat = nil
 					a.RenameSaved = false
 				}
-				if mui.PrimaryButton(c, "Save").Clicked() {
+				if primaryButton(c, "Save").Clicked() {
 					if title := strings.TrimSpace(a.RenameText); title != "" {
 						switch {
 						case a.RenameSaved:
@@ -407,7 +396,7 @@ func (a *App) sidebarStatus(c *mui.Context) {
 			row.Children(func() {
 				dot := mui.Box(c).Size(5, 5).Radius(3).Background(color)
 				_ = dot
-				mui.Text(c, status.Name).FontSize(9).TextColor(t.TextMuted).Grow(1).SingleLine()
+				mutedText(c, status.Name, 9).Grow(1).SingleLine()
 				mui.Text(c, status.Status).FontSize(9).TextColor(color).SingleLine()
 			})
 			detail := strings.TrimSpace(status.Detail)
@@ -416,7 +405,7 @@ func (a *App) sidebarStatus(c *mui.Context) {
 			}
 		}
 		if !a.Resolving && !a.anyLiveChat() && !a.injectedAgents {
-			if mui.Button(c, "Refresh agents").FontSize(9).Clicked() {
+			if quietButton(c, "Refresh agents").FontSize(9).Clicked() {
 				a.retryDiscovery()
 			}
 		}

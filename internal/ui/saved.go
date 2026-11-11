@@ -226,11 +226,11 @@ func (a *App) savedSessionRow(c *mui.Context, item savedSession) {
 			if hidden {
 				icon = "⌫"
 			}
-			mui.Text(c, icon).FontSize(9).TextColor(t.TextMuted)
+			mutedText(c, icon, 9)
 			agentBadge(c, item.AgentID, 10)
 			mui.Text(c, truncate(display, 60)).FontSize(11).Grow(1).SingleLine()
 			if stamp := savedTimeLabel(item.UpdatedAt); stamp != "" {
-				mui.Text(c, stamp).FontSize(8).TextColor(t.TextMuted)
+				mutedText(c, stamp, 8)
 			}
 		})
 		tooltip := "Saved session · " + title
@@ -254,11 +254,7 @@ func (a *App) savedSessionRow(c *mui.Context, item savedSession) {
 			a.openSavedSession(item)
 		}
 
-		menu := mui.ButtonBase(c).Padding(4, 6).Radius(8).Background(t.Background).
-			Label("Saved session actions for " + title)
-		menu.Children(func() {
-			mui.Text(c, "⋯").FontSize(11).TextColor(t.TextMuted)
-		})
+		menu := menuTrigger(c, "Saved session actions for "+title, t.Background)
 		if menu.Clicked() {
 			if a.SavedMenuOpen == rowKey {
 				a.SavedMenuOpen = ""
@@ -269,18 +265,18 @@ func (a *App) savedSessionRow(c *mui.Context, item savedSession) {
 		open := a.SavedMenuOpen == rowKey
 		mui.Popover(c, menu, &open, func() {
 			mui.Column(c).Width(132).Gap(2).Children(func() {
-				if mui.Button(c, "Rename").FillWidth().FontSize(11).Clicked() {
+				if quietButton(c, "Rename").FillWidth().FontSize(11).Clicked() {
 					open = false
 					a.SavedMenuOpen = ""
 					a.openSavedRename(item)
 				}
 				if hidden {
-					if mui.Button(c, "Restore").FillWidth().FontSize(11).Clicked() {
+					if quietButton(c, "Restore").FillWidth().FontSize(11).Clicked() {
 						open = false
 						a.SavedMenuOpen = ""
 						a.setArchivedShow(item.AgentID, item.SessionID, true)
 					}
-				} else if mui.Button(c, "Delete").FillWidth().FontSize(11).TextColor(t.Danger).Clicked() {
+				} else if quietButton(c, "Delete").FillWidth().FontSize(11).TextColor(t.Danger).Clicked() {
 					open = false
 					a.SavedMenuOpen = ""
 					a.hideArchivedRecord(item.AgentID, item.SessionID, item.Cwd, item.Title)
