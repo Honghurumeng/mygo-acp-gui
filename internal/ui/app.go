@@ -352,6 +352,7 @@ func (a *App) Attach(win *mygo.Window) {
 	a.postMu.Lock()
 	a.win = win
 	a.postMu.Unlock()
+	win.OnFocus(a.refreshGitOnFocus)
 	if !a.injectedAgents {
 		a.startDiscovery()
 	}

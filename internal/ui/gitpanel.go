@@ -107,6 +107,28 @@ func (a *App) ensureGitPanel() {
 	a.startGitLoad(workspace, false)
 }
 
+// refreshGitOnFocus rereads the repository when the window gains focus, so
+// changes made in another app show up without pressing Refresh. It leaves a
+// load or an action already running alone, and only reads while the panel is
+// open.
+func (a *App) refreshGitOnFocus() {
+	if a.closed.Load() || !a.GitPanelOpen {
+		return
+	}
+	workspace := a.activeGitWorkspace()
+	if workspace == "" || !filepath.IsAbs(workspace) {
+		return
+	}
+	if a.Git.Workspace != workspace || !a.Git.Checked {
+		a.ensureGitPanel()
+		return
+	}
+	if a.Git.Loading || a.Git.Busy != "" {
+		return
+	}
+	a.startGitLoad(workspace, false)
+}
+
 func (a *App) startGitLoad(workspace string, clearFeedback bool) {
 	if a.closed.Load() {
 		return
@@ -433,6 +455,7 @@ func (a *App) gitInitialError(c *mui.Context) {
 }
 
 func (a *App) gitCommitBox(c *mui.Context) {
+	t := c.Theme()
 	busy := a.Git.Busy != "" || a.Git.Loading
 	staged := len(a.Git.Staged)
 	mui.Column(c).Gap(6).Padding(6, 12, 6, 12).Children(func() {
@@ -440,24 +463,11 @@ func (a *App) gitCommitBox(c *mui.Context) {
 			Label("Commit message").
 			Placeholder("Commit message").
 			Lines(2, 4).
+			Padding(5, 7).
+			Radius(t.Radius).
+			Border(1, t.Border).
+			Background(t.Background).
 			Disabled(busy)
-		status := ""
-		switch {
-		case busy && a.Git.Busy != "":
-			status = a.Git.Busy + "…"
-		case staged == 0:
-			status = "Stage changes to commit"
-		default:
-			status = strconv.Itoa(staged) + " staged"
-		}
-		mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
-			if busy && a.Git.Busy != "" {
-				mui.Spinner(c)
-			}
-			if status != "" {
-				caption(c, status)
-			}
-		})
 		button := primaryButton(c, "Commit").FontSize(10).FillWidth()
 		disabled := busy || staged == 0 || strings.TrimSpace(a.Git.Message) == ""
 		button.Disabled(disabled)

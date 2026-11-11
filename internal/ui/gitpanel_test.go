@@ -62,7 +62,7 @@ func TestGitPanelTogglesFromHeader(t *testing.T) {
 	if !app.GitPanelOpen {
 		t.Fatal("Git panel did not start open")
 	}
-	if !tt.HasText("Stage changes to commit") {
+	if _, ok := tt.Find("Commit"); !ok {
 		t.Fatalf("commit box missing before collapse; texts: %q", tt.Texts())
 	}
 
@@ -73,7 +73,7 @@ func TestGitPanelTogglesFromHeader(t *testing.T) {
 	if app.GitPanelOpen {
 		t.Fatal("header button did not close the Git panel")
 	}
-	if tt.HasText("Stage changes to commit") {
+	if _, ok := tt.Find("Commit"); ok {
 		t.Fatalf("Git panel still drawn after collapse; texts: %q", tt.Texts())
 	}
 
@@ -84,7 +84,7 @@ func TestGitPanelTogglesFromHeader(t *testing.T) {
 	if !app.GitPanelOpen {
 		t.Fatal("header button did not reopen the Git panel")
 	}
-	if !tt.HasText("Stage changes to commit") {
+	if _, ok := tt.Find("Commit"); !ok {
 		t.Fatalf("commit box missing after reopen; texts: %q", tt.Texts())
 	}
 }
@@ -107,6 +107,23 @@ func TestGitPanelFollowsActiveWorkspace(t *testing.T) {
 	}
 	if !tt.HasText("Not a Git repository") {
 		t.Errorf("new workspace prompt missing; texts: %q", tt.Texts())
+	}
+}
+
+func TestGitPanelRefreshesOnFocus(t *testing.T) {
+	workspace := initGitPanelRepo(t)
+	app, tt := newGitPanelApp(t, workspace)
+	waitFor(t, app, tt, func() bool {
+		return app.Git.Checked && !app.Git.Loading && app.Git.RepoRoot != ""
+	})
+
+	writeGitPanelFile(t, workspace, "focused.txt", "changed elsewhere\n")
+	app.refreshGitOnFocus()
+	waitFor(t, app, tt, func() bool {
+		return app.Git.Checked && !app.Git.Loading && len(app.Git.Changes) == 1
+	})
+	if !tt.HasText("focused.txt") {
+		t.Errorf("focused refresh did not show the new change; texts: %q", tt.Texts())
 	}
 }
 

@@ -7,7 +7,7 @@
 - 窗口右侧固定宽 300 的可折叠面板，跟随当前会话的 workspace；没有会话时跟随草稿 workspace。
 - 顶部标题栏（MCP 左侧）的 `Git` 按钮显示/隐藏面板；面板打开时按钮为主色（蓝色），关闭后恢复普通样式。
 - 初始打开。面板不被持久化，重启后恢复默认打开。
-- 有仓库时从上到下：commit message 输入框、Commit 按钮、错误/成功提示、暂存/更改列表、Git 图表和功能按钮。
+- 有仓库时从上到下：带边框的 commit message 输入框、Commit 按钮、错误/成功提示、暂存/更改列表、Git 图表和功能按钮；输入框和按钮之间不再放常驻状态条。
 - 变更行可点：点文件名打开全窗口 diff 预览（见下节），右侧 `＋`/`－` 仍只做暂存/取消暂存。
 - 变更区域和图表区域用 `ui.SplitVertical` 分隔，可拖动调整高度，二者总高度不变。
 - 状态区在 workspace 切换时立即清空并异步重读，避免显示上一个仓库的内容。
@@ -54,6 +54,7 @@
 - Pull：`git pull --no-edit`，并设置 `GIT_MERGE_AUTOEDIT=no` 防止等待编辑器。
 - Push：`git push`，只推当前分支已配置的 upstream；没有 upstream 时显示 git 错误。
 - Refresh：重新执行状态和图表读取。
+- 窗口获得焦点时自动重读状态和图表；面板关闭、正在读取或操作进行中时跳过，避免打断进行中的 Git 命令。
 - Undo：`reset --soft`，提交内容保留在暂存区，不丢文件改动。
 - 所有命令通过 `exec.Command` 直接传参数，不经过 shell；不使用 force push、reset --hard、clean 等破坏性操作。
 
@@ -87,4 +88,4 @@ go test ./internal/git -v
 go test ./internal/ui -run 'TestGitPanel' -v -count=1
 ```
 
-`internal/git` 测试覆盖状态/重命名解析、分支头解析、init、stage/unstage、commit、首提交撤销、嵌套工作区，以及 diff 两侧（未暂存/已暂存/未跟踪/新增/删除/重命名、二进制与超大文件、越界路径）、提交日志解析、refs 解析、commit 文件列表与提交 diff 两侧（首提交/单文件/重命名/删除）、merge 的 lane 分配与 8 lane 上限、父提交必须在子提交之后；UI 测试覆盖无仓库提示与 init、无 git 提示、Stage all + Commit 全链路、diff 预览打开与二进制报错、提交图渲染与窄面板裁剪、点击提交展开/收起文件列表、从展开列表打开提交 diff。
+`internal/git` 测试覆盖状态/重命名解析、分支头解析、init、stage/unstage、commit、首提交撤销、嵌套工作区，以及 diff 两侧（未暂存/已暂存/未跟踪/新增/删除/重命名、二进制与超大文件、越界路径）、提交日志解析、refs 解析、commit 文件列表与提交 diff 两侧（首提交/单文件/重命名/删除）、merge 的 lane 分配与 8 lane 上限、父提交必须在子提交之后；UI 测试覆盖无仓库提示与 init、无 git 提示、窗口获得焦点后刷新、Stage all + Commit 全链路、diff 预览打开与二进制报错、提交图渲染与窄面板裁剪、点击提交展开/收起文件列表、从展开列表打开提交 diff。
