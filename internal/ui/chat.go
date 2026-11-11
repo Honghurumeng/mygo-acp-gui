@@ -45,15 +45,30 @@ type Chat struct {
 	Cancelling bool
 	LastStop   string
 
-	Commands     []acp.AvailableCommand
-	CommandsOpen bool
-	Attachments  []Attachment
-	Plan         []session.PlanEntry
-	PlanOpen     bool
-	Usage        *acp.Usage
-	TurnUsage    *acp.PromptUsage
-	Title        string
-	ConfigBusy   string
+	Commands    []acp.AvailableCommand
+	Attachments []Attachment
+	Plan        []session.PlanEntry
+	PlanOpen    bool
+	Usage       *acp.Usage
+	TurnUsage   *acp.PromptUsage
+	Title       string
+	ConfigBusy  string
+
+	// ComposerHeight is the draggable height of the composer card.
+	ComposerHeight float32
+	// ModelOpen, ModeOpen and MenuOpen are the popovers of the composer and
+	// the sidebar; the view closes them when the chat is left.
+	ModelOpen     bool
+	ModelProvider string
+	ModeOpen      bool
+	MenuOpen      bool
+
+	// pendingSend remembers a submit made while the chat was still a draft:
+	// Connect runs first, then the prompt is sent.
+	pendingSend bool
+
+	gitWorkspace  string
+	gitBranchName string
 
 	Unread    bool
 	Attention bool
@@ -246,19 +261,17 @@ func (a *App) defaultWorkspace() string {
 	return "."
 }
 
-// newChatTab appends and selects a draft chat, copying the active chat's
-// agent, workspace and MCP list so a new tab starts where the user is.
-func (a *App) newChatTab() *Chat {
+func (a *App) newChatTabIn(workspace string) *Chat {
 	chat := &Chat{
-		ID:         a.nextChatID(),
-		MCPServers: append([]any(nil), a.MCPServers...),
-		Workspace:  a.defaultWorkspace(),
+		ID:             a.nextChatID(),
+		MCPServers:     append([]any(nil), a.MCPServers...),
+		Workspace:      workspace,
+		ComposerHeight: defaultComposerHeight,
 	}
 	if spec, ok := a.preferredAgent(); ok {
 		chat.Agent = spec
 	}
 	if current := a.activeChat(); current != nil {
-		chat.Workspace = current.Workspace
 		chat.MCPServers = append([]any(nil), current.MCPServers...)
 	}
 	a.chatsMu.Lock()
@@ -267,7 +280,14 @@ func (a *App) newChatTab() *Chat {
 	a.chatsMu.Unlock()
 	a.AgentIndex = a.agentIndex(chat.Agent.ID)
 	a.Workspace = chat.Workspace
+	a.ensureWorkspace(chat.Workspace)
+	a.WorkspaceCollapsed[chat.Workspace] = false
 	return chat
+}
+
+// newChatTab opens a draft chat in the current workspace.
+func (a *App) newChatTab() *Chat {
+	return a.newChatTabIn(a.defaultWorkspace())
 }
 
 // ensureChat returns the active chat, opening a draft tab when none exists.
@@ -286,16 +306,25 @@ func (a *App) selectChat(chat *Chat) {
 	}
 	if index == a.Active {
 		chat.Unread = false
+		chat.gitWorkspace = ""
 		return
 	}
 	previous := a.activeChat()
 	if previous != nil {
-		previous.CommandsOpen = false
+		previous.ModelOpen = false
+		previous.ModeOpen = false
+		previous.MenuOpen = false
 	}
 	a.Active = index
 	chat.Unread = false
+	chat.gitWorkspace = ""
+	chat.ModelOpen = false
+	chat.ModeOpen = false
+	chat.MenuOpen = false
 	a.AgentIndex = a.agentIndex(chat.Agent.ID)
 	a.Workspace = chat.Workspace
+	a.ensureWorkspace(chat.Workspace)
+	a.WorkspaceCollapsed[chat.Workspace] = false
 	a.persistSettings()
 }
 
@@ -316,7 +345,12 @@ func (a *App) removeChat(chat *Chat) {
 	}
 	chat.Closed = true
 	chat.cancelConnect()
+	chat.pendingSend = false
 	a.cancelPermissionsFor(chat)
+	if a.RenameChat == chat {
+		a.RenameOpen = false
+		a.RenameChat = nil
+	}
 
 	a.chatsMu.Lock()
 	a.Chats = append(a.Chats[:index], a.Chats[index+1:]...)

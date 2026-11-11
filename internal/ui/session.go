@@ -122,6 +122,13 @@ func (a *App) discover(ctx context.Context) {
 				a.ResolveError = "No builtin ACP agent is available."
 			}
 		}
+		// Drafts created before discovery finished can now pick the default
+		// builtin agent.
+		for _, chat := range a.chatsSnapshot() {
+			if chat.Session == nil && chat.Agent.ID == "" && len(a.Agents) > 0 {
+				chat.Agent = a.Agents[a.AgentIndex]
+			}
+		}
 	})
 }
 
@@ -157,25 +164,39 @@ func (a *App) Connect() {
 		if !ok {
 			chat.ConnectError = "No agent selected."
 			chat.clearPendingSession()
+			chat.pendingSend = false
 			return
 		}
 		spec = selected
 		chat.Agent = selected
 	}
+	// Use the current catalog entry, not a copy made when the draft was
+	// created, so discovery refreshes and test-injected paths apply.
+	for _, current := range a.Agents {
+		if current.ID == spec.ID {
+			spec = current
+			chat.Agent = current
+			break
+		}
+	}
 	workspace, err := agent.ValidateWorkspace(chat.Workspace)
 	if err != nil {
 		chat.WorkspaceError = err.Error()
 		chat.clearPendingSession()
+		chat.pendingSend = false
 		return
 	}
 	chat.Workspace = workspace
 	chat.WorkspaceError = ""
 	chat.ConnectError = ""
+	chat.gitWorkspace = ""
 	chat.Connecting = true
 	chat.Busy = "connect"
 	chat.Unread = false
 	chat.Stderr = ""
 	chat.StderrBytes = 0
+	a.ensureWorkspace(workspace)
+	a.WorkspaceCollapsed[workspace] = false
 	a.persistSettings()
 
 	action := chat.pendingSessionAction
@@ -253,6 +274,7 @@ func (a *App) Connect() {
 				chat.Connecting = false
 				chat.Busy = ""
 				chat.ConnectError = connectError(err, spec)
+				chat.pendingSend = false
 				a.markAgentAuth(spec.ID, err)
 				chat.clearConnect(gen)
 			})
@@ -284,7 +306,13 @@ func (a *App) Connect() {
 			chat.ConnectError = ""
 			chat.Busy = ""
 			chat.Unread = false
+			pendingSend := chat.pendingSend
+			queuedAttachments := append([]Attachment(nil), chat.Attachments...)
 			a.resetConversation(chat)
+			if pendingSend {
+				chat.Attachments = queuedAttachments
+			}
+			chat.pendingSend = pendingSend
 			chat.replaying = action == "load"
 			if title != "" {
 				chat.Title = title
@@ -297,6 +325,10 @@ func (a *App) Connect() {
 			s.Activate()
 			if chat.replaying {
 				a.Post(func() { a.finishReplay(chat) })
+			}
+			if pendingSend {
+				chat.pendingSend = false
+				a.send()
 			}
 		})
 	}()
@@ -344,6 +376,7 @@ func (a *App) Disconnect() {
 	}
 	chat.Connected = false
 	chat.Info = session.Info{}
+	chat.pendingSend = false
 	a.resetConversation(chat)
 }
 
@@ -376,7 +409,6 @@ func (a *App) resetConversation(chat *Chat) {
 	chat.ConfigBusy = ""
 	chat.LastStop = ""
 	chat.Commands = nil
-	chat.CommandsOpen = false
 	chat.Attachments = nil
 	chat.Plan = nil
 	chat.PlanOpen = false
@@ -385,6 +417,10 @@ func (a *App) resetConversation(chat *Chat) {
 	chat.Title = ""
 	chat.Unread = false
 	chat.replaying = false
+	chat.ModelOpen = false
+	chat.ModeOpen = false
+	chat.MenuOpen = false
+	chat.ModelProvider = ""
 }
 
 func (a *App) send() bool {
@@ -397,8 +433,24 @@ func (a *App) send() bool {
 	if text == "" && len(attachments) == 0 {
 		return false
 	}
+	if chat.Session == nil {
+		// The first message connects the draft and is then sent by the
+		// successful connect callback.
+		if !chat.Connecting {
+			chat.pendingSend = true
+			a.Connect()
+		}
+		if !chat.Connecting {
+			chat.pendingSend = false
+		}
+		return false
+	}
 	s := chat.Session
 	if s == nil {
+		return false
+	}
+	if len(attachments) > 0 && !chat.Info.AgentCapabilities.PromptCapabilities.Image {
+		a.addError(chat, attachmentError("This agent does not support image attachments."))
 		return false
 	}
 	chat.Input = ""
@@ -653,6 +705,8 @@ func (a *App) loadHistoryMode(sessionID string, resume bool, title, cwd string) 
 			if cwd != "" {
 				chat.Workspace = cwd
 				a.Workspace = cwd
+				a.ensureWorkspace(cwd)
+				a.WorkspaceCollapsed[cwd] = false
 			}
 			if newInfo.Title != "" {
 				chat.Title = newInfo.Title
@@ -873,7 +927,6 @@ func (a *App) applyExit(chat *Chat, exit session.Exit) {
 	chat.Cancelling = false
 	chat.Info = session.Info{}
 	chat.replaying = false
-	chat.CommandsOpen = false
 	if chat.turn != nil {
 		if chat.turn.assistant != nil {
 			chat.turn.assistant.Done = true

@@ -25,7 +25,7 @@ func TestViewRenders(t *testing.T) {
 		}},
 	})
 	tt := ui.NewTester(state.View, 1060, 760)
-	for _, want := range []string{"ACP GUI", "vtest", "Choose an agent and workspace"} {
+	for _, want := range []string{"ACP GUI", "vtest", "Start the conversation."} {
 		if !tt.HasText(want) {
 			t.Errorf("view does not show %q; texts: %q", want, tt.Texts())
 		}

@@ -42,7 +42,7 @@ func TestPromptUsageFallback(t *testing.T) {
 	if current(app).TurnUsage != nil {
 		t.Errorf("turn usage carried into the next turn: %+v", current(app).TurnUsage)
 	}
-	if !tt.HasText("context 1.2k / 10k") {
+	if !tt.HasText("12%") {
 		t.Errorf("context usage missing; texts: %q", tt.Texts())
 	}
 	if strings.Contains(strings.Join(tt.Texts(), "\n"), "turn 1.2k in") {

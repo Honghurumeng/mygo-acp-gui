@@ -18,7 +18,7 @@ const (
 
 func (a *App) chooseImages() {
 	chat := a.activeChat()
-	if chat == nil || chat.Session == nil || chat.Connecting || chat.Busy != "" {
+	if chat == nil || chat.Closed || chat.Connecting || chat.Busy != "" {
 		return
 	}
 	remaining := maxAttachments - len(chat.Attachments)

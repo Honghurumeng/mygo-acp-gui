@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"path/filepath"
 	"strings"
 
 	"github.com/reed/acp-gui/internal/settings"
@@ -14,6 +15,7 @@ func (a *App) persistSettings() {
 		return
 	}
 	file := settings.File{Version: settings.CurrentVersion, Paths: a.settingsPaths}
+	file.Workspaces = a.savedWorkspaces()
 	if chat := a.activeChat(); chat != nil {
 		file.LastAgent = chat.Agent.ID
 		file.LastWorkspace = strings.TrimSpace(chat.Workspace)
@@ -28,4 +30,31 @@ func (a *App) persistSettings() {
 	if err := a.settings.Save(file); err != nil {
 		a.SettingsWarning = err.Error()
 	}
+}
+
+// savedWorkspaces returns the sidebar list plus any workspace currently in
+// use, so a chat moved by history is not lost on restart.
+func (a *App) savedWorkspaces() []string {
+	seen := make(map[string]bool, len(a.Workspaces)+len(a.Chats)+1)
+	out := make([]string, 0, len(a.Workspaces)+len(a.Chats)+1)
+	add := func(path string) {
+		path = strings.TrimSpace(path)
+		if path == "" || !filepath.IsAbs(path) {
+			return
+		}
+		path = filepath.Clean(path)
+		if seen[path] {
+			return
+		}
+		seen[path] = true
+		out = append(out, path)
+	}
+	for _, workspace := range a.Workspaces {
+		add(workspace)
+	}
+	add(a.Workspace)
+	for _, chat := range a.Chats {
+		add(chat.Workspace)
+	}
+	return out
 }

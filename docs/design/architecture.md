@@ -10,12 +10,14 @@
 
 ```
 MyGo 原生窗口 (Go + ui)
-  ├─ 会话标签栏（每个标签一个 agent 进程 + ACP session）
-  ├─ Agent 选择 / 工作区选择 / 当前标签的会话视图
+  ├─ 左侧工作区/会话栏（每个会话一个 agent 进程 + ACP session）
+  ├─ 顶部会话标题栏 + 连接/历史/MCP/诊断操作
+  ├─ 消息区 + 可拖动高度的 composer
+  ├─ composer 底栏：附件、git 分支、mode、上下文环、agent/model/thinking、发送
   ├─ ui/markdown.Stream / View      ← agent_message_chunk
   ├─ ui.List(FollowEnd)             ← 消息列表
   ├─ ui.Collapsible                 ← thought / tool_call
-  ├─ ui.Select / Segmented          ← model / thought_level
+  ├─ ui.Popover                     ← 模型/provider/thinking、mode、会话操作
   └─ ACP client (Go)
         ↕ newline-delimited JSON-RPC 2.0 (stdin/stdout)
      agent 子进程（pi-acp、command-code）
@@ -35,7 +37,7 @@ MyGo 原生窗口 (Go + ui)
   internal/session/        进程组 + ACP 会话生命周期 + update/permission 分发（已实现）
   internal/settings/       settings.json 读写、容错与原子落盘（已实现）
   internal/logs/           每个 agent 的滚动日志文件（已实现）
-  internal/ui/             多标签会话、聊天、流式 Markdown、权限队列、窗口更新（已实现）
+  internal/ui/             多会话侧栏、聊天、流式 Markdown、权限队列、窗口更新（已实现）
   resources/
     agents/pi-acp/
       pi-acp.bundle.mjs    单文件 bundle，启动时直接 node 执行（见 pi.md）
@@ -63,21 +65,21 @@ MyGo 原生窗口 (Go + ui)
       pi: vendored bundle + Node 22+
       command-code: <绝对路径>/command-code acp
   → internal/session.Probe（initialize，5 秒，逐 agent 并行）
-  → 标签栏 + New / Connect：每个标签各自 internal/session.Start
+  → 侧栏工作区/会话 + New conversation / Connect：每个会话各自 internal/session.Start
       session/new | session/load | session/resume（DeferUpdates 缓冲历史）
   → session/prompt（文本 + 图片）
   → session/update → 所属 *Chat → Window.Update → markdown / tool / plan / usage
   → session/set_config_option / set_mode
   → session/list → load / resume / close；New chat 同进程 session/new
   → Stop → session/cancel
-  → 标签 × / Disconnect → Session.Close → kill(-pgid)
-  → 关闭窗口 / 退出 → 关闭所有标签的进程组
+  → 删除会话 / Disconnect → Session.Close → kill(-pgid)
+  → 关闭窗口 / 退出 → 关闭所有会话的进程组
 ```
 
-- 解析并探测 pi、command-code；单个 agent 缺失不会隐藏另一个，状态行展示 `ready` / `not-installed` / `installed-not-acp` / `needs-auth` / `error`。内置 agent 表固定为 pi、command-code，不做 registry 发现。
+- 解析并探测 pi、command-code；单个 agent 缺失不会隐藏另一个，侧栏状态展示 `ready` / `not-installed` / `installed-not-acp` / `needs-auth` / `error`。内置 agent 表固定为 pi、command-code，不做 registry 发现。
 - 路径解析优先使用 `ACP_GUI_NODE` / `ACP_GUI_PI` / `ACP_GUI_COMMAND_CODE` 的绝对路径覆盖，其次是 `settings.json` 的 `paths`，否则用登录 shell 的 `PATH`。只定位已有安装，不安装、不捆绑 Node。
 - UI 状态只在主线程修改。session 回调通过 `Window.Update`（测试中通过队列）提交，不直接改状态。
-- 每个标签是一个 `ui.Chat`，保存自己的 Session、Info、消息、输入草稿、配置、附件和连接代数；App 持有 `Chats` 与 `Active`。回调捕获 chat 指针，因此后台标签仍能流式更新。
+- 每个会话是一个 `ui.Chat`，保存自己的 Session、Info、消息、输入草稿、配置、附件和连接代数；App 持有 `Chats`、`Active`、工作区列表和侧栏折叠状态。回调捕获 chat 指针，因此后台会话仍能流式更新。
 - 测试用 `scripts/fake-agent.mjs`：prompt 流式输出、`/slow` + cancel、`/permission`、config/mode、list/load/resume/close、图片/MCP 计数、命令/plan/usage、子进程清理。
 
 ## ACP 客户端
@@ -121,7 +123,7 @@ pi 自己的工具在工作区内读写执行；客户端只负责展示和审�
 - Unix：`Setpgid: true`，退出时 `kill(-pid, SIGTERM)`，宽限 1.5 秒后 `SIGKILL`。
 - Windows：新进程组 + `taskkill /PID <pid> /T /F`。
 - 先关 stdin 请求优雅退出；agent 意外退出时也对残留进程组发 SIGTERM。
-- 应用退出 / 窗口关闭必须清理所有 agent 进程；`Session.Close` 幂等，`App.Shutdown` 取消所有标签的连接并关闭 sessions 中登记的全部进程组。
+- 应用退出 / 窗口关闭必须清理所有 agent 进程；`Session.Close` 幂等，`App.Shutdown` 取消所有会话的连接并关闭 sessions 中登记的全部进程组。
 - stderr 单独收集，保留末尾 64 KiB；初始化/会话失败时附在错误里（截断展示）。
 
 ## MyGo UI
@@ -130,14 +132,14 @@ pi 自己的工具在工作区内读写执行；客户端只负责展示和审�
 - 聊天列表：`ui.List`，`FollowEnd` + `FollowAnimation = &ui.Smooth`；用户上滑后停止跟随。
 - 思考/工具：`ui.Collapsible`；工具卡片显示标题、状态、可展开的入参/输出。
 - 权限：`session/request_permission` 回调阻塞，`ui.Modal` 展示工具名和 agent 给出的 `options`；按钮直接回 `optionId`，关闭/取消回 `cancelled`。
-- 配置：`ui.Select` / `ui.Segmented`；模型、effort、模式从 `configOptions` / `modes` 生成，不硬编码。
-- 输入：`ui.TextArea`，Enter 发送、Shift+Enter 换行；流式期间同一位置切换为 Stop；支持图片附件。
-- 多会话：标签栏显示标题/流式/未读/权限提醒；`+ New` 复制当前 agent、工作区和 MCP；标签 `×` 关闭对应进程。Agent/Workspace 选择跟随当前标签，连接后锁定。
-- 权限：全局模态但带 `Chat: …` 标签，后台请求排队；回答按所属 `Chat` 路由，标签 `!` 提醒未答请求。
-- 历史：`session/list` 模态；当前标签已有消息或流式时，Open/Resume 在新标签连接，否则就地 load/resume；Close chat 走 `session/close`。
-- MCP：JSON 模态，校验后传给 new/load/resume；命令面板解析 `available_commands_update`。
-- 诊断：顶部 “Logs” 打开 `Diagnostics`，显示发现状态、当前标签的 stderr 尾部、日志路径与 Reveal；stderr 同时写入滚动日志文件。
-- 计划/用量：composer 上方 plan，会话栏显示 usage/title。
+- 配置：`ui.Popover` 的模型面板按 agent → provider → model → thinking 选择；模型/思考来自 `configOptions`，mode 来自 `modes`，不硬编码。agent 只在会话开始前可选。
+- 输入：`ui.TextAreaBase` 嵌在可拖动高度的 composer 卡片中；Enter 发送、Shift+Enter 换行；流式期间 Send 切换为 Stop；支持图片附件。
+- 多会话：左侧栏按 workspace 分组会话，显示标题/流式/未读/权限提醒；超过 5 条折叠，可展开、重命名、删除。顶部 `New chat` 在同进程新建 session，侧栏 `New conversation` 新建独立进程。
+- 权限：全局模态但带 `Chat: …` 标签，后台请求排队；回答按所属 `Chat` 路由，侧栏 `!` 提醒未答请求。
+- 历史：`session/list` 模态；当前会话已有消息或流式时，Open/Resume 在新会话连接，否则就地 load/resume；Close chat 走 `session/close`。
+- MCP：JSON 模态，校验后传给 new/load/resume；输入 `/` 时 composer 上方出现命令面板，解析 `available_commands_update`。
+- 诊断：顶部 “Logs” 打开 `Diagnostics`，显示发现状态、当前会话的 stderr 尾部、日志路径与 Reveal；stderr 同时写入滚动日志文件。
+- 计划/用量：composer 上方 plan；上下文环形进度、turn token 用量和会话标题在 composer/标题栏显示。
 - 跨 goroutine 改状态：`win.Update(func(){ ... })`；没有窗口的测试用 `App.Flush` 排队应用。
 - 资源：`mygo.App.Path(mygo.PathResources)`；数据与设置：`mygo.App.Path(mygo.PathUserData)`。
 - 登录：只展示 agent 的 `authMethods` / 命令，由用户在外部终端自行解决；不内嵌终端。
@@ -148,17 +150,17 @@ pi 自己的工具在工作区内读写执行；客户端只负责展示和审�
 存储在 `mygo.App.Path(mygo.PathUserData)`：
 
 ```
-settings.json        lastAgent、lastWorkspace、mcpServers、paths 覆盖
+settings.json        lastAgent、lastWorkspace、workspaces、mcpServers、paths 覆盖
 logs/                每个 agent 的 stderr / 协议日志（1 MiB 滚动，保留一个 .1 备份）
 ```
 
 `settings.json` 由 `internal/settings` 读写：
 
-- 结构：`{version, lastAgent, lastWorkspace, mcpServers, paths:{shell,node,pi,commandCode}}`。
-- 保存时机：切换标签、选择 agent/目录、Connect 校验成功（也覆盖手输工作区）、MCP Apply、退出。写入是原子的（同目录临时文件 + rename，0600），父目录不存在时创建。
-- 加载容错：文件缺失用默认值；JSON 损坏、MCP 不是数组、相对路径、未来版本只产生警告（工具栏显示），其余字段照常使用，绝不阻塞启动。
+- 结构：`{version, lastAgent, lastWorkspace, workspaces, mcpServers, paths:{shell,node,pi,commandCode}}`。
+- 保存时机：切换会话、选择 agent/目录、添加工作区、Connect 校验成功、MCP Apply、退出。写入是原子的（同目录临时文件 + rename，0600），父目录不存在时创建。
+- 加载容错：文件缺失用默认值；JSON 损坏、MCP 不是数组、相对路径、未来版本只产生警告（标题栏/侧栏显示），其余字段照常使用，绝不阻塞启动。
 - 路径优先级：`ACP_GUI_*` 环境变量 > `settings.json` 的 `paths` > 登录 shell 解析。显式覆盖无效时保留 shell 结果并警告，不会把可用的路径清空。
-- 只保存最后一次状态（当前标签的 agent/工作区/MCP），不保存多标签布局、图片草稿或消息；历史会话仍由 agent 自己保存。
+- 保存最后一次状态（当前会话的 agent/工作区/MCP）和侧栏工作区列表；不保存会话布局、图片草稿或消息；历史会话仍由 agent 自己保存。
 - 不存 registry 快照，也不缓存探测结果：启动时重新检测。
 
 `main.go` 把 `mygo.App.Path(mygo.PathUserData)` 传给 `ui.Options.DataDir`；`DataDir` 为空时完全不落盘（测试、便携运行）。
@@ -167,7 +169,7 @@ logs/                每个 agent 的 stderr / 协议日志（1 MiB 滚动，保
 
 - 记录连接头（时间、agent、动作、工作区、命令行）、agent stderr 原样输出、`[protocol]` 错误、`[probe]` 发现失败和 `[exit]` 退出原因。
 - 单文件上限 1 MiB；写满时旧文件改名为 `<agent>.log.1`（覆盖上一份备份），新文件继续写。文件模式 0600。
-- UI 每个标签另保留最近 64 KiB stderr 供 Diagnostics 展示；完整历史看日志文件。
+- UI 每个会话另保留最近 64 KiB stderr 供 Diagnostics 展示；完整历史看日志文件。
 - 日志可能包含 agent 输出里的敏感信息，只在用户打开 Diagnostics 时显示，不在主界面展开。
 - 写日志失败不影响会话，只丢掉文件副本。
 

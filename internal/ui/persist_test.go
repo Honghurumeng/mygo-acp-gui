@@ -186,3 +186,23 @@ func TestCorruptSettingsDoNotBlockStartup(t *testing.T) {
 		t.Errorf("startup state = %d agents, index %d", len(app.Agents), app.AgentIndex)
 	}
 }
+
+func TestSettingsPersistsWorkspaces(t *testing.T) {
+	dataDir := t.TempDir()
+	app, _ := newSettingsApp(t, dataDir, "")
+	workspace := t.TempDir()
+	app.ensureWorkspace(workspace)
+	app.persistSettings()
+
+	file := loadPersistedSettings(t, dataDir)
+	found := false
+	for _, saved := range file.Workspaces {
+		if saved == workspace {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("workspaces = %+v, missing %q", file.Workspaces, workspace)
+	}
+}

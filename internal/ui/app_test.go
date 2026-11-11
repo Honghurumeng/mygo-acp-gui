@@ -46,8 +46,8 @@ func TestChatWithFakeAgent(t *testing.T) {
 	if !tt.HasText("Fake session title") {
 		t.Errorf("title not rendered; texts: %q", tt.Texts())
 	}
-	if !tt.HasText("context 1.2k / 10k") {
-		t.Errorf("usage not rendered; texts: %q", tt.Texts())
+	if !tt.HasText("12%") {
+		t.Errorf("usage ring not rendered; texts: %q", tt.Texts())
 	}
 
 	// Stop sends session/cancel and the fake agent reports cancelled.
@@ -93,7 +93,7 @@ func TestChatWithFakeAgent(t *testing.T) {
 
 func TestConnectRejectsRelativeWorkspace(t *testing.T) {
 	app, tt := newFakeApp(t)
-	app.Workspace = "relative/workspace"
+	current(app).Workspace = "relative/workspace"
 	tt.Frame()
 	if err := tt.Click("Connect"); err != nil {
 		t.Fatal(err)
@@ -222,16 +222,17 @@ func TestSessionConfigModeAndCommands(t *testing.T) {
 	connect(t, app, tt)
 	waitFor(t, app, tt, func() bool { return len(current(app).Commands) == 2 })
 	tt.Frame()
-	for _, want := range []string{"Model", "Thinking", "Mode", "demo/small"} {
-		if !tt.HasText(want) {
-			t.Errorf("config UI missing %q; texts: %q", want, tt.Texts())
-		}
-	}
 
+	// The model chip opens the agent/provider/model/thinking panel.
 	if err := tt.Click("demo/small"); err != nil {
 		t.Fatal(err)
 	}
 	tt.Frame()
+	for _, want := range []string{"Agent", "Provider", "Model", "Thinking", "demo/large"} {
+		if !tt.HasText(want) {
+			t.Errorf("model panel missing %q; texts: %q", want, tt.Texts())
+		}
+	}
 	if err := tt.Click("demo/large"); err != nil {
 		t.Fatal(err)
 	}
@@ -239,6 +240,16 @@ func TestSessionConfigModeAndCommands(t *testing.T) {
 		option := current(app).Info.ConfigOption("model")
 		return option != nil && option.CurrentValue == "demo/large" && current(app).ConfigBusy == ""
 	})
+	if err := tt.Click("high"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		option := current(app).Info.ConfigOption("thought_level")
+		return option != nil && option.CurrentValue == "high" && current(app).ConfigBusy == ""
+	})
+
+	// Mode has its own chip; clicking the current mode opens its menu.
+	current(app).ModelOpen = false
 	tt.Frame()
 	if err := tt.Click("Standard"); err != nil {
 		t.Fatal(err)
@@ -249,16 +260,19 @@ func TestSessionConfigModeAndCommands(t *testing.T) {
 	}
 	waitFor(t, app, tt, func() bool { return current(app).Info.CurrentModeID == "plan" && current(app).ConfigBusy == "" })
 
-	if err := tt.Click("Commands"); err != nil {
-		t.Fatal(err)
-	}
+	// Typing / opens the command palette instead of a Commands button.
+	current(app).Input = "/"
 	tt.Frame()
 	if err := tt.Click("/plan"); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, app, tt, func() bool { return current(app).Input == "/plan " && !current(app).CommandsOpen })
+	if current(app).Input != "/plan " {
+		t.Fatalf("command insert = %q", current(app).Input)
+	}
 
 	current(app).Input = "/plan"
+	tt.Frame()
+	current(app).Commands = nil
 	tt.Frame()
 	if err := tt.Click("Send"); err != nil {
 		t.Fatal(err)

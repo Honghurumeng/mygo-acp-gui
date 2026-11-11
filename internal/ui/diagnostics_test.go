@@ -64,6 +64,9 @@ func TestDiagnosticsWithoutChatShowsDiscoveryStatuses(t *testing.T) {
 		Version: "test",
 		Agents:  nil,
 	})
+	if chat := app.activeChat(); chat != nil {
+		app.removeChat(chat)
+	}
 	app.AgentStatuses = []AgentStatus{{ID: "pi", Name: "pi", Status: AgentMissing, Detail: "node not found"}}
 	app.openDiagnostics()
 	if app.DiagChat != nil {

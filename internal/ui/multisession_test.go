@@ -11,7 +11,7 @@ import (
 func newTab(t *testing.T, app *App, tt *mui.Tester) *Chat {
 	t.Helper()
 	tt.Frame()
-	if err := tt.Click("+ New"); err != nil {
+	if err := tt.Click("New conversation"); err != nil {
 		t.Fatal(err)
 	}
 	chat := app.activeChat()
@@ -165,7 +165,11 @@ func TestCloseTabKeepsOtherChats(t *testing.T) {
 	second = connectTab(t, app, tt)
 
 	tt.Frame()
-	if err := tt.Click("Close " + second.name()); err != nil {
+	if err := tt.Click("Conversation actions for " + second.name()); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if err := tt.Click("Delete"); err != nil {
 		t.Fatal(err)
 	}
 	tt.Frame()

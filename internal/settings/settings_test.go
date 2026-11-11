@@ -30,6 +30,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		Version:       CurrentVersion,
 		LastAgent:     "command-code",
 		LastWorkspace: workspace,
+		Workspaces:    []string{workspace},
 		MCPServers: []any{
 			map[string]any{"name": "demo", "command": "true"},
 		},
@@ -60,6 +61,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if got.LastAgent != want.LastAgent || got.LastWorkspace != want.LastWorkspace {
 		t.Errorf("round trip = %+v", got)
+	}
+	if len(got.Workspaces) != 1 || got.Workspaces[0] != workspace {
+		t.Errorf("workspaces = %+v", got.Workspaces)
 	}
 	if len(got.MCPServers) != 1 {
 		t.Fatalf("mcp servers = %+v", got.MCPServers)
@@ -170,5 +174,27 @@ func TestEmptyStoreIsNoOp(t *testing.T) {
 	}
 	if err := Open("").Save(File{LastAgent: "pi"}); err != nil {
 		t.Errorf("empty Save: %v", err)
+	}
+}
+
+func TestLoadSanitizesWorkspaces(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	workspace := t.TempDir()
+	document, err := json.Marshal(map[string]any{
+		"version":    CurrentVersion,
+		"workspaces": []string{workspace, "relative/dir", workspace, ""},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, document, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file, err := Open(path).Load()
+	if err == nil || !strings.Contains(err.Error(), "relative workspace") {
+		t.Fatalf("error = %v", err)
+	}
+	if len(file.Workspaces) != 1 || file.Workspaces[0] != workspace {
+		t.Errorf("workspaces = %+v", file.Workspaces)
 	}
 }

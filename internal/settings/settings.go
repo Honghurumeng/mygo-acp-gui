@@ -30,11 +30,12 @@ type Paths struct {
 
 // File is the on-disk settings document.
 type File struct {
-	Version       int    `json:"version"`
-	LastAgent     string `json:"lastAgent,omitempty"`
-	LastWorkspace string `json:"lastWorkspace,omitempty"`
-	MCPServers    []any  `json:"mcpServers,omitempty"`
-	Paths         Paths  `json:"paths,omitempty"`
+	Version       int      `json:"version"`
+	LastAgent     string   `json:"lastAgent,omitempty"`
+	LastWorkspace string   `json:"lastWorkspace,omitempty"`
+	Workspaces    []string `json:"workspaces,omitempty"`
+	MCPServers    []any    `json:"mcpServers,omitempty"`
+	Paths         Paths    `json:"paths,omitempty"`
 }
 
 // Store reads and writes one settings file. A nil Store or an empty path is
@@ -136,6 +137,7 @@ type rawFile struct {
 	Version       int             `json:"version"`
 	LastAgent     string          `json:"lastAgent"`
 	LastWorkspace string          `json:"lastWorkspace"`
+	Workspaces    json.RawMessage `json:"workspaces"`
 	MCPServers    json.RawMessage `json:"mcpServers"`
 	Paths         Paths           `json:"paths"`
 }
@@ -157,6 +159,14 @@ func decode(data []byte) (File, error) {
 		problems = append(problems, fmt.Errorf("settings: ignoring relative lastWorkspace %q", file.LastWorkspace))
 		file.LastWorkspace = ""
 	}
+	if len(raw.Workspaces) > 0 && string(raw.Workspaces) != "null" {
+		var workspaces []string
+		if err := json.Unmarshal(raw.Workspaces, &workspaces); err != nil {
+			problems = append(problems, fmt.Errorf("settings: ignoring workspaces: %w", err))
+		} else {
+			file.Workspaces = sanitizeWorkspaces(workspaces, &problems)
+		}
+	}
 	if len(raw.MCPServers) > 0 && string(raw.MCPServers) != "null" {
 		var servers []any
 		if err := json.Unmarshal(raw.MCPServers, &servers); err != nil {
@@ -167,6 +177,28 @@ func decode(data []byte) (File, error) {
 	}
 	file.Paths = sanitizePaths(raw.Paths, &problems)
 	return file, errors.Join(problems...)
+}
+
+func sanitizeWorkspaces(workspaces []string, problems *[]error) []string {
+	seen := make(map[string]bool, len(workspaces))
+	clean := make([]string, 0, len(workspaces))
+	for _, workspace := range workspaces {
+		workspace = strings.TrimSpace(workspace)
+		if workspace == "" {
+			continue
+		}
+		if !filepath.IsAbs(workspace) {
+			*problems = append(*problems, fmt.Errorf("settings: ignoring relative workspace %q", workspace))
+			continue
+		}
+		workspace = filepath.Clean(workspace)
+		if seen[workspace] {
+			continue
+		}
+		seen[workspace] = true
+		clean = append(clean, workspace)
+	}
+	return clean
 }
 
 func sanitizePaths(paths Paths, problems *[]error) Paths {

@@ -42,10 +42,10 @@ func main() {
 
 		win := mygo.NewWindow(mygo.WindowOptions{
 			Title:     "ACP GUI",
-			Width:     1060,
-			Height:    760,
-			MinWidth:  760,
-			MinHeight: 520,
+			Width:     1240,
+			Height:    820,
+			MinWidth:  900,
+			MinHeight: 560,
 			Content:   ui.View(gui.View),
 		})
 		gui.Attach(win)
