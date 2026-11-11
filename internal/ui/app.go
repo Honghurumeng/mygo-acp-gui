@@ -480,39 +480,18 @@ func (a *App) headerActions(c *mui.Context, chat *Chat) {
 	action := func(label, tip string) mui.Element {
 		return mui.Button(c, label).Label(tip).FontSize(11)
 	}
-	switch {
-	case chat.Connecting:
+	if chat.Connecting {
 		mui.Text(c, "Connecting…").FontSize(11).TextColor(t.TextMuted)
 		if action("Cancel", "Cancel connecting").Clicked() {
 			a.Disconnect()
 		}
-	case chat.Session != nil:
-		if action("Logs", "Diagnostics").Clicked() {
-			a.openDiagnostics()
-		}
-		if action("MCP…", "MCP servers").Clicked() {
-			a.openMCPSettings()
-		}
-		if action("＋", "New chat").Clicked() {
-			a.newSession()
-		}
-		if action("×", "Close chat").Disabled(chat.Busy != "" || chat.Info.SessionID == "").Clicked() {
-			a.closeActiveSession()
-		}
-		if action("⏻", "Disconnect").Clicked() {
-			a.Disconnect()
-		}
-	default:
-		if action("Logs", "Diagnostics").Clicked() {
-			a.openDiagnostics()
-		}
-		if action("MCP…", "MCP servers").Clicked() {
-			a.openMCPSettings()
-		}
-		if mui.PrimaryButton(c, "Connect").FontSize(11).
-			Disabled(a.Resolving || len(a.Agents) == 0 || chat.Busy != "").Clicked() {
-			a.Connect()
-		}
+		return
+	}
+	if action("Logs", "Diagnostics").Clicked() {
+		a.openDiagnostics()
+	}
+	if action("MCP…", "MCP servers").Clicked() {
+		a.openMCPSettings()
 	}
 }
 

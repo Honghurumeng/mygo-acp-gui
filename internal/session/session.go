@@ -1,7 +1,7 @@
 // Package session owns one ACP agent process and one ACP session.
 //
 // It spawns the agent in its own process group, speaks ACP over its
-// stdin/stdout, performs initialize plus session/new, load or resume,
+// stdin/stdout, performs initialize plus session/new or session/load,
 // forwards session updates, and kills the process group on Close. All
 // callbacks run on background goroutines and must not block; the UI hands
 // work to Window.Update.
@@ -45,13 +45,11 @@ type Config struct {
 	Workspace  string
 	ClientInfo acp.Implementation
 
-	// MCPServers is passed to session/new, load and resume. Nil becomes [].
+	// MCPServers is passed to session/new and session/load. Nil becomes [].
 	MCPServers []any
 	// LoadSessionID attaches an existing session and replays its history.
-	// ResumeSessionID attaches it without replaying history. They are
-	// mutually exclusive; when both are empty a new session is created.
-	LoadSessionID   string
-	ResumeSessionID string
+	// When empty a new session is created.
+	LoadSessionID string
 	// InitializeOnly stops after initialize, for probes and session lists.
 	InitializeOnly bool
 	// DeferUpdates buffers session/update events until Activate is called,
@@ -109,8 +107,8 @@ type Session struct {
 	closeErr error
 }
 
-// Start spawns the agent and performs initialize plus session/new, load or
-// resume. With InitializeOnly it stops after initialize. On failure the
+// Start spawns the agent and performs initialize plus session/new or
+// session/load. With InitializeOnly it stops after initialize. On failure the
 // process group is already cleaned up.
 func Start(ctx context.Context, cfg Config) (*Session, error) {
 	if err := cfg.Launch.Validate(); err != nil {
@@ -125,9 +123,6 @@ func Start(ctx context.Context, cfg Config) (*Session, error) {
 	}
 	if !info.IsDir() {
 		return nil, fmt.Errorf("session: workspace is not a directory: %s", cfg.Workspace)
-	}
-	if cfg.LoadSessionID != "" && cfg.ResumeSessionID != "" {
-		return nil, errors.New("session: load and resume are mutually exclusive")
 	}
 	if cfg.ClientInfo.Name == "" {
 		cfg.ClientInfo = acp.Implementation{Name: "acp-gui", Title: "ACP GUI", Version: "dev"}
@@ -271,22 +266,14 @@ func (s *Session) handshake(ctx context.Context) error {
 	defer cancel()
 	var method string
 	var params any
-	switch {
-	case s.cfg.LoadSessionID != "":
+	if s.cfg.LoadSessionID != "" {
 		method = "session/load"
 		params = acp.LoadSessionParams{
 			SessionID:  s.cfg.LoadSessionID,
 			Cwd:        s.cfg.Workspace,
 			MCPServers: s.cfg.MCPServers,
 		}
-	case s.cfg.ResumeSessionID != "":
-		method = "session/resume"
-		params = acp.ResumeSessionParams{
-			SessionID:  s.cfg.ResumeSessionID,
-			Cwd:        s.cfg.Workspace,
-			MCPServers: s.cfg.MCPServers,
-		}
-	default:
+	} else {
 		method = "session/new"
 		params = acp.NewSessionParams{
 			Cwd:        s.cfg.Workspace,
@@ -307,9 +294,6 @@ func (s *Session) handshake(ctx context.Context) error {
 	sessionID := state.SessionID
 	if sessionID == "" {
 		sessionID = s.cfg.LoadSessionID
-	}
-	if sessionID == "" {
-		sessionID = s.cfg.ResumeSessionID
 	}
 	if strings.TrimSpace(sessionID) == "" {
 		return fmt.Errorf("%s: empty sessionId", method)
@@ -452,44 +436,26 @@ func (s *Session) LoadSession(ctx context.Context, sessionID string) (Info, erro
 
 // LoadSessionAt is LoadSession for a session saved in another workspace.
 func (s *Session) LoadSessionAt(ctx context.Context, sessionID, cwd string) (Info, error) {
-	return s.attachSession(ctx, "session/load", sessionID, cwd)
-}
-
-// ResumeSession attaches a saved session without replaying history.
-func (s *Session) ResumeSession(ctx context.Context, sessionID string) (Info, error) {
-	return s.ResumeSessionAt(ctx, sessionID, s.cfg.Workspace)
-}
-
-// ResumeSessionAt is ResumeSession for a session saved in another
-// workspace.
-func (s *Session) ResumeSessionAt(ctx context.Context, sessionID, cwd string) (Info, error) {
-	return s.attachSession(ctx, "session/resume", sessionID, cwd)
-}
-
-func (s *Session) attachSession(ctx context.Context, method, sessionID, cwd string) (Info, error) {
 	if strings.TrimSpace(sessionID) == "" {
-		return Info{}, fmt.Errorf("%s: empty session id", method)
+		return Info{}, errors.New("session/load: empty session id")
 	}
 	if cwd == "" {
 		cwd = s.cfg.Workspace
 	}
 	if !filepath.IsAbs(cwd) {
-		return Info{}, fmt.Errorf("%s: cwd must be absolute: %q", method, cwd)
+		return Info{}, fmt.Errorf("session/load: cwd must be absolute: %q", cwd)
 	}
-	mcpServers := s.currentMCPServers()
-	var params any
-	if method == "session/load" {
-		params = acp.LoadSessionParams{SessionID: sessionID, Cwd: cwd, MCPServers: mcpServers}
-	} else {
-		params = acp.ResumeSessionParams{SessionID: sessionID, Cwd: cwd, MCPServers: mcpServers}
-	}
-	raw, err := s.client.Call(ctx, method, params)
+	raw, err := s.client.Call(ctx, "session/load", acp.LoadSessionParams{
+		SessionID:  sessionID,
+		Cwd:        cwd,
+		MCPServers: s.currentMCPServers(),
+	})
 	if err != nil {
-		return Info{}, fmt.Errorf("%s: %w", method, err)
+		return Info{}, fmt.Errorf("session/load: %w", err)
 	}
 	var state acp.SessionState
 	if err := json.Unmarshal(raw, &state); err != nil {
-		return Info{}, fmt.Errorf("%s: decode result: %w", method, err)
+		return Info{}, fmt.Errorf("session/load: decode result: %w", err)
 	}
 	s.infoMu.Lock()
 	s.info.SessionID = sessionID
@@ -499,8 +465,8 @@ func (s *Session) attachSession(ctx context.Context, method, sessionID, cwd stri
 	return info, nil
 }
 
-// SetMCPServers changes the servers passed to the next session/load or
-// session/resume. New sessions take their list from the caller.
+// SetMCPServers changes the servers passed to the next session/load.
+// New sessions take their list from the caller.
 func (s *Session) SetMCPServers(servers []any) {
 	s.mcpMu.Lock()
 	s.mcpServers = append([]any(nil), servers...)

@@ -80,9 +80,8 @@ type MCPCapabilities struct {
 // SessionCapabilities marks optional session methods. A present field (even
 // an empty object) means the agent supports it.
 type SessionCapabilities struct {
-	List   json.RawMessage `json:"list,omitempty"`
-	Resume json.RawMessage `json:"resume,omitempty"`
-	Close  json.RawMessage `json:"close,omitempty"`
+	List  json.RawMessage `json:"list,omitempty"`
+	Close json.RawMessage `json:"close,omitempty"`
 }
 
 // AgentCapabilities is the initialize capability block.

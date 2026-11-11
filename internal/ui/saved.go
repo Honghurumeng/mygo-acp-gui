@@ -225,7 +225,7 @@ func (a *App) savedSessionRow(c *mui.Context, item savedSession) {
 		if hidden {
 			tooltip += "\nDeleted locally; restore from the ⋯ menu."
 		} else {
-			tooltip += "\nClick to resume this session."
+			tooltip += "\nClick to open this session and replay its history."
 		}
 		button.Tooltip(tooltip)
 		if button.Clicked() {
@@ -248,11 +248,6 @@ func (a *App) savedSessionRow(c *mui.Context, item savedSession) {
 		open := a.SavedMenuOpen == rowKey
 		mui.Popover(c, menu, &open, func() {
 			mui.Column(c).Width(132).Gap(2).Children(func() {
-				if mui.Button(c, "Resume").FillWidth().FontSize(11).Clicked() {
-					open = false
-					a.SavedMenuOpen = ""
-					a.openSavedSession(item)
-				}
 				if mui.Button(c, "Rename").FillWidth().FontSize(11).Clicked() {
 					open = false
 					a.SavedMenuOpen = ""
@@ -305,9 +300,11 @@ func savedTimeLabel(value string) string {
 	return ""
 }
 
-// openSavedSession resumes a saved session by its archived session id. The
-// agent is taken from the archive record, not from the current selection, so a
-// session created with another agent still opens with the right runtime.
+// openSavedSession opens a saved session by replaying its history. The app
+// does not persist message bodies locally, so session/load is the only way to
+// show the conversation again after a restart. The agent is taken from the
+// archive record, not from the current selection, so a session created with
+// another agent still opens with the right runtime.
 func (a *App) openSavedSession(item savedSession) {
 	sessionID := strings.TrimSpace(item.SessionID)
 	if sessionID == "" {
@@ -345,6 +342,13 @@ func (a *App) openSavedSession(item savedSession) {
 	if reuse && chat.Session != nil && (len(chat.Messages) > 0 || chat.Streaming || chat.Busy != "") {
 		reuse = false
 	}
+	// An agent process is bound to the workspace it was started in;
+	// command-code rejects session/load with another cwd. Reuse only a
+	// process that already serves the saved session's workspace, otherwise
+	// open a tab with its own process.
+	if reuse && chat.Session != nil && cwd != "" && canonicalWorkspace(chat.Workspace) != canonicalWorkspace(cwd) {
+		reuse = false
+	}
 	switch {
 	case chat == nil:
 		if workspace != "" {
@@ -372,11 +376,11 @@ func (a *App) openSavedSession(item savedSession) {
 		a.WorkspaceCollapsed[workspace] = false
 	}
 	if chat.Session != nil {
-		a.resumeHistory(sessionID, title, cwd)
+		a.loadHistory(sessionID, title, cwd)
 		return
 	}
 	chat.pendingSessionID = sessionID
-	chat.pendingSessionAction = "resume"
+	chat.pendingSessionAction = "load"
 	chat.pendingSessionTitle = title
 	chat.Title = title
 	a.Connect()

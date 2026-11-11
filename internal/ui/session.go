@@ -146,7 +146,7 @@ func (a *App) retryDiscovery() {
 }
 
 // Connect validates the active chat's workspace and starts initialize plus
-// session/new, load or resume in a goroutine. Other chats keep running.
+// session/new or session/load in a goroutine. Other chats keep running.
 func (a *App) Connect() {
 	if a.closed.Load() {
 		return
@@ -214,11 +214,8 @@ func (a *App) Connect() {
 		},
 		DeferUpdates: true,
 	}
-	switch action {
-	case "load":
+	if action == "load" {
 		cfg.LoadSessionID = sessionID
-	case "resume":
-		cfg.ResumeSessionID = sessionID
 	}
 	a.logSessionStart(spec, workspace, action, sessionID)
 
@@ -643,15 +640,6 @@ func (a *App) closeActiveSession() {
 
 // loadHistory opens a saved session in the active chat, replaying history.
 func (a *App) loadHistory(sessionID, title, cwd string) {
-	a.loadHistoryMode(sessionID, false, title, cwd)
-}
-
-// resumeHistory attaches a saved session without replaying history.
-func (a *App) resumeHistory(sessionID, title, cwd string) {
-	a.loadHistoryMode(sessionID, true, title, cwd)
-}
-
-func (a *App) loadHistoryMode(sessionID string, resume bool, title, cwd string) {
 	chat := a.activeChat()
 	if chat == nil || chat.Session == nil || chat.Busy != "" || chat.Streaming {
 		return
@@ -673,23 +661,13 @@ func (a *App) loadHistoryMode(sessionID string, resume bool, title, cwd string) 
 	if title != "" {
 		chat.Title = title
 	}
-	chat.replaying = !resume
-	action := "load"
-	if resume {
-		action = "resume"
-	}
-	chat.Busy = action
+	chat.replaying = true
+	chat.Busy = "load"
 
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
-		var newInfo session.Info
-		var err error
-		if resume {
-			newInfo, err = s.ResumeSessionAt(ctx, sessionID, cwd)
-		} else {
-			newInfo, err = s.LoadSessionAt(ctx, sessionID, cwd)
-		}
+		newInfo, err := s.LoadSessionAt(ctx, sessionID, cwd)
 		if err == nil && oldID != "" && oldID != sessionID {
 			closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
 			_ = s.CloseSessionID(closeCtx, oldID)

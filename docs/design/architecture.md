@@ -11,7 +11,7 @@
 ```
 MyGo 原生窗口 (Go + ui)
   ├─ 左侧工作区/会话栏（每个会话一个 agent 进程 + ACP session）
-  ├─ 顶部会话标题栏 + 连接/MCP/诊断操作
+  ├─ 顶部会话标题栏 + MCP/诊断操作
   ├─ 消息区 + 可拖动高度的 composer
   ├─ composer 底栏：附件、git 分支、mode、上下文环、agent/model/thinking、发送
   ├─ ui/markdown.Stream / View      ← agent_message_chunk
@@ -67,15 +67,15 @@ MyGo 原生窗口 (Go + ui)
       pi: vendored bundle + Node 22+
       command-code: <绝对路径>/command-code acp
   → internal/session.Probe（initialize，5 秒，逐 agent 并行）
-  → 侧栏工作区/会话 + New conversation / Connect：每个会话各自 internal/session.Start
-      session/new | session/load | session/resume（DeferUpdates 缓冲历史）
+  → 侧栏工作区/会话 + New conversation：每个会话各自 internal/session.Start
+      session/new | session/load（DeferUpdates 缓冲历史）
   → session/prompt（文本 + 图片）
   → session/update → 所属 *Chat → Window.Update → markdown / tool / plan / usage
   → session/set_config_option / set_mode
-  → 点击存档行 → 按记录里的 agent + sessionId 直接 session/resume（不重放历史）
-  → ↻ → session/list 合并进存档（保留 show/showName）；New chat 同进程 session/new
+  → 点击存档行 → 按记录里的 agent + sessionId 执行 session/load 重放历史；cwd 不同则新建进程
+  → ↻ → session/list 合并进存档（保留 show/showName）
   → Stop → session/cancel
-  → 删除会话 → 存档 show=false（软删除）；Disconnect → Session.Close → kill(-pgid)
+  → 删除会话 → 存档 show=false（软删除）+ Session.Close → kill(-pgid)
   → 关闭窗口 / 退出 → 关闭所有会话的进程组
 ```
 
@@ -84,7 +84,7 @@ MyGo 原生窗口 (Go + ui)
 - UI 状态只在主线程修改。session 回调通过 `Window.Update`（测试中通过队列）提交，不直接改状态。
 - 每个会话是一个 `ui.Chat`，保存自己的 Session、Info、消息、输入草稿、配置、附件和连接代数；App 持有 `Chats`、`Active`、工作区列表和侧栏折叠状态。回调捕获 chat 指针，因此后台会话仍能流式更新。
 - `App.Archived` 是本地会话索引，按 `(agentId, sessionId)` 去重；`SavedSessions` 只是它排序后的 UI 视图。启动时侧栏不调用 `session/list`，因此 agent 慢、未登录或未安装不影响历史列表。
-- 测试用 `scripts/fake-agent.mjs`：prompt 流式输出、`/slow` + cancel、`/permission`、config/mode、list/load/resume/close、图片/MCP 计数、命令/plan/usage、子进程清理。
+- 测试用 `scripts/fake-agent.mjs`：prompt 流式输出、`/slow` + cancel、`/permission`、config/mode、list/load/close、图片/MCP 计数、命令/plan/usage、子进程清理。
 
 ## ACP 客户端
 
@@ -138,10 +138,10 @@ pi 自己的工具在工作区内读写执行；客户端只负责展示和审�
 - 权限：`session/request_permission` 回调阻塞，`ui.Modal` 展示工具名和 agent 给出的 `options`；按钮直接回 `optionId`，关闭/取消回 `cancelled`。
 - 配置：`ui.Popover` 的模型面板按 agent → provider → model → thinking 选择；模型/思考来自 `configOptions`，mode 来自 `modes`，不硬编码。agent 只在会话开始前可选。
 - 输入：`ui.TextAreaBase` 嵌在可拖动高度的 composer 卡片中；Enter 发送、Shift+Enter 换行；流式期间 Send 切换为 Stop；支持图片附件。
-- 多会话：左侧栏按 workspace 分组，先显示打开会话，再显示该目录的已保存会话；打开会话显示标题/流式/未读/权限提醒，超过 5 条折叠，可展开、重命名、删除。顶部 `New chat` 在同进程新建 session，侧栏 `New conversation` 新建独立进程。
+- 多会话：左侧栏按 workspace 分组，先显示打开会话，再显示该目录的已保存会话；打开会话显示标题/流式/未读/权限提醒，超过 5 条折叠，可展开、重命名、删除。侧栏 `New conversation` 新建独立进程；连接在首条消息或打开存档时自动发生。
 - 权限：全局模态但带 `Chat: …` 标签，后台请求排队；回答按所属 `Chat` 路由，侧栏 `!` 提醒未答请求。
-- 历史：启动直接从 `sessions.json` 展示；点击存档行按记录的 agent + sessionId 执行 `session/resume`。已打开会话不重复显示，当前会话已有消息或流式时在新标签页打开。`⋯` 可重命名（showName）或软删除（show=false），删除项通过 “Show deleted” 恢复；Close chat 仍走 `session/close` 并保留存档。
-- MCP：JSON 模态，校验后传给 new/load/resume；输入 `/` 时 composer 上方出现命令面板，解析 `available_commands_update`。
+- 历史：启动直接从 `sessions.json` 展示；点击存档行按记录的 agent + sessionId 执行 `session/load` 重放历史。已打开会话不重复显示，当前会话已有消息或流式时在新标签页打开。`⋯` 可重命名（showName）或软删除（show=false），删除项通过 “Show deleted” 恢复。
+- MCP：JSON 模态，校验后传给 new/load；输入 `/` 时 composer 上方出现命令面板，解析 `available_commands_update`。
 - 诊断：顶部 “Logs” 打开 `Diagnostics`，显示发现状态、当前会话的 stderr 尾部、日志路径与 Reveal；stderr 同时写入滚动日志文件。
 - 计划/用量：composer 上方 plan；上下文环形进度、turn token 用量和会话标题在 composer/标题栏显示。
 - 跨 goroutine 改状态：`win.Update(func(){ ... })`；没有窗口的测试用 `App.Flush` 排队应用。
@@ -167,7 +167,7 @@ logs/                每个 agent 的 stderr / 协议日志（1 MiB 滚动，保
 - 路径优先级：`ACP_GUI_*` 环境变量 > `settings.json` 的 `paths` > 登录 shell 解析。显式覆盖无效时保留 shell 结果并警告，不会把可用的路径清空。
 - 保存最后一次状态（当前会话的 agent/工作区/MCP）和侧栏工作区列表；不保存会话布局、图片草稿或消息。
 - 会话索引单独放在 `sessions.json`，由 `internal/archive` 读写：`{version, sessions:[{agentId,sessionId,cwd,title,showName,createdAt,updatedAt,show}]}`。`(agentId, sessionId)` 唯一；`show=false` 是软删除，`showName` 是本地重命名。
-- 存档写入时机：session/new、load、resume 成功，标题/轮次更新，重命名、删除/恢复。启动只读存档；侧栏 `↻` 才启动短进程 `session/list` 合并，且绝不覆盖 `show/showName`。文件为原子写入、0600；损坏 JSON 只在侧栏提示，不阻塞启动。
+- 存档写入时机：session/new、load 成功，标题/轮次更新，重命名、删除/恢复。启动只读存档；侧栏 `↻` 才启动短进程 `session/list` 合并，且绝不覆盖 `show/showName`。文件为原子写入、0600；损坏 JSON 只在侧栏提示，不阻塞启动。
 - 不存 registry 快照，也不缓存探测结果：启动时重新检测。
 
 `main.go` 把 `mygo.App.Path(mygo.PathUserData)` 传给 `ui.Options.DataDir`；`DataDir` 为空时完全不落盘（测试、便携运行）。

@@ -23,9 +23,9 @@
 - session 回调在创建时捕获所属 `*Chat`，按 session 指针路由，不读取“当前会话”，所以后台会话的 `session/update`、退出和权限都能落到正确位置。
 - 左侧工作区栏按 `Chat.Workspace` 分组：先显示打开会话（标题/流式转圈/未读点/权限提醒），再显示该目录的已保存会话。打开会话超过 5 条时只显示前 5 条并可展开/收起；已保存会话直接全部列出，不放在弹窗里。
 - 会话右侧 `⋯` 打开重命名/删除；删除会关闭该会话的进程，并把对应存档记录标为 `show=false`。`New conversation` 新建独立会话，工作区上的 `＋` 在该目录下新建。
-- 启动时默认创建一个草稿会话；在草稿里输入第一条消息时自动 Connect，成功后立即发送，不需要先点 Connect。
+- 启动时默认创建一个草稿会话；在草稿里输入第一条消息时自动连接，成功后立即发送。
 - 每个会话保留自己的消息列表滚动位置、输入草稿、图片附件、配置选择和计划面板。
-- `Disconnect` 关闭当前会话的 agent 进程但保留草稿；`Close chat` 仍是 `session/close`（保留进程）；顶部 `New chat` 在同进程创建新 session。
+- 顶部工具栏只保留 `Logs` 和 `MCP…`（连接中显示 `Cancel`）；会话由侧栏 `New conversation` 或工作区上的 `＋` 创建。
 - 应用退出时取消所有正在连接的会话，并关闭所有已登记 session 的进程组。
 
 权限弹窗是全局的，但标注所属会话（`Chat: …`）。多个后台会话同时请求权限时排队显示，回答按 `Chat` 路由；侧栏的 `!` 在有未答权限时显示。
@@ -52,15 +52,13 @@
 记录结构：`{agentId, sessionId, cwd, title, showName, createdAt, updatedAt, show}`；`(agentId, sessionId)` 唯一，这样不同 agent 的相同 session ID 不会互相覆盖。
 
 - 启动时先读存档并立即按 `cwd` 分组展示，不等 agent 发现，也不自动调 `session/list`。已打开会话不重复显示。
-- session/new / load / resume 成功、标题更新和一轮结束后，自动把 session ID、agent、cwd、agent title 和 `updatedAt` 写进存档；不覆盖 `show/showName`。
-- 点击存档行按记录中的 `agentId` 启动/复用对应 agent，并直接 `session/resume`（不重放历史）。当前会话已有消息或流式时在新标签页打开；目标 agent 与当前进程不同也新建标签页。
-- 行尾 `⋯` 可 Resume、Rename、Delete。Rename 写 `showName`；Delete 只写 `show=false`，不关 agent 的外部历史。
+- session/new / load 成功、标题更新和一轮结束后，自动把 session ID、agent、cwd、agent title 和 `updatedAt` 写进存档；不覆盖 `show/showName`。
+- App 不在本地保存消息正文，右侧历史只能由 agent 重放。点击存档行按记录中的 `agentId` 启动/复用对应 agent，并执行 `session/load` 重放历史；当前会话已有消息、流式、目标 agent 与当前进程不同，或 `cwd` 与当前进程工作区不同时，在新标签页用该会话的 `cwd` 新建进程（Command Code 的 ACP 进程只服务启动时的工作区）。
+- 行尾 `⋯` 只提供 Rename、Delete；打开存档一律走 load。Rename 写 `showName`；Delete 只写 `show=false`，不关 agent 的外部历史。
 - 默认不显示 `show=false` 的行；侧栏 “Show deleted (N)” 展开，`⋯` → Restore 恢复。
 - `↻` 才按需从当前 agent 拉取 `session/list` 合并进存档（优先复用已连接进程，否则 `session.ListSessionsIn` 短进程）。合并只补 `cwd/title/updatedAt` 和新记录，不改变 `show/showName`，所以已删除/已重命名的会话不会在刷新后复活或改名。升级后首次运行存档为空时，点一次 `↻` 即可导入该 agent 的现有会话。
-- 从其他工作区打开时，把存档里的 `cwd` 传给 resume、加入侧栏工作区列表；路径比较解析 symlink，避免同一目录出现两个分组。
-- `session/close` 也用于“Close chat”：进程保留，清空当前会话；该会话仍在存档里，可直接再 resume。
+- 从其他工作区打开时，把存档里的 `cwd` 传给 load、加入侧栏工作区列表；路径比较解析 symlink，避免同一目录出现两个分组。
 - 存档写入是原子的（同目录临时文件 + rename，0600）。文件缺失视为空；损坏 JSON、未来版本、缺少 agentId/sessionId 或重复记录只产生侧栏警告，其余记录照常展示，不阻塞启动。
-- “New chat” 在同进程调用 `session/new`，成功后关闭旧 session；它只影响当前会话。要并行对话用侧栏的 `New conversation`。
 - 历史重放事件在 `Start` 阶段缓冲，UI 安装好 Session 后调用 `Activate` 按顺序消费，避免丢失。
 - 重放中的 `user_message_chunk` 和 `agent_message_chunk` 合并成连续的用户/助手行，结束后统一标记 Done。
 
@@ -76,7 +74,7 @@
 
 - “MCP…” 模态编辑 JSON 数组，支持 stdio（`name` + `command`/`args`/`env`）和 HTTP/SSE（`type:"http"` 或 `"sse"` + `name` + `url`/`headers`）。
 - 保存前校验：必须是对象数组、必须有 `name`，stdio 必须有 `command`，http 必须有 `url`。
-- 每个会话各有一份列表；设置窗口修改当前会话，并作为新会话的默认值。列表传给该会话后续的 `session/new` / `session/load` / `session/resume`；已连接时也更新 Session 的待用列表。
+- 每个会话各有一份列表；设置窗口修改当前会话，并作为新会话的默认值。列表传给该会话后续的 `session/new` / `session/load`；已连接时也更新 Session 的待用列表。
 - 不启动、不管理 MCP 进程；由 agent 自己拉起。
 - Apply 后的列表写入 settings.json，成为下次启动的默认值（见“设置持久化”）。
 
@@ -133,4 +131,4 @@ go test ./internal/ui -run 'TestSettings|TestShutdownPersists|TestCorruptSetting
 ACP_REAL_COMMAND_CODE=1 go test ./internal/session -run '^TestRealCommandCode$' -v -count=1
 ```
 
-`scripts/fake-agent.mjs` 支持 list/load/resume/close、set_mode、set_config_option、图片计数、MCP 计数、命令和计划事件。
+`scripts/fake-agent.mjs` 支持 list/load/close、set_mode、set_config_option、图片计数、MCP 计数、命令和计划事件。

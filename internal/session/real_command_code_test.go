@@ -193,7 +193,7 @@ func TestRealCommandCode(t *testing.T) {
 			t.Errorf("streamed text after cancel = %q", text)
 		}
 	})
-	t.Run("history list load resume close", func(t *testing.T) {
+	t.Run("history list load close", func(t *testing.T) {
 		drainEvents(t, updates)
 		id := s.Info().SessionID
 		sessions, err := s.ListSessions(ctx, "")
@@ -229,15 +229,6 @@ func TestRealCommandCode(t *testing.T) {
 
 		if err := s.CloseSession(ctx); err != nil {
 			t.Fatalf("close after load: %v", err)
-		}
-		if _, err := s.ResumeSession(ctx, id); err != nil {
-			t.Fatalf("resume: %v", err)
-		}
-		if got := s.Info().SessionID; got != id {
-			t.Errorf("resumed id = %q", got)
-		}
-		if err := s.CloseSession(ctx); err != nil {
-			t.Fatalf("close after resume: %v", err)
 		}
 		fresh, err := s.NewSession(ctx, cfg.Workspace, nil)
 		if err != nil {

@@ -60,7 +60,7 @@ type PlanEntry struct {
 	Priority string `json:"priority"`
 }
 
-// Info is the result of initialize plus new/load/resume.
+// Info is the result of initialize plus new/load.
 type Info struct {
 	SessionID         string
 	ProtocolVersion   int

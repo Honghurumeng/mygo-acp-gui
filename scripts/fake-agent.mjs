@@ -294,7 +294,7 @@ rl.on('line', (line) => {
             loadSession: true,
             promptCapabilities: { audio: false, image: true, embeddedContext: true },
             mcpCapabilities: { http: true, sse: false },
-            sessionCapabilities: { list: {}, resume: {}, close: {} },
+            sessionCapabilities: { list: {}, close: {} },
           },
         },
       });
@@ -330,19 +330,16 @@ rl.on('line', (line) => {
       });
       return;
 
-    case 'session/load':
-    case 'session/resume': {
+    case 'session/load': {
       lastSessionId = params.sessionId;
-      if (method === 'session/load') {
-        sendUpdate({
-          sessionId: lastSessionId,
-          update: { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'Question from history' } },
-        });
-        sendUpdate({
-          sessionId: lastSessionId,
-          update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Answer from history' } },
-        });
-      }
+      sendUpdate({
+        sessionId: lastSessionId,
+        update: { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'Question from history' } },
+      });
+      sendUpdate({
+        sessionId: lastSessionId,
+        update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Answer from history' } },
+      });
       send({ jsonrpc: '2.0', id, result: sessionState() });
       publishCommands(lastSessionId);
       return;

@@ -27,7 +27,7 @@ Command Code 是用户自备的 CLI，应用只定位已有安装，不安装、
 
 - `agentInfo.name = "Command Code"`、`agentInfo.version = CLI 版本`
 - `authMethods = [{ id: "command-code-cli", name: "Command Code CLI login", ... }]`
-- `agentCapabilities`: `loadSession`、图片/embedded context、MCP HTTP、`sessionCapabilities` 的 list/resume/close
+- `agentCapabilities`: `loadSession`、图片/embedded context、MCP HTTP、`sessionCapabilities` 的 list/close
 
 `initialize` 本身不要求登录。
 
@@ -75,7 +75,7 @@ Command Code 会向 stderr 写 `[acp] ...` 日志，也会打印它自己看到�
 
 ## 当前应用覆盖
 
-已跑通：发现（initialize 探测）、`initialize`、`session/new`、流式正文/思考/工具、权限审批、`session/cancel`、取消后继续、`session/set_config_option`（model/effort）、`session/set_mode`、`session/list`、`session/load`、`session/resume`、`session/close`、图片 prompt、MCP servers 透传、`available_commands_update` 命令面板、plan/title/usage、退出时进程组清理。
+已跑通：发现（initialize 探测）、`initialize`、`session/new`、流式正文/思考/工具、权限审批、`session/cancel`、取消后继续、`session/set_config_option`（model/effort）、`session/set_mode`、`session/list`、`session/load`、`session/close`、图片 prompt、MCP servers 透传、`available_commands_update` 命令面板、plan/title/usage、退出时进程组清理。
 
 仍未实现（全局计划，不是 Command Code 特有）：
 
@@ -90,7 +90,7 @@ ACP_REAL_COMMAND_CODE=1 go test ./internal/session -run '^TestRealCommandCode$' 
 ACP_REAL_COMMAND_CODE=1 go test ./internal/session -run '^TestRealCommandCodeAuthRequired$' -v -count=1
 ```
 
-第一条覆盖：发现 → `initialize` → `session/new` → 普通回复 → 写文件权限 → config/mode → 图片 prompt → 取消 → 取消后继续 → list/load/resume/close/new → `Close`。第二条用临时 `HOME` 验证未登录时 `session/new` 的 `-32000`、`authMethods` 和登录提示，不碰真实凭据。默认跳过。
+第一条覆盖：发现 → `initialize` → `session/new` → 普通回复 → 写文件权限 → config/mode → 图片 prompt → 取消 → 取消后继续 → list/load/close/new → `Close`。第二条用临时 `HOME` 验证未登录时 `session/new` 的 `-32000`、`authMethods` 和登录提示，不碰真实凭据。默认跳过。
 
 不调用模型的握手冒烟：
 

@@ -45,7 +45,7 @@ func TestFakeAgentConfigAndMode(t *testing.T) {
 	}
 }
 
-func TestFakeAgentListLoadResumeClose(t *testing.T) {
+func TestFakeAgentListLoadClose(t *testing.T) {
 	updates := make(chan Event, 256)
 	s := startFake(t, nil, Config{OnUpdate: func(ev Event) { updates <- ev }})
 	defer closeSession(t, s)
@@ -84,20 +84,9 @@ func TestFakeAgentListLoadResumeClose(t *testing.T) {
 		t.Errorf("session id after close = %q", got)
 	}
 
-	info, err = s.ResumeSession(ctx, "fake-history")
-	if err != nil {
-		t.Fatalf("resume: %v", err)
-	}
-	if info.SessionID != "fake-history" {
-		t.Errorf("resumed id = %q", info.SessionID)
-	}
-	if text, _ := drainEvents(t, updates); text != "" {
-		t.Errorf("resume replayed history: %q", text)
-	}
-
 	info, err = s.NewSession(ctx, s.cfg.Workspace, nil)
 	if err != nil {
-		t.Fatalf("new after resume: %v", err)
+		t.Fatalf("new after load: %v", err)
 	}
 	if info.SessionID != "fake-session-2" {
 		t.Errorf("new session id = %q", info.SessionID)

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	mui "github.com/egoist/mygo/ui"
+	"github.com/reed/acp-gui/internal/acp"
 )
 
 // newTab opens a draft chat from the tab strip.
@@ -23,10 +24,7 @@ func newTab(t *testing.T, app *App, tt *mui.Tester) *Chat {
 
 func connectTab(t *testing.T, app *App, tt *mui.Tester) *Chat {
 	t.Helper()
-	tt.Frame()
-	if err := tt.Click("Connect"); err != nil {
-		t.Fatal(err)
-	}
+	app.Connect()
 	chat := app.activeChat()
 	waitFor(t, app, tt, func() bool { return chat != nil && chat.Connected })
 	return chat
@@ -155,6 +153,35 @@ func TestPermissionFromBackgroundChat(t *testing.T) {
 	}
 	if first.Attention {
 		t.Error("attention marker was not cleared after answering")
+	}
+}
+
+func TestSavedSessionInAnotherWorkspaceStartsOwnProcess(t *testing.T) {
+	app, tt := newFakeApp(t)
+	first := connectTab(t, app, tt)
+	firstPID := first.Session.PID()
+
+	other := t.TempDir()
+	app.openSavedSession(savedSession{
+		SessionSummary: acp.SessionSummary{SessionID: "fake-history", Cwd: other, Title: "Other history"},
+		AgentID:        "fake",
+		Show:           true,
+	})
+	waitFor(t, app, tt, func() bool {
+		chat := app.activeChat()
+		return chat != nil && chat != first && chat.Connected &&
+			chat.Info.SessionID == "fake-history" && chat.Busy == ""
+	})
+
+	second := app.activeChat()
+	if !sameWorkspace(second.Workspace, other) {
+		t.Fatalf("workspace = %q, want %q", second.Workspace, other)
+	}
+	if second.Session == nil || second.Session.PID() == firstPID {
+		t.Fatal("saved session reused the process of another workspace")
+	}
+	if first.Session == nil || !first.Connected || first.Session.PID() != firstPID {
+		t.Fatal("the existing chat's process was closed or replaced")
 	}
 }
 

@@ -108,8 +108,8 @@ func cleanArchivePath(path string) string {
 	return path
 }
 
-// rememberArchivedSession records a session that was just created, loaded or
-// resumed. Existing ShowName and soft-delete state are preserved.
+// rememberArchivedSession records a session that was just created or loaded.
+// Existing ShowName and soft-delete state are preserved.
 func (a *App) rememberArchivedSession(chat *Chat) {
 	if chat == nil {
 		return

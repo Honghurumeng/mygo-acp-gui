@@ -95,10 +95,8 @@ func TestChatWithFakeAgent(t *testing.T) {
 func TestConnectRejectsRelativeWorkspace(t *testing.T) {
 	app, tt := newFakeApp(t)
 	current(app).Workspace = "relative/workspace"
+	app.Connect()
 	tt.Frame()
-	if err := tt.Click("Connect"); err != nil {
-		t.Fatal(err)
-	}
 	chat := app.activeChat()
 	if chat == nil || chat.WorkspaceError == "" {
 		t.Fatal("relative workspace was accepted")
@@ -171,10 +169,7 @@ func seedSessionArchive(t *testing.T, dataDir string, sessions ...archive.Sessio
 
 func connect(t *testing.T, app *App, tt *mui.Tester) {
 	t.Helper()
-	tt.Frame()
-	if err := tt.Click("Connect"); err != nil {
-		t.Fatal(err)
-	}
+	app.Connect()
 	waitFor(t, app, tt, func() bool { return current(app).Connected })
 }
 
@@ -309,7 +304,7 @@ func TestSessionConfigModeAndCommands(t *testing.T) {
 	waitFor(t, app, tt, func() bool { return len(current(app).Plan) == 2 && current(app).PlanOpen && !current(app).Streaming })
 }
 
-func TestSavedSessionsBeforeConnectResumesSession(t *testing.T) {
+func TestSavedSessionsBeforeConnectOpensHistory(t *testing.T) {
 	app, tt := newFakeApp(t)
 	waitSavedSessions(t, app, tt, 1)
 	tt.Frame()
@@ -320,29 +315,22 @@ func TestSavedSessionsBeforeConnectResumesSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, app, tt, func() bool {
-		return current(app).Connected && current(app).Info.SessionID == "fake-history" && !current(app).replaying && current(app).Busy == ""
+		return current(app).Connected && current(app).Info.SessionID == "fake-history" && !current(app).replaying &&
+			current(app).Busy == "" && hasRoleText(app, RoleUser, "Question from history") &&
+			lastAssistantHas(app, "Answer from history")
 	})
-	// Opening a saved row always resumes by id; it does not replay history.
-	if hasRoleText(app, RoleUser, "Question from history") || lastAssistantHas(app, "Answer from history") {
-		t.Errorf("resume unexpectedly replayed history; texts: %q", tt.Texts())
-	}
 }
 
 func TestCloseChatThenNewChat(t *testing.T) {
 	app, tt := newFakeApp(t)
 	connect(t, app, tt)
 	tt.Frame()
-	if err := tt.Click("Close chat"); err != nil {
-		t.Fatal(err)
-	}
+	app.closeActiveSession()
 	waitFor(t, app, tt, func() bool { return current(app).Info.SessionID == "" && current(app).Busy == "" })
 	if !tt.HasText("No active session") {
 		t.Errorf("no active session state missing; texts: %q", tt.Texts())
 	}
-	tt.Frame()
-	if err := tt.Click("New chat"); err != nil {
-		t.Fatal(err)
-	}
+	app.newSession()
 	waitFor(t, app, tt, func() bool { return current(app).Info.SessionID != "" && current(app).Busy == "" })
 	if current(app).Info.SessionID == "fake-session" {
 		t.Errorf("new chat reused the closed session id: %q", current(app).Info.SessionID)
@@ -390,10 +378,7 @@ func TestMCPDialogAndPrompt(t *testing.T) {
 	}
 	waitFor(t, app, tt, func() bool { return !app.SettingsOpen && len(app.MCPServers) == 1 })
 
-	tt.Frame()
-	if err := tt.Click("Connect"); err != nil {
-		t.Fatal(err)
-	}
+	app.Connect()
 	waitFor(t, app, tt, func() bool { return current(app).Connected })
 	current(app).Input = "hello"
 	tt.Frame()
@@ -427,32 +412,32 @@ func hasRoleText(app *App, role MessageRole, want string) bool {
 	return false
 }
 
-func TestSavedSessionsWhileConnectedLoadsAndResumes(t *testing.T) {
+func TestSavedSessionsOpenWithHistory(t *testing.T) {
 	app, tt := newFakeApp(t)
 	connect(t, app, tt)
 	waitSavedSessions(t, app, tt, 1)
 
-	// Resume attaches without replaying the old conversation.
+	// Clicking the row opens with session/load, so the agent replays the
+	// conversation into the empty tab.
 	tt.Frame()
-	if err := tt.Click("Saved session actions for Fake history"); err != nil {
-		t.Fatal(err)
-	}
-	tt.Frame()
-	if err := tt.Click("Resume"); err != nil {
+	if err := tt.Click("Open saved session: Fake history"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, app, tt, func() bool {
 		return current(app).Info.SessionID == "fake-history" && !current(app).replaying &&
-			current(app).Busy == "" && len(current(app).Messages) == 0
+			current(app).Busy == "" &&
+			hasRoleText(app, RoleUser, "Question from history") &&
+			lastAssistantHas(app, "Answer from history")
 	})
-
-	// Closing the ACP session makes the saved row available again; opening
-	// it resumes the archived id in the existing agent process without
-	// replaying the old transcript.
-	tt.Frame()
-	if err := tt.Click("Close chat"); err != nil {
-		t.Fatal(err)
+	for _, message := range current(app).Messages {
+		if !message.Done {
+			t.Fatalf("replayed message is not done: %+v", message)
+		}
 	}
+
+	// Closing the ACP session makes the saved row available again. It still
+	// opens through session/load, replaying history into the existing process.
+	app.closeActiveSession()
 	waitFor(t, app, tt, func() bool {
 		return current(app).Info.SessionID == "" && current(app).Busy == ""
 	})
@@ -461,9 +446,8 @@ func TestSavedSessionsWhileConnectedLoadsAndResumes(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, app, tt, func() bool {
-		return current(app).Info.SessionID == "fake-history" && !current(app).replaying && current(app).Busy == ""
+		return current(app).Info.SessionID == "fake-history" && !current(app).replaying &&
+			current(app).Busy == "" && hasRoleText(app, RoleUser, "Question from history") &&
+			lastAssistantHas(app, "Answer from history")
 	})
-	if lastAssistantHas(app, "Answer from history") {
-		t.Errorf("resume unexpectedly replayed history; texts: %q", tt.Texts())
-	}
 }

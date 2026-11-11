@@ -213,9 +213,10 @@ func TestSavedSessionUsesRecordedAgent(t *testing.T) {
 	}
 	waitFor(t, app, tt, func() bool {
 		chat := app.activeChat()
-		return chat != nil && chat.Connected && chat.Info.SessionID == "fake-history" && chat.Busy == ""
+		return chat != nil && chat.Connected && chat.Info.SessionID == "fake-history" && chat.Busy == "" &&
+			!chat.replaying && lastAssistantHas(app, "Answer from history")
 	})
 	if got := app.activeChat().Agent.ID; got != "other" {
-		t.Fatalf("resumed with agent %q, want other", got)
+		t.Fatalf("opened with agent %q, want other", got)
 	}
 }

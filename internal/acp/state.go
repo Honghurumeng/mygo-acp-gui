@@ -72,9 +72,9 @@ type Usage struct {
 	Cost *Cost `json:"cost,omitempty"`
 }
 
-// SessionState is the state returned by session/new, load and resume.
-// session/new also carries sessionId; load and resume are addressed by the
-// id the client already knows.
+// SessionState is the state returned by session/new and session/load.
+// session/new also carries sessionId; session/load is addressed by the id
+// the client already knows.
 type SessionState struct {
 	SessionID     string         `json:"sessionId,omitempty"`
 	ConfigOptions []ConfigOption `json:"configOptions,omitempty"`
@@ -116,13 +116,6 @@ type NewSessionResult = SessionState
 
 // LoadSessionParams is the payload of session/load.
 type LoadSessionParams struct {
-	SessionID  string `json:"sessionId"`
-	Cwd        string `json:"cwd"`
-	MCPServers []any  `json:"mcpServers"`
-}
-
-// ResumeSessionParams is the payload of session/resume.
-type ResumeSessionParams struct {
 	SessionID  string `json:"sessionId"`
 	Cwd        string `json:"cwd"`
 	MCPServers []any  `json:"mcpServers"`

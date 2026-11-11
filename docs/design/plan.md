@@ -86,7 +86,7 @@ go test ./internal/ui -run 'TestSettings|TestShutdownPersists|TestCorruptSetting
 9. 退出再启动：上次 agent / 工作区恢复。
 10. pi 未登录：只显示 `authMethods` / 登录命令，应用不尝试登录、不打开内嵌终端。
 11. 多会话：在侧栏开两个会话分别发 `/slow` 和普通消息，切换会话时后台继续流式；后台会话请求权限时弹窗标明会话，回答不影响另一个会话。
-12. 已保存会话：重启后在对应 workspace 下直接从 `sessions.json` 看到历史会话，不等 agent；点击按存档的 agent + sessionId 直接 resume。重命名后重启仍显示 `showName`；删除后刷新/重启都不再出现，可从 “Show deleted” 恢复。
+12. 已保存会话：重启后在对应 workspace 下直接从 `sessions.json` 看到历史会话，不等 agent；点击按存档的 agent + sessionId 用 `session/load` 重放历史。重命名后重启仍显示 `showName`；删除后刷新/重启都不再出现，可从 “Show deleted” 恢复。
 13. 设置持久化：改 agent/工作区/MCP 后退出，再启动应恢复；手工损坏 `settings.json` 或写入相对路径，应正常启动并在工具栏显示警告。
 14. 诊断：点顶部 “Logs” 能看到当前会话的 stderr；`logs/<agent>.log` 有连接头和 stderr，超过 1 MiB 后生成 `.1` 备份。
 
@@ -108,11 +108,11 @@ scripts/vendor-pi-acp.sh             # 仅在升级 pi-acp 时运行
 - [x] 内置 agent 的 `initialize` 探测（5 秒，不缓存）+ `ready` / `not-installed` / `installed-not-acp` / `needs-auth` 状态展示
 - [x] agent 选择 + 工作区选择 + 绝对路径/可写校验（上次使用由 settings.json 恢复）
 - [x] ACP 会话：initialize、session/new、session/prompt、agent_message_chunk 流式 Markdown、思考、工具调用、权限、取消
-- [x] 计划面板、配置选择、已保存会话（list/load/resume/close）
+- [x] 计划面板、配置选择、已保存会话（list/load/close）
 - [x] 模型/effort/模式配置 + `session/set_config_option` / `set_mode`
 - [x] 图片附件、MCP servers JSON、输入 `/` 触发的命令面板
 - [x] 侧栏按 workspace 分组、已保存会话直接展示、折叠/展开、超过 5 条收起、重命名/删除
-- [x] 本地 `sessions.json` 会话存档：agent/session 关联、启动直接展示、show 软删除、showName 重命名、点击直接 resume
+- [x] 本地 `sessions.json` 会话存档：agent/session 关联、启动直接展示、show 软删除、showName 重命名、点击 load 重放历史
 - [x] composer：可拖动高度、附件/git/mode/上下文环/模型面板/thinking/发送；首条消息自动连接
 - [x] pi-acp 单文件 bundle vendored（`resources/agents/pi-acp/`）
 - [x] 系统 Node / pi / command-code 定位（登录 shell + 绝对路径覆盖）+ 登录指引（只展示，不代登录）
@@ -121,13 +121,13 @@ scripts/vendor-pi-acp.sh             # 仅在升级 pi-acp 时运行
 - [x] settings.json 持久化（上次 agent/工作区、侧栏工作区列表、MCP 默认值、paths 覆盖；原子写入 + 容错加载）
 - [x] 错误诊断面板、stderr 日志滚动（Diagnostics 模态 + `logs/<agent>.log`，1 MiB 滚动）
 - [x] 基础测试：framing、launch spec、登录 shell 解析、fake agent 会话、UI 发送/流式/停止/权限、进程组清理
-- [x] 新能力测试：probe、config/mode、list/load/resume/close、侧栏已保存会话 UI、图片 prompt、MCP 校验、命令面板、图片发送 UI、设置持久化、诊断面板与日志滚动
-- [x] 存档测试：文件读写/容错、重命名与软删除跨重启、删除后同步不复活、按记录的 agent resume
+- [x] 新能力测试：probe、config/mode、list/load/close、侧栏已保存会话 UI、图片 prompt、MCP 校验、命令面板、图片发送 UI、设置持久化、诊断面板与日志滚动
+- [x] 存档测试：文件读写/容错、重命名与软删除跨重启、删除后同步不复活、按记录的 agent load
 
 ## 后续
 
-- [x] `session/load` / `resume` / `close` 已保存会话列表（直接显示在侧栏 workspace 下）
-- [x] 本地会话存档与软删除/重命名（启动不依赖 `session/list`，点击直接 resume）
+- [x] `session/load` / `close` 已保存会话列表（直接显示在侧栏 workspace 下）
+- [x] 本地会话存档与软删除/重命名（启动不依赖 `session/list`，点击 load 重放历史）
 - [x] 图片输入
 - [x] 多会话并行（侧栏每个会话一个 agent 进程；后台流式、权限按会话路由、重命名/删除/切换）
 - [x] settings.json 持久化（MCP、上次 agent/工作区）
