@@ -324,6 +324,7 @@ func (a *App) Connect() {
 			// Flush history and available_commands_update buffered during
 			// initialize/session setup after the UI state is installed.
 			s.Activate()
+			a.syncSavedSessionsOnce(spec.ID)
 			if chat.replaying {
 				a.Post(func() { a.finishReplay(chat) })
 			}

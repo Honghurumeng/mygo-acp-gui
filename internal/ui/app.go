@@ -113,10 +113,15 @@ type App struct {
 
 	// Workspaces is the ordered list of folders shown in the sidebar.
 	// Collapsed and Expanded hold the sidebar state of each workspace.
-	Workspaces         []string
-	WorkspaceCollapsed map[string]bool
-	WorkspaceExpanded  map[string]bool
-	SidebarOpen        bool
+	// RemovedWorkspaces soft-deletes groups: they stay in the list (and in
+	// settings.json) but are hidden until they are shown again.
+	Workspaces            []string
+	WorkspaceCollapsed    map[string]bool
+	WorkspaceExpanded     map[string]bool
+	RemovedWorkspaces     map[string]bool
+	ShowRemovedWorkspaces bool
+	WorkspaceMenuOpen     string
+	SidebarOpen           bool
 
 	Chats  []*Chat
 	Active int
@@ -139,6 +144,9 @@ type App struct {
 	ShowDeleted   bool
 	SavedMenuOpen string
 	savedVersion  int
+	// savedSynced records the agents whose session/list was imported once
+	// after they connected, replacing the old manual refresh button.
+	savedSynced map[string]bool
 
 	// Archived is the local session index. SavedSessions is the UI view of
 	// it, sorted for the sidebar. archive is nil when DataDir is empty.
@@ -219,6 +227,8 @@ func New(opts Options) *App {
 		Workspaces:         []string{},
 		WorkspaceCollapsed: make(map[string]bool),
 		WorkspaceExpanded:  make(map[string]bool),
+		RemovedWorkspaces:  make(map[string]bool),
+		savedSynced:        make(map[string]bool),
 	}
 	if opts.Agents != nil {
 		a.Agents = append([]agent.LaunchSpec(nil), opts.Agents...)
@@ -272,8 +282,23 @@ func (a *App) loadSettings(dataDir string, workspaceDefault bool) {
 	for _, workspace := range file.Workspaces {
 		a.ensureWorkspace(workspace)
 	}
+	for _, workspace := range file.RemovedWorkspaces {
+		// Keep the record addressable so "Show removed" can restore it.
+		a.ensureWorkspace(workspace)
+		a.markWorkspaceRemoved(workspace)
+	}
 	if workspaceDefault && file.LastWorkspace != "" {
 		a.Workspace = file.LastWorkspace
+	}
+	// The draft must not target a removed group, otherwise new sessions would
+	// land in a workspace the sidebar does not show.
+	if workspaceDefault && a.workspaceRemoved(a.Workspace) {
+		a.Workspace = a.firstVisibleWorkspace()
+		if a.Workspace == "" {
+			if home, err := os.UserHomeDir(); err == nil {
+				a.Workspace = home
+			}
+		}
 	}
 	if len(file.MCPServers) > 0 {
 		a.MCPServers = file.MCPServers

@@ -81,18 +81,14 @@ func (a *App) sidebar(c *mui.Context) {
 				a.newConversationButton(c)
 				mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
 					mui.Text(c, "Workspaces").FontSize(10).Bold().TextColor(t.TextMuted).Grow(1)
-					if mui.Button(c, "↻").Label("Refresh saved sessions").FontSize(12).
-						Disabled(a.Resolving || a.SavedLoading || len(a.Agents) == 0).Clicked() {
-						a.refreshSavedSessions()
-					}
 					if mui.Button(c, "＋").Label("Add workspace").FontSize(13).Clicked() {
 						a.addWorkspace()
 					}
 				})
 				a.savedSessionsStatus(c)
-				a.savedSessionsFilter(c)
+				a.sidebarFilters(c)
 				mui.Scroll(c).Grow(1).Gap(2).Children(func() {
-					for _, workspace := range a.Workspaces {
+					for _, workspace := range a.shownWorkspaces() {
 						a.workspaceGroup(c, workspace)
 					}
 				})
@@ -128,31 +124,51 @@ func (a *App) savedSessionsStatus(c *mui.Context) {
 	}
 }
 
-// savedSessionsFilter exposes locally deleted sessions. They stay hidden by
-// default, but a restore affordance should not require editing the archive
-// file by hand.
-func (a *App) savedSessionsFilter(c *mui.Context) {
-	hidden := a.hiddenArchivedCount()
-	if hidden == 0 && !a.ShowDeleted {
+// sidebarFilters expose locally removed rows: sessions stay in the archive and
+// workspaces stay in settings, so both need a visible restore affordance.
+func (a *App) sidebarFilters(c *mui.Context) {
+	hiddenSessions := a.hiddenArchivedCount()
+	removedWorkspaces := a.removedWorkspaceCount()
+	if hiddenSessions == 0 && !a.ShowDeleted && removedWorkspaces == 0 && !a.ShowRemovedWorkspaces {
 		return
 	}
-	label := "Show deleted (" + strconv.Itoa(hidden) + ")"
-	tip := "Show locally deleted saved sessions"
-	if a.ShowDeleted {
-		label = "Hide deleted"
-		tip = "Hide locally deleted saved sessions"
-	}
-	if mui.Button(c, label).Label(tip).FontSize(9).Clicked() {
-		a.ShowDeleted = !a.ShowDeleted
-	}
+	mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
+		if hiddenSessions > 0 || a.ShowDeleted {
+			label := "Show deleted (" + strconv.Itoa(hiddenSessions) + ")"
+			tip := "Show locally deleted saved sessions"
+			if a.ShowDeleted {
+				label = "Hide deleted"
+				tip = "Hide locally deleted saved sessions"
+			}
+			if mui.Button(c, label).Label(tip).FontSize(9).Clicked() {
+				a.ShowDeleted = !a.ShowDeleted
+			}
+		}
+		if removedWorkspaces > 0 || a.ShowRemovedWorkspaces {
+			label := "Show removed (" + strconv.Itoa(removedWorkspaces) + ")"
+			tip := "Show locally removed workspaces"
+			if a.ShowRemovedWorkspaces {
+				label = "Hide removed"
+				tip = "Hide locally removed workspaces"
+			}
+			if mui.Button(c, label).Label(tip).FontSize(9).Clicked() {
+				a.ShowRemovedWorkspaces = !a.ShowRemovedWorkspaces
+			}
+		}
+	})
 }
 
 func (a *App) workspaceGroup(c *mui.Context, workspace string) {
 	t := c.Theme()
 	collapsed := a.WorkspaceCollapsed[workspace]
+	removed := a.workspaceRemoved(workspace)
 	label := filepath.Base(workspace)
 	if label == "" || label == "." || label == string(filepath.Separator) {
 		label = workspace
+	}
+	display := label
+	if removed {
+		display = "[removed] " + label
 	}
 	chats := a.chatsInWorkspace(workspace)
 	saved := a.savedSessionsFor(workspace)
@@ -167,18 +183,61 @@ func (a *App) workspaceGroup(c *mui.Context, workspace string) {
 				arrow = "▾"
 			}
 			mui.Text(c, arrow).FontSize(10).TextColor(t.TextMuted)
-			mui.Text(c, label).FontSize(11).Bold().Grow(1).SingleLine()
+			title := mui.Text(c, display).FontSize(11).Bold().Grow(1).SingleLine()
+			if removed {
+				title.TextColor(t.TextMuted)
+			}
 			if total > 0 {
 				mui.Text(c, formatCount(total)).FontSize(9).TextColor(t.TextMuted)
 			}
 		})
-		head.Tooltip(workspace)
+		tip := workspace
+		if removed {
+			tip += "\nRemoved locally; restore from the ⋯ menu."
+		}
+		head.Tooltip(tip)
 		if head.Clicked() {
 			a.WorkspaceCollapsed[workspace] = !collapsed
 		}
-		plus := mui.Button(c, "＋").Label("New conversation in " + label).FontSize(12)
-		if plus.Clicked() {
-			a.newChatTabIn(workspace)
+
+		menu := mui.ButtonBase(c).Padding(4, 6).Radius(8).Background(t.Background).
+			Label("Workspace actions for " + label)
+		menu.Children(func() {
+			mui.Text(c, "⋯").FontSize(11).TextColor(t.TextMuted)
+		})
+		if menu.Clicked() {
+			if a.WorkspaceMenuOpen == workspace {
+				a.WorkspaceMenuOpen = ""
+			} else {
+				a.WorkspaceMenuOpen = workspace
+			}
+		}
+		open := a.WorkspaceMenuOpen == workspace
+		mui.Popover(c, menu, &open, func() {
+			mui.Column(c).Width(168).Gap(2).Children(func() {
+				if removed {
+					if mui.Button(c, "Restore workspace").FillWidth().FontSize(11).Clicked() {
+						open = false
+						a.restoreWorkspace(workspace)
+					}
+					return
+				}
+				if mui.Button(c, "Remove workspace").FillWidth().FontSize(11).
+					TextColor(t.Danger).Clicked() {
+					open = false
+					a.removeWorkspace(workspace)
+				}
+			})
+		})
+		if !open && a.WorkspaceMenuOpen == workspace {
+			a.WorkspaceMenuOpen = ""
+		}
+
+		if !removed {
+			plus := mui.Button(c, "＋").Label("New conversation in " + label).FontSize(12)
+			if plus.Clicked() {
+				a.newChatTabIn(workspace)
+			}
 		}
 	})
 

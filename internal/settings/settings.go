@@ -28,14 +28,17 @@ type Paths struct {
 	CommandCode string `json:"commandCode,omitempty"`
 }
 
-// File is the on-disk settings document.
+// File is the on-disk settings document. Workspaces keeps every known folder
+// in sidebar order; RemovedWorkspaces holds the soft-deleted ones, which stay
+// in the list so they can be restored later.
 type File struct {
-	Version       int      `json:"version"`
-	LastAgent     string   `json:"lastAgent,omitempty"`
-	LastWorkspace string   `json:"lastWorkspace,omitempty"`
-	Workspaces    []string `json:"workspaces,omitempty"`
-	MCPServers    []any    `json:"mcpServers,omitempty"`
-	Paths         Paths    `json:"paths,omitempty"`
+	Version           int      `json:"version"`
+	LastAgent         string   `json:"lastAgent,omitempty"`
+	LastWorkspace     string   `json:"lastWorkspace,omitempty"`
+	Workspaces        []string `json:"workspaces,omitempty"`
+	RemovedWorkspaces []string `json:"removedWorkspaces,omitempty"`
+	MCPServers        []any    `json:"mcpServers,omitempty"`
+	Paths             Paths    `json:"paths,omitempty"`
 }
 
 // Store reads and writes one settings file. A nil Store or an empty path is
@@ -134,12 +137,13 @@ func (s *Store) Save(file File) error {
 // rawFile keeps mcpServers undecoded so one malformed list does not discard
 // the other fields.
 type rawFile struct {
-	Version       int             `json:"version"`
-	LastAgent     string          `json:"lastAgent"`
-	LastWorkspace string          `json:"lastWorkspace"`
-	Workspaces    json.RawMessage `json:"workspaces"`
-	MCPServers    json.RawMessage `json:"mcpServers"`
-	Paths         Paths           `json:"paths"`
+	Version           int             `json:"version"`
+	LastAgent         string          `json:"lastAgent"`
+	LastWorkspace     string          `json:"lastWorkspace"`
+	Workspaces        json.RawMessage `json:"workspaces"`
+	RemovedWorkspaces json.RawMessage `json:"removedWorkspaces"`
+	MCPServers        json.RawMessage `json:"mcpServers"`
+	Paths             Paths           `json:"paths"`
 }
 
 func decode(data []byte) (File, error) {
@@ -159,14 +163,8 @@ func decode(data []byte) (File, error) {
 		problems = append(problems, fmt.Errorf("settings: ignoring relative lastWorkspace %q", file.LastWorkspace))
 		file.LastWorkspace = ""
 	}
-	if len(raw.Workspaces) > 0 && string(raw.Workspaces) != "null" {
-		var workspaces []string
-		if err := json.Unmarshal(raw.Workspaces, &workspaces); err != nil {
-			problems = append(problems, fmt.Errorf("settings: ignoring workspaces: %w", err))
-		} else {
-			file.Workspaces = sanitizeWorkspaces(workspaces, &problems)
-		}
-	}
+	file.Workspaces = decodeWorkspaceList(raw.Workspaces, "workspaces", &problems)
+	file.RemovedWorkspaces = decodeWorkspaceList(raw.RemovedWorkspaces, "removedWorkspaces", &problems)
 	if len(raw.MCPServers) > 0 && string(raw.MCPServers) != "null" {
 		var servers []any
 		if err := json.Unmarshal(raw.MCPServers, &servers); err != nil {
@@ -177,6 +175,18 @@ func decode(data []byte) (File, error) {
 	}
 	file.Paths = sanitizePaths(raw.Paths, &problems)
 	return file, errors.Join(problems...)
+}
+
+func decodeWorkspaceList(raw json.RawMessage, name string, problems *[]error) []string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	var workspaces []string
+	if err := json.Unmarshal(raw, &workspaces); err != nil {
+		*problems = append(*problems, fmt.Errorf("settings: ignoring %s: %w", name, err))
+		return nil
+	}
+	return sanitizeWorkspaces(workspaces, problems)
 }
 
 func sanitizeWorkspaces(workspaces []string, problems *[]error) []string {

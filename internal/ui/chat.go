@@ -252,7 +252,9 @@ func (a *App) preferredAgent() (agent.LaunchSpec, bool) {
 }
 
 func (a *App) defaultWorkspace() string {
-	if chat := a.activeChat(); chat != nil && strings.TrimSpace(chat.Workspace) != "" {
+	// A removed group is hidden from the sidebar, so a new conversation should
+	// not silently land in it.
+	if chat := a.activeChat(); chat != nil && strings.TrimSpace(chat.Workspace) != "" && !a.workspaceRemoved(chat.Workspace) {
 		return chat.Workspace
 	}
 	if strings.TrimSpace(a.Workspace) != "" {

@@ -86,7 +86,8 @@ go test ./internal/ui -run 'TestSettings|TestShutdownPersists|TestCorruptSetting
 9. 退出再启动：上次 agent / 工作区恢复。
 10. pi 未登录：只显示 `authMethods` / 登录命令，应用不尝试登录、不打开内嵌终端。
 11. 多会话：在侧栏开两个会话分别发 `/slow` 和普通消息，切换会话时后台继续流式；后台会话请求权限时弹窗标明会话，回答不影响另一个会话。
-12. 已保存会话：重启后在对应 workspace 下直接从 `sessions.json` 看到历史会话，不等 agent；点击按存档的 agent + sessionId 用 `session/load` 重放历史。重命名后重启仍显示 `showName`；删除后刷新/重启都不再出现，可从 “Show deleted” 恢复。
+12. 已保存会话：重启后在对应 workspace 下直接从 `sessions.json` 看到历史会话，不等 agent；点击按存档的 agent + sessionId 用 `session/load` 重放历史。重命名后重启仍显示 `showName`；删除后自动同步/重启都不再出现，可从 “Show deleted” 恢复。
+12b. 工作区软删除：工作区 `⋯` → `Remove workspace` 后分组隐藏但存档/会话不变，重启仍不出现；“Show removed (N)” → `Restore workspace` 恢复。
 13. 设置持久化：改 agent/工作区/MCP 后退出，再启动应恢复；手工损坏 `settings.json` 或写入相对路径，应正常启动并在工具栏显示警告。
 14. 诊断：点顶部 “Logs” 能看到当前会话的 stderr；`logs/<agent>.log` 有连接头和 stderr，超过 1 MiB 后生成 `.1` 备份。
 
@@ -111,18 +112,18 @@ scripts/vendor-pi-acp.sh             # 仅在升级 pi-acp 时运行
 - [x] 计划面板、配置选择、已保存会话（list/load/close）
 - [x] 模型/effort/模式配置 + `session/set_config_option` / `set_mode`
 - [x] 图片附件、MCP servers JSON、输入 `/` 触发的命令面板
-- [x] 侧栏按 workspace 分组、已保存会话直接展示、折叠/展开、超过 5 条收起、重命名/删除
+- [x] 侧栏按 workspace 分组、已保存会话直接展示、折叠/展开、超过 5 条收起、重命名/删除/软删除恢复
 - [x] 本地 `sessions.json` 会话存档：agent/session 关联、启动直接展示、show 软删除、showName 重命名、点击 load 重放历史
 - [x] composer：可拖动高度、附件/git/mode/上下文环/模型面板/thinking/发送；首条消息自动连接
 - [x] pi-acp 单文件 bundle vendored（`resources/agents/pi-acp/`）
 - [x] 系统 Node / pi / command-code 定位（登录 shell + 绝对路径覆盖）+ 登录指引（只展示，不代登录）
 - [x] Command Code 启动与完整聊天流程：initialize、session/new、流式、权限、取消、退出清理
 - [x] 退出清理（Setpgid + 进程组 SIGTERM/SIGKILL）
-- [x] settings.json 持久化（上次 agent/工作区、侧栏工作区列表、MCP 默认值、paths 覆盖；原子写入 + 容错加载）
+- [x] settings.json 持久化（上次 agent/工作区、侧栏工作区列表 + `removedWorkspaces` 软删除、MCP 默认值、paths 覆盖；原子写入 + 容错加载）
 - [x] 错误诊断面板、stderr 日志滚动（Diagnostics 模态 + `logs/<agent>.log`，1 MiB 滚动）
 - [x] 基础测试：framing、launch spec、登录 shell 解析、fake agent 会话、UI 发送/流式/停止/权限、进程组清理
 - [x] 新能力测试：probe、config/mode、list/load/close、侧栏已保存会话 UI、图片 prompt、MCP 校验、命令面板、图片发送 UI、设置持久化、诊断面板与日志滚动
-- [x] 存档测试：文件读写/容错、重命名与软删除跨重启、删除后同步不复活、按记录的 agent load
+- [x] 存档测试：文件读写/容错、重命名与软删除跨重启、删除后同步不复活、按记录的 agent load、工作区软删除/恢复跨重启
 
 ## 后续
 

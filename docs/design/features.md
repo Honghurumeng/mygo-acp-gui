@@ -22,6 +22,7 @@
 - `App` 只保存全局状态（内置 agent、发现结果、工作区列表、MCP 默认值、会话列表、当前会话）和 `[]*Chat`。
 - session 回调在创建时捕获所属 `*Chat`，按 session 指针路由，不读取“当前会话”，所以后台会话的 `session/update`、退出和权限都能落到正确位置。
 - 左侧工作区栏按 `Chat.Workspace` 分组：先显示打开会话（标题/流式转圈/未读点/权限提醒），再显示该目录的已保存会话。打开会话超过 5 条时只显示前 5 条并可展开/收起；已保存会话直接全部列出，不放在弹窗里。
+- 工作区头部右侧 `⋯` 提供 `Remove workspace`：软删除只隐藏该分组，已打开会话、已保存会话和目录本身都不动，记录仍在 `workspaces` 里。移除后侧栏出现 “Show removed (N)”，展开后分组显示为 `[removed]`，同一菜单可 `Restore workspace`；重新通过 `＋` 添加或打开该目录下的存档也会恢复。
 - 会话右侧 `⋯` 打开重命名/删除；删除会关闭该会话的进程，并把对应存档记录标为 `show=false`。`New conversation` 新建独立会话，工作区上的 `＋` 在该目录下新建。
 - 启动时默认创建一个草稿会话；在草稿里输入第一条消息时自动连接，成功后立即发送。
 - 每个会话保留自己的消息列表滚动位置、输入草稿、图片附件、配置选择和计划面板。
@@ -56,7 +57,7 @@
 - App 不在本地保存消息正文，右侧历史只能由 agent 重放。点击存档行按记录中的 `agentId` 启动/复用对应 agent，并执行 `session/load` 重放历史；当前会话已有消息、流式、目标 agent 与当前进程不同，或 `cwd` 与当前进程工作区不同时，在新标签页用该会话的 `cwd` 新建进程（Command Code 的 ACP 进程只服务启动时的工作区）。
 - 行尾 `⋯` 只提供 Rename、Delete；打开存档一律走 load。Rename 写 `showName`；Delete 只写 `show=false`，不关 agent 的外部历史。
 - 默认不显示 `show=false` 的行；侧栏 “Show deleted (N)” 展开，`⋯` → Restore 恢复。
-- `↻` 才按需从当前 agent 拉取 `session/list` 合并进存档（优先复用已连接进程，否则 `session.ListSessionsIn` 短进程）。合并只补 `cwd/title/updatedAt` 和新记录，不改变 `show/showName`，所以已删除/已重命名的会话不会在刷新后复活或改名。升级后首次运行存档为空时，点一次 `↻` 即可导入该 agent 的现有会话。
+- 每个 agent 首次连接成功后自动从当前会话拉一次 `session/list` 合并进存档（复用已连接进程，不额外 spawn）。合并只补 `cwd/title/updatedAt` 和新记录，不改变 `show/showName`，所以已删除/已重命名的会话不会在同步后复活或改名。升级后存档为空时，发一条消息或打开一个存档即可导入该 agent 的现有会话。
 - 从其他工作区打开时，把存档里的 `cwd` 传给 load、加入侧栏工作区列表；路径比较解析 symlink，避免同一目录出现两个分组。
 - 存档写入是原子的（同目录临时文件 + rename，0600）。文件缺失视为空；损坏 JSON、未来版本、缺少 agentId/sessionId 或重复记录只产生侧栏警告，其余记录照常展示，不阻塞启动。
 - 历史重放事件在 `Start` 阶段缓冲，UI 安装好 Session 后调用 `Activate` 按顺序消费，避免丢失。
@@ -81,9 +82,9 @@
 ## 设置持久化
 
 - `internal/settings` 读写 `PathUserData/settings.json`；`ui.Options.DataDir` 为空时完全不落盘（测试、便携运行）。
-- 保存内容：最后使用的 agent、工作区、侧栏工作区列表、MCP 默认列表，以及 `paths` 里的显式工具覆盖。
-- 保存时机：切换会话、选择 agent/目录、添加工作区、Connect 校验成功、MCP Apply、退出。
-- 启动恢复：工作区、侧栏工作区列表、MCP 列表、上次 agent；显式传入的 `ui.Options.Workspace` 优先（测试用）。
+- 保存内容：最后使用的 agent、工作区、侧栏工作区列表（`workspaces`）和软删除记录（`removedWorkspaces`）、MCP 默认列表，以及 `paths` 里的显式工具覆盖。
+- 保存时机：切换会话、选择 agent/目录、添加/移除/恢复工作区、Connect 校验成功、MCP Apply、退出。
+- 启动恢复：工作区、侧栏工作区列表（含软删除分组）、MCP 列表、上次 agent；显式传入的 `ui.Options.Workspace` 优先（测试用）。上次工作区已被软删除时，草稿改用第一个可见工作区（没有则用 home）。
 - `paths` 只保存配置里的覆盖值；`ACP_GUI_*` 环境变量优先，且不会被写回文件。
 - 容错：文件缺失用默认值；损坏 JSON、MCP 不是数组、相对路径、未来版本只显示侧栏/标题栏警告，其余字段照常生效。
 - 不保存会话布局、草稿、附件和消息；会话索引在单独的 `sessions.json` 里（见“已保存会话与本地存档”）。
@@ -123,7 +124,7 @@
 
 ```bash
 go test ./... -race
-go test ./internal/ui -run 'TestSessionConfig|TestSaved|TestDeleteSaved|TestDeleteOpen|TestCloseChat|TestSendImage|TestMCP|TestPromptUsageFallback|TestMultipleChats|TestBackgroundChat|TestPermissionFrom|TestCloseTab|TestFirstMessage|TestWorkspaceConversation|TestRename|TestGit|TestComposerHeight' -v
+go test ./internal/ui -run 'TestSessionConfig|TestSaved|TestDeleteSaved|TestDeleteOpen|TestCloseChat|TestSendImage|TestMCP|TestPromptUsageFallback|TestMultipleChats|TestBackgroundChat|TestPermissionFrom|TestCloseTab|TestFirstMessage|TestWorkspaceConversation|TestRename|TestGit|TestComposerHeight|TestRemoveWorkspace|TestRemovedWorkspace' -v
 go test ./internal/archive -v
 go test ./internal/settings -v
 go test ./internal/logs -v

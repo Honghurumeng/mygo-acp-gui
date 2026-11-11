@@ -30,9 +30,10 @@ type savedSession struct {
 }
 
 // refreshSavedSessions merges the selected agent's session/list into the local
-// archive. It is explicit (the sidebar ↻ button); startup never waits for an
-// agent just to draw the saved list. Existing Show/ShowName values win, so a
-// deleted session stays deleted and a rename stays renamed.
+// archive. It runs once per agent after the first successful connect (see
+// syncSavedSessionsOnce); startup never waits for an agent just to draw the
+// saved list. Existing Show/ShowName values win, so a deleted session stays
+// deleted and a rename stays renamed.
 func (a *App) refreshSavedSessions() {
 	if a.closed.Load() || a.Resolving {
 		return
@@ -84,6 +85,25 @@ func (a *App) refreshSavedSessions() {
 			a.mergeArchivedSessions(spec.ID, sessions)
 		})
 	}()
+}
+
+// syncSavedSessionsOnce imports an agent's session/list the first time a live
+// process for it exists. The sidebar has no manual refresh button, so the
+// archive is filled from an agent that is already running instead of spawning
+// a short-lived process at startup.
+func (a *App) syncSavedSessionsOnce(agentID string) {
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" || a.Resolving {
+		return
+	}
+	if a.savedSynced == nil {
+		a.savedSynced = make(map[string]bool)
+	}
+	if a.savedSynced[agentID] {
+		return
+	}
+	a.savedSynced[agentID] = true
+	a.refreshSavedSessions()
 }
 
 func sortSavedSessions(sessions []savedSession) []savedSession {
@@ -372,7 +392,7 @@ func (a *App) openSavedSession(item savedSession) {
 	if workspace != "" {
 		chat.Workspace = workspace
 		a.Workspace = workspace
-		a.ensureWorkspace(workspace)
+		a.showWorkspace(workspace)
 		a.WorkspaceCollapsed[workspace] = false
 	}
 	if chat.Session != nil {

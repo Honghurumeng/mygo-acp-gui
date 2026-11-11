@@ -27,10 +27,11 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	store := Open(path)
 	workspace := t.TempDir()
 	want := File{
-		Version:       CurrentVersion,
-		LastAgent:     "command-code",
-		LastWorkspace: workspace,
-		Workspaces:    []string{workspace},
+		Version:           CurrentVersion,
+		LastAgent:         "command-code",
+		LastWorkspace:     workspace,
+		Workspaces:        []string{workspace},
+		RemovedWorkspaces: []string{workspace},
 		MCPServers: []any{
 			map[string]any{"name": "demo", "command": "true"},
 		},
@@ -64,6 +65,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if len(got.Workspaces) != 1 || got.Workspaces[0] != workspace {
 		t.Errorf("workspaces = %+v", got.Workspaces)
+	}
+	if len(got.RemovedWorkspaces) != 1 || got.RemovedWorkspaces[0] != workspace {
+		t.Errorf("removedWorkspaces = %+v", got.RemovedWorkspaces)
 	}
 	if len(got.MCPServers) != 1 {
 		t.Fatalf("mcp servers = %+v", got.MCPServers)
@@ -181,8 +185,9 @@ func TestLoadSanitizesWorkspaces(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings.json")
 	workspace := t.TempDir()
 	document, err := json.Marshal(map[string]any{
-		"version":    CurrentVersion,
-		"workspaces": []string{workspace, "relative/dir", workspace, ""},
+		"version":           CurrentVersion,
+		"workspaces":        []string{workspace, "relative/dir", workspace, ""},
+		"removedWorkspaces": []string{workspace, "relative/dir", workspace},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -196,5 +201,8 @@ func TestLoadSanitizesWorkspaces(t *testing.T) {
 	}
 	if len(file.Workspaces) != 1 || file.Workspaces[0] != workspace {
 		t.Errorf("workspaces = %+v", file.Workspaces)
+	}
+	if len(file.RemovedWorkspaces) != 1 || file.RemovedWorkspaces[0] != workspace {
+		t.Errorf("removedWorkspaces = %+v", file.RemovedWorkspaces)
 	}
 }
