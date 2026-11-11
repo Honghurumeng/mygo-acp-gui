@@ -86,7 +86,7 @@
 
 - 右侧 300 DIP 可折叠面板，跟随当前会话/草稿的 workspace；顶部 MCP 左侧的 `Git` 按钮开关，打开时按钮高亮为主色。
 - 异步探测 `git` 是否存在和 workspace 所属仓库根目录；没有 git 显示安装提示，没有仓库显示 “Initialize Git repository” 按钮（`git init`）。
-- 有仓库时显示 commit message、Staged / Changes 列表、分支状态和提交图；文件可逐项 stage/unstage，也可 Stage all / Unstage all。
+- 有仓库时显示 commit message、Staged / Changes 列表、分支状态和提交图（CrychicUI `code.CommitGraph`，结构化 log + lane）；文件可逐项 stage/unstage，也可 Stage all / Unstage all。点文件名可打开 diff 预览。
 - Commit 只提交暂存内容；Fetch/Pull/Push 不等待凭据终端，Undo 用 soft reset 保留改动；所有命令有超时和 generation 校验，切换会话不会串仓库。
 - 详细设计见 [git.md](git.md)。
 

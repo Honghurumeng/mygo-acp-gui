@@ -9,6 +9,7 @@ import (
 
 	mui "github.com/egoist/mygo/ui"
 	"github.com/reed/acp-gui/internal/agent"
+	"github.com/reed/acp-gui/internal/git"
 )
 
 func TestGitPanelPromptsForRepositoryAndInitializes(t *testing.T) {
@@ -135,7 +136,7 @@ func TestGitPanelStagesAndCommits(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, app, tt, func() bool {
-		return app.Git.Message == "" && strings.Contains(app.Git.Graph, "first from panel")
+		return app.Git.Message == "" && gitPanelHasCommit(app, "first from panel")
 	})
 	out, err := exec.Command("git", "-C", workspace, "log", "-1", "--pretty=format:%s").Output()
 	if err != nil {
@@ -143,6 +144,44 @@ func TestGitPanelStagesAndCommits(t *testing.T) {
 	}
 	if strings.TrimSpace(string(out)) != "first from panel" {
 		t.Fatalf("commit subject = %q", out)
+	}
+	tt.Frame()
+	if !tt.HasText("first from panel") {
+		t.Errorf("graph does not show the new subject; texts: %q", tt.Texts())
+	}
+	if len(app.Git.Commits) != 1 || app.Git.Commits[0].Lane != 0 {
+		t.Errorf("commits = %+v", app.Git.Commits)
+	}
+}
+
+func TestGitGraphCommitsFitsThePanel(t *testing.T) {
+	in := []git.LogCommit{{
+		Hash:    "abc",
+		Message: "Merge branch 'feature/a-very-long-name'",
+		Author:  "Test User",
+		Parents: []string{"parent"},
+		Refs:    []string{"feature/a-very-long-name", "v1.0.0", "origin/main"},
+		Lane:    3,
+	}}
+	out := gitGraphCommits(in)
+	if len(out) != 1 {
+		t.Fatalf("out = %+v", out)
+	}
+	got := out[0]
+	if got.Author != "" {
+		t.Errorf("narrow graph kept the author %q", got.Author)
+	}
+	if len(got.Refs) != 1 || !strings.HasSuffix(got.Refs[0], "…") {
+		t.Errorf("refs = %q, want one shortened ref", got.Refs)
+	}
+	if len([]rune(got.Refs[0])) != 13 {
+		t.Errorf("ref = %q, want 12 runes and an ellipsis", got.Refs[0])
+	}
+	if got.Lane != 3 || got.Message != in[0].Message || got.Parents[0] != "parent" {
+		t.Errorf("commit = %+v", got)
+	}
+	if shortGraphText("发布分支", 12) != "发布分支" {
+		t.Error("shortGraphText split a short non-Latin name")
 	}
 }
 
@@ -176,5 +215,101 @@ func runGitPanelCommand(t *testing.T, dir string, args ...string) {
 	cmd.Env = append(os.Environ(), "LC_ALL=C", "GIT_TERMINAL_PROMPT=0")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+func TestGitPanelPreviewsDiff(t *testing.T) {
+	workspace := initGitPanelRepo(t)
+	writeGitPanelFile(t, workspace, "hello.txt", "one\n")
+	runGitPanelCommand(t, workspace, "add", ".")
+	runGitPanelCommand(t, workspace, "commit", "-q", "-m", "first")
+	writeGitPanelFile(t, workspace, "hello.txt", "two\n")
+
+	app, tt := newGitPanelApp(t, workspace)
+	waitFor(t, app, tt, func() bool {
+		return app.Git.Checked && !app.Git.Loading && len(app.Git.Changes) == 1
+	})
+	if err := tt.Click("Diff of hello.txt"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		return app.Git.PreviewOpen && !app.Git.PreviewBusy && app.Git.PreviewNew != ""
+	})
+	if app.Git.PreviewOld != "one\n" || app.Git.PreviewNew != "two\n" {
+		t.Fatalf("preview sides = %q → %q", app.Git.PreviewOld, app.Git.PreviewNew)
+	}
+	if app.Git.PreviewStaged {
+		t.Error("unstaged change opened as staged")
+	}
+	tt.Frame()
+	for _, want := range []string{"Diff · hello.txt", "Split", "Unified"} {
+		if !tt.HasText(want) {
+			t.Errorf("overlay is missing %q; texts: %q", want, tt.Texts())
+		}
+	}
+
+	if err := tt.Click("Close"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool { return !app.Git.PreviewOpen && app.Git.PreviewPath == "" })
+
+	// The staged side compares HEAD with the index.
+	if err := tt.Click("Stage all"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		return len(app.Git.Staged) == 1 && len(app.Git.Changes) == 0 && app.Git.Busy == ""
+	})
+	if err := tt.Click("Diff of hello.txt"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		return app.Git.PreviewOpen && app.Git.PreviewStaged && !app.Git.PreviewBusy && app.Git.PreviewNew != ""
+	})
+	if app.Git.PreviewOld != "one\n" || app.Git.PreviewNew != "two\n" {
+		t.Fatalf("staged preview sides = %q → %q", app.Git.PreviewOld, app.Git.PreviewNew)
+	}
+	tt.Frame()
+	if !tt.HasText("Staged diff · hello.txt") {
+		t.Errorf("staged title missing; texts: %q", tt.Texts())
+	}
+}
+
+func TestGitPanelDiffRejectsBinary(t *testing.T) {
+	workspace := initGitPanelRepo(t)
+	writeGitPanelFile(t, workspace, "blob.bin", "head\x00tail\n")
+
+	app, tt := newGitPanelApp(t, workspace)
+	waitFor(t, app, tt, func() bool {
+		return app.Git.Checked && !app.Git.Loading && len(app.Git.Changes) == 1
+	})
+	if err := tt.Click("Diff of blob.bin"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		return app.Git.PreviewOpen && !app.Git.PreviewBusy && app.Git.PreviewErr != ""
+	})
+	if !strings.Contains(app.Git.PreviewErr, "binary") {
+		t.Fatalf("preview error = %q", app.Git.PreviewErr)
+	}
+	tt.Frame()
+	if !tt.HasText("Cannot show this diff") {
+		t.Errorf("binary error is missing from the overlay; texts: %q", tt.Texts())
+	}
+}
+
+func gitPanelHasCommit(app *App, want string) bool {
+	for _, c := range app.Git.Commits {
+		if strings.Contains(c.Message, want) {
+			return true
+		}
+	}
+	return false
+}
+
+func writeGitPanelFile(t *testing.T, dir, name, text string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }

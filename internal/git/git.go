@@ -90,7 +90,7 @@ type State struct {
 	Behind     int
 	HasCommits bool
 	Files      []File
-	Graph      string
+	Commits    []LogCommit
 }
 
 // Staged returns the files with staged changes, in status order.
@@ -122,7 +122,7 @@ func Available() bool {
 }
 
 // Load reads the repository containing workspace: root, branch, status and
-// a compact history graph. A missing repository is ErrNotRepository.
+// a bounded history. A missing repository is ErrNotRepository.
 func Load(ctx context.Context, workspace string) (State, error) {
 	if _, err := exec.LookPath("git"); err != nil {
 		return State{}, ErrGitNotFound
@@ -148,11 +148,11 @@ func Load(ctx context.Context, workspace string) (State, error) {
 		Files:      status.files,
 	}
 	if state.HasCommits {
-		graph, err := readGraph(ctx, root)
+		commits, err := readCommits(ctx, root)
 		if err != nil {
 			return State{}, err
 		}
-		state.Graph = graph
+		state.Commits = commits
 	}
 	return state, nil
 }
@@ -250,16 +250,6 @@ func parseBranch(header string, result *statusResult) {
 			}
 		}
 	}
-}
-
-func readGraph(ctx context.Context, root string) (string, error) {
-	out, err := run(ctx, root, []string{"GIT_OPTIONAL_LOCKS=0"},
-		"log", "--graph", "--decorate", "--abbrev-commit", "--all", "-n", "80",
-		"--date=relative", "--pretty=format:%h %s%d (%an, %ar)")
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimRight(string(out), "\n"), nil
 }
 
 // Init creates a repository in dir.

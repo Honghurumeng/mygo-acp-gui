@@ -10,7 +10,13 @@ import (
 	"strings"
 	"time"
 
+	crycode "github.com/ELY-Open-Source/CrychicUI/code"
+	cryfeedback "github.com/ELY-Open-Source/CrychicUI/feedback"
+	crykit "github.com/ELY-Open-Source/CrychicUI/kit"
+	crylayout "github.com/ELY-Open-Source/CrychicUI/layout"
+	cryoverlay "github.com/ELY-Open-Source/CrychicUI/overlay"
 	mui "github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/editor"
 	"github.com/reed/acp-gui/internal/git"
 )
 
@@ -44,11 +50,22 @@ type gitPanelState struct {
 	HasCommits bool
 	Staged     []git.File
 	Changes    []git.File
-	Graph      string
+	Commits    []git.LogCommit
 
 	Message       string
 	ChangesHeight float32
 	Gen           int
+
+	// Preview is the diff overlay for one changed file; PreviewGen guards
+	// a late read against a newer file or workspace.
+	PreviewOpen   bool
+	PreviewPath   string
+	PreviewStaged bool
+	PreviewBusy   bool
+	PreviewErr    string
+	PreviewOld    string
+	PreviewNew    string
+	PreviewGen    int
 }
 
 func (a *App) activeGitWorkspace() string {
@@ -133,7 +150,7 @@ func (a *App) startGitLoad(workspace string, clearFeedback bool) {
 				a.Git.Ahead, a.Git.Behind = 0, 0
 				a.Git.HasCommits = false
 				a.Git.Staged, a.Git.Changes = nil, nil
-				a.Git.Graph = ""
+				a.Git.Commits = nil
 				return
 			}
 			if noRepo {
@@ -143,7 +160,7 @@ func (a *App) startGitLoad(workspace string, clearFeedback bool) {
 				a.Git.Ahead, a.Git.Behind = 0, 0
 				a.Git.HasCommits = false
 				a.Git.Staged, a.Git.Changes = nil, nil
-				a.Git.Graph = ""
+				a.Git.Commits = nil
 				if clearFeedback {
 					a.Git.Error = ""
 				}
@@ -162,7 +179,7 @@ func (a *App) startGitLoad(workspace string, clearFeedback bool) {
 			a.Git.HasCommits = state.HasCommits
 			a.Git.Staged = state.Staged()
 			a.Git.Changes = state.Changes()
-			a.Git.Graph = state.Graph
+			a.Git.Commits = state.Commits
 		})
 	}()
 }
@@ -557,13 +574,23 @@ func (a *App) gitFileRow(c *mui.Context, file git.File, staged bool) {
 
 	mui.Row(c).Gap(4).AlignItems(mui.Center).Children(func() {
 		mui.Text(c, code).Font("monospace").FontSize(8).TextColor(color)
-		mui.Column(c).Gap(0).Grow(1).Children(func() {
+		preview := mui.ButtonBase(c).Column().AlignItems(mui.Start).Gap(0).Grow(1).Padding(1, 2).Radius(4).
+			Label("Diff of " + path).Tooltip("Show the diff of " + path)
+		hover := float32(0)
+		if preview.Hovered() {
+			hover = 1
+		}
+		preview.Background(preview.AnimateColor("bg", t.SurfaceHover.Alpha(hover), mui.Snappy))
+		preview.Children(func() {
 			text := mui.Text(c, truncate(name, 30)).FontSize(10).SingleLine()
 			text.Tooltip(tip)
 			if dir != "" {
 				mui.Text(c, truncate(dir, 34)).FontSize(8).TextColor(t.TextMuted).SingleLine()
 			}
 		})
+		if preview.Clicked() {
+			a.openGitPreview(file, staged)
+		}
 		label, action := "＋", "Stage "
 		if staged {
 			label, action = "－", "Unstage "
@@ -582,6 +609,78 @@ func (a *App) gitFileRow(c *mui.Context, file git.File, staged bool) {
 			}
 		}
 	})
+}
+
+// openGitPreview reads one file's two sides off the UI thread and opens the
+// diff overlay; a newer click or workspace wins over a late read.
+func (a *App) openGitPreview(file git.File, staged bool) {
+	workspace, root := a.activeGitWorkspace(), a.Git.RepoRoot
+	if a.closed.Load() || workspace == "" || root == "" || file.Path == "" {
+		return
+	}
+	a.Git.PreviewOpen = true
+	a.Git.PreviewPath = file.Path
+	a.Git.PreviewStaged = staged
+	a.Git.PreviewBusy = true
+	a.Git.PreviewErr = ""
+	a.Git.PreviewOld, a.Git.PreviewNew = "", ""
+	a.Git.PreviewGen++
+	gen := a.Git.PreviewGen
+	go func() {
+		ctx, cancel := context.WithTimeout(a.lifeCtx, gitStatusTimeout)
+		defer cancel()
+		old, new, err := git.Diff(ctx, root, file, staged)
+		a.Post(func() {
+			if a.closed.Load() || a.Git.PreviewGen != gen || a.Git.Workspace != workspace || a.Git.PreviewPath != file.Path {
+				return
+			}
+			a.Git.PreviewBusy = false
+			if err != nil {
+				a.Git.PreviewErr = gitErrorText(err)
+				return
+			}
+			a.Git.PreviewOld, a.Git.PreviewNew = old, new
+		})
+	}()
+}
+
+// closeGitPreview drops the overlay, its texts and any read still running.
+func (a *App) closeGitPreview() {
+	a.Git.PreviewOpen = false
+	a.Git.PreviewGen++
+	a.Git.PreviewPath = ""
+	a.Git.PreviewErr = ""
+	a.Git.PreviewOld, a.Git.PreviewNew = "", ""
+}
+
+// gitGraphCommits fits the panel: a 300 DIP column shows one ref with a short
+// name and leaves the author out, so the subject keeps the room it needs.
+func gitGraphCommits(commits []git.LogCommit) []crycode.GraphCommit {
+	out := make([]crycode.GraphCommit, 0, len(commits))
+	for _, c := range commits {
+		var refs []string
+		if len(c.Refs) > 0 {
+			refs = []string{shortGraphText(c.Refs[0], 12)}
+		}
+		out = append(out, crycode.GraphCommit{
+			Hash:    c.Hash,
+			Message: c.Message,
+			Parents: c.Parents,
+			Refs:    refs,
+			Lane:    c.Lane,
+		})
+	}
+	return out
+}
+
+// shortGraphText cuts by runes so names in any script stay whole.
+func shortGraphText(text string, max int) string {
+	text = strings.TrimSpace(text)
+	runes := []rune(text)
+	if len(runes) <= max {
+		return text
+	}
+	return string(runes[:max]) + "…"
 }
 
 func (a *App) gitGraph(c *mui.Context) {
@@ -613,14 +712,75 @@ func (a *App) gitGraph(c *mui.Context) {
 				})
 			})
 		})
-		mui.Scroll(c).Grow(1).Padding(5, 10, 8, 10).Children(func() {
-			if a.Git.Graph == "" {
-				mui.Text(c, "No commits yet.").FontSize(10).TextColor(t.TextMuted)
+		mui.Scroll(c).Grow(1).Padding(5, 4, 8, 6).Children(func() {
+			if len(a.Git.Commits) == 0 {
+				mui.Text(c, "No commits yet.").FontSize(10).TextColor(t.TextMuted).Padding(0, 6)
 				return
 			}
-			mui.Text(c, a.Git.Graph).Font("monospace").FontSize(9).Selectable()
+			crycode.CommitGraph(c, "History", gitGraphCommits(a.Git.Commits))
 		})
 	})
+}
+
+// gitDiffView holds one preview's buffers; they are rebuilt when the sides
+// change, and MyGo diffs them again as they do.
+type gitDiffView struct {
+	old, new string
+	state    *editor.DiffState
+}
+
+// gitDiffDialog shows the previewed file in a window-wide overlay.
+func (a *App) gitDiffDialog(c *mui.Context) {
+	if !a.Git.PreviewOpen {
+		return
+	}
+	if a.Git.Workspace != a.activeGitWorkspace() {
+		a.closeGitPreview()
+		return
+	}
+	title := "Diff · " + a.Git.PreviewPath
+	if a.Git.PreviewStaged {
+		title = "Staged diff · " + a.Git.PreviewPath
+	}
+	cryoverlay.FullscreenModal(c, title, &a.Git.PreviewOpen, cryoverlay.FullscreenModalOptions{}, func() {
+		switch {
+		case a.Git.PreviewBusy:
+			crylayout.Centered(c, func() {
+				cryfeedback.Busy(c, true, "Loading diff…", "Loaded")
+			})
+		case a.Git.PreviewErr != "":
+			mui.Column(c).Grow(1).Center().Padding(0, 40).Children(func() {
+				cryfeedback.Alert(c, cryfeedback.ToneDanger, "Cannot show this diff", a.Git.PreviewErr)
+			})
+		case a.Git.PreviewOld == a.Git.PreviewNew:
+			crylayout.Centered(c, func() {
+				cryfeedback.EmptyState(c, "git-compare", "No changes to show", "Both sides of this file are identical.", "")
+			})
+		default:
+			a.gitDiffBody(c)
+		}
+	})
+	if !a.Git.PreviewOpen {
+		a.closeGitPreview()
+	}
+}
+
+// gitDiffBody sizes the viewer to the room the overlay gives it.
+func (a *App) gitDiffBody(c *mui.Context) {
+	box := mui.Column(c).Grow(1).FillWidth().Clip()
+	height := mui.Local(box, "height", func() float32 { return 0 })
+	split := mui.Local(box, "split", func() bool { return true })
+	view := mui.Local(box, "view", func() gitDiffView { return gitDiffView{} })
+	if view.old != a.Git.PreviewOld || view.new != a.Git.PreviewNew {
+		view.old, view.new = a.Git.PreviewOld, a.Git.PreviewNew
+		view.state = &editor.DiffState{Old: editor.NewBuffer(view.old), New: editor.NewBuffer(view.new)}
+	}
+	used := *height
+	box.Children(func() {
+		crycode.DiffView(c, view.state, split, crycode.DiffViewOptions{Name: a.Git.PreviewPath, Height: used})
+	})
+	crykit.Settle(c, box, []float32{used}, func() []float32 { return []float32{box.Bounds().H} })
+	*height = box.Bounds().H
 }
 
 func (a *App) gitToolButton(c *mui.Context, label, tip string, disabled bool, fn func()) {

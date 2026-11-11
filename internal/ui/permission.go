@@ -5,6 +5,9 @@ import (
 	"strings"
 	"sync"
 
+	crybutton "github.com/ELY-Open-Source/CrychicUI/button"
+	crycode "github.com/ELY-Open-Source/CrychicUI/code"
+	cryoverlay "github.com/ELY-Open-Source/CrychicUI/overlay"
 	mui "github.com/egoist/mygo/ui"
 	"github.com/reed/acp-gui/internal/acp"
 	"github.com/reed/acp-gui/internal/session"
@@ -176,9 +179,11 @@ func (a *App) permissionDialog(c *mui.Context) {
 	req := p.Request
 	t := c.Theme()
 
-	dialog := mui.Modal(c, &a.PermissionOpen, func() {
-		mui.Column(c).Gap(10).Width(440).Children(func() {
-			mui.Text(c, "Permission required").FontSize(18).Bold()
+	// answered keeps the dismissal branch below from cancelling a request the
+	// buttons already settled.
+	answered := false
+	cryoverlay.Modal(c, "Permission required", &a.PermissionOpen, cryoverlay.ModalOptions{}, func() {
+		mui.Column(c).FillWidth().Gap(10).Children(func() {
 			if p.Chat != nil {
 				mui.Text(c, "Chat: "+p.Chat.name()).FontSize(11).TextColor(t.TextMuted)
 			}
@@ -193,10 +198,7 @@ func (a *App) permissionDialog(c *mui.Context) {
 					TextColor(t.TextMuted)
 			}
 			if detail := compactJSON(req.ToolCall.RawInput); detail != "" {
-				mui.Text(c, detail).
-					FontSize(11).
-					TextColor(t.TextMuted).
-					Selectable()
+				crycode.CodeBlock(c, "json", detail, crycode.CodeBlockOptions{Title: "Input"})
 			}
 			mui.Text(c, "Choose what the agent may do.").FontSize(12).TextColor(t.TextMuted)
 
@@ -207,23 +209,28 @@ func (a *App) permissionDialog(c *mui.Context) {
 						label = option.OptionID
 					}
 					var button mui.Element
-					if strings.Contains(option.Kind, "allow") {
-						button = mui.PrimaryButton(c, label)
-					} else {
-						button = mui.Button(c, label)
+					switch {
+					case strings.Contains(option.Kind, "allow"):
+						button = crybutton.Solid(c, label)
+					case strings.Contains(option.Kind, "reject"):
+						button = crybutton.Destructive(c, label)
+					default:
+						button = crybutton.Outline(c, label)
 					}
 					if button.Clicked() {
+						answered = true
 						a.finishPermission(p, acp.SelectedPermission(option.OptionID))
 						return
 					}
 				}
-				if mui.Button(c, "Cancel").Clicked() {
+				if crybutton.Ghost(c, "Cancel").Clicked() {
+					answered = true
 					a.finishPermission(p, acp.CancelledPermission())
 				}
 			})
 		})
 	})
-	if dialog.Dismissed() {
+	if !answered && !a.PermissionOpen {
 		a.finishPermission(p, acp.CancelledPermission())
 	}
 }

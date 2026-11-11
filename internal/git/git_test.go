@@ -53,8 +53,8 @@ func TestLoadStatusGraphAndActions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !state.HasCommits || !strings.Contains(state.Graph, "first commit") {
-		t.Fatalf("graph = %q, hasCommits = %v", state.Graph, state.HasCommits)
+	if !state.HasCommits || !hasCommitMessage(state.Commits, "first commit") {
+		t.Fatalf("commits = %+v, hasCommits = %v", state.Commits, state.HasCommits)
 	}
 
 	if err := os.WriteFile(filepath.Join(dir, "new.txt"), []byte("changed\n"), 0o600); err != nil {
@@ -167,6 +167,15 @@ func TestParseBranchHeader(t *testing.T) {
 	if result.branch != "main" || result.hasCommits {
 		t.Errorf("unborn = %+v", result)
 	}
+}
+
+func hasCommitMessage(commits []LogCommit, want string) bool {
+	for _, c := range commits {
+		if strings.Contains(c.Message, want) {
+			return true
+		}
+	}
+	return false
 }
 
 func samePath(a, b string) bool {

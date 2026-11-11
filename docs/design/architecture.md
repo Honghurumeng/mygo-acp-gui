@@ -139,7 +139,8 @@ pi 自己的工具在工作区内读写执行；客户端只负责展示和审�
 - 消息流：`markdown.Stream` 显示进行中的回复，结束后切换 `markdown.View`（同一位置）。
 - 聊天列表：`ui.List`，`FollowEnd` + `FollowAnimation = &ui.Smooth`；用户上滑后停止跟随。
 - 思考/工具：`ui.Collapsible`；工具卡片显示标题、状态、可展开的入参/输出。
-- 权限：`session/request_permission` 回调阻塞，`ui.Modal` 展示工具名和 agent 给出的 `options`；按钮直接回 `optionId`，关闭/取消回 `cancelled`。
+- 权限：`session/request_permission` 回调阻塞，CrychicUI `overlay.Modal` 展示工具名、入参和 agent 给出的 `options`；按钮直接回 `optionId`，关闭/取消回 `cancelled`。
+- 通用外观取自 CrychicUI（按钮、弹窗、空状态、代码块），业务渲染仍是本仓库的 `internal/ui`；版本与替换范围见 [components.md](components.md)。
 - 配置：`ui.Popover` 的模型面板按 agent → provider → model → thinking 选择；模型/思考来自 `configOptions`，mode 来自 `modes`，不硬编码。agent 只在会话开始前可选。
 - 输入：`ui.TextAreaBase` 嵌在可拖动高度的 composer 卡片中；Enter 发送、Shift+Enter 换行；流式期间 Send 切换为 Stop；支持图片附件。
 - 多会话：左侧栏按 workspace 分组，先显示打开会话，再显示该目录的已保存会话；打开会话显示标题/流式/未读/权限提醒，超过 5 条折叠，可展开、重命名、删除。会话名前的内联图标标明 agent（pi 的方块 mark、Command Code 的 # 徽标，`internal/ui/agenticons.go`，随主题变色）；已保存会话用存档里的 `agentId` 画同一个图标，标题栏也用同一图标标当前会话。工作区头部 `⋯` 可移除该分组（软删除，只隐藏不删记录/会话），移除项通过 “Show removed (N)” 查看并从同一菜单恢复。侧栏 `New conversation` 新建独立进程；连接在首条消息或打开存档时自动发生。
@@ -204,5 +205,6 @@ logs/                每个 agent 的 stderr / 协议日志（1 MiB 滚动，保
 - [pi 集成](pi.md)
 - [Command Code 集成](command-code.md)
 - [会话能力与 UI](features.md)
+- [UI 组件库](components.md)
 - [右侧 Git 面板](git.md)
 - [测试与计划](plan.md)

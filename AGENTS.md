@@ -17,6 +17,7 @@
 - `docs/design/command-code.md`：Command Code 启动、已验证 ACP 流程、权限/取消、测试。
 - `docs/design/features.md`：多会话、发现探测、配置/模式、历史、图片、MCP、命令面板、计划/用量。
 - `docs/design/git.md`：右侧 Git 面板、仓库探测、状态/图表、提交与 fetch/pull/push、异步与安全。
+- `docs/design/components.md`：CrychicUI 组件库、版本锁定、别名、已替换/不替换范围、升级检查。
 - `docs/design/plan.md`：测试、MVP 范围、后续、非目标、待定问题、参考链接。
 
 ## 铁律

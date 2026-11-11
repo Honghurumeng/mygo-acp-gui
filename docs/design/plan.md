@@ -119,7 +119,7 @@ scripts/vendor-pi-acp.sh             # 仅在升级 pi-acp 时运行
 - [x] 会话行与标题栏的 agent 品牌图标（pi、Command Code，SVG 内嵌并跟随主题）
 - [x] 本地 `sessions.json` 会话存档：agent/session 关联、启动直接展示、show 软删除、showName 重命名、点击 load 重放历史
 - [x] composer：可拖动高度、附件/git/mode/上下文环/模型面板/thinking/发送；首条消息自动连接
-- [x] 右侧 Git 面板：可折叠、无 git/无仓库提示、status/分支图、stage/commit/fetch/pull/push/undo soft reset
+- [x] 右侧 Git 面板：可折叠、无 git/无仓库提示、status、CommitGraph 提交图、逐文件 diff 预览、stage/commit/fetch/pull/push/undo soft reset
 - [x] pi-acp 单文件 bundle vendored（`resources/agents/pi-acp/`）
 - [x] 系统 Node / pi / command-code 定位（登录 shell + 绝对路径覆盖）+ 登录指引（只展示，不代登录）
 - [x] Command Code 启动与完整聊天流程：initialize、session/new、流式、权限、取消、退出清理

@@ -92,6 +92,25 @@ func TestChatWithFakeAgent(t *testing.T) {
 	}
 }
 
+// Closing the permission dialog without choosing an option answers the agent
+// with cancelled rather than leaving the request blocked.
+func TestPermissionDialogDismissalCancels(t *testing.T) {
+	app, tt := newFakeApp(t)
+	current(app).Input = "/permission"
+	tt.Frame()
+	if err := tt.Click("Send"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool { return app.Permission != nil && app.PermissionOpen })
+	tt.Frame()
+	if err := tt.Click("Close"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		return app.Permission == nil && !current(app).Streaming && current(app).LastStop == "cancelled"
+	})
+}
+
 func TestConnectRejectsRelativeWorkspace(t *testing.T) {
 	app, tt := newFakeApp(t)
 	current(app).Workspace = "relative/workspace"
