@@ -76,6 +76,43 @@ func Diff(ctx context.Context, root string, file File, staged bool) (old, new st
 	return old, new, nil
 }
 
+// CommitDiff returns the old and new text of one file in a commit, against
+// its first parent, for the preview the expanded commit list opens. An added
+// file has an empty old side, a deleted one an empty new side, and a rename
+// compares the previous path with the new one. Binary or huge sides are
+// errors, as in Diff.
+func CommitDiff(ctx context.Context, root, hash string, file CommitFile) (old, new string, err error) {
+	if strings.TrimSpace(root) == "" || file.Path == "" {
+		return "", "", errors.New("commit diff needs a repository root and a path")
+	}
+	if !isHash(hash) {
+		return "", "", fmt.Errorf("invalid commit hash %q", hash)
+	}
+	path, err := repoPath(file.Path)
+	if err != nil {
+		return "", "", err
+	}
+	oldPath := path
+	if file.OrigPath != "" {
+		orig, err := repoPath(file.OrigPath)
+		if err != nil {
+			return "", "", err
+		}
+		oldPath = orig
+	}
+	if file.Status != 'A' {
+		if old, err = object(ctx, root, hash+"^:"+oldPath); err != nil {
+			return "", "", err
+		}
+	}
+	if file.Status != 'D' {
+		if new, err = object(ctx, root, hash+":"+path); err != nil {
+			return "", "", err
+		}
+	}
+	return old, new, nil
+}
+
 // repoPath keeps a status path inside the repository.
 func repoPath(path string) (string, error) {
 	if path == "" || filepath.IsAbs(path) || strings.HasPrefix(path, "/") {

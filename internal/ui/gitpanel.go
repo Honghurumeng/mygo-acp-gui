@@ -52,6 +52,15 @@ type gitPanelState struct {
 	Changes    []git.File
 	Commits    []git.LogCommit
 
+	// CommitOpen is the commit whose changed files show under its graph
+	// row. CommitFilesGen guards a late read against another commit, a
+	// workspace change, or a collapsed row.
+	CommitOpen      string
+	CommitFiles     []git.CommitFile
+	CommitFilesBusy bool
+	CommitFilesErr  string
+	CommitFilesGen  int
+
 	Message       string
 	ChangesHeight float32
 	Gen           int
@@ -60,6 +69,7 @@ type gitPanelState struct {
 	// a late read against a newer file or workspace.
 	PreviewOpen   bool
 	PreviewPath   string
+	PreviewCommit string
 	PreviewStaged bool
 	PreviewBusy   bool
 	PreviewErr    string
@@ -180,6 +190,7 @@ func (a *App) startGitLoad(workspace string, clearFeedback bool) {
 			a.Git.Staged = state.Staged()
 			a.Git.Changes = state.Changes()
 			a.Git.Commits = state.Commits
+			a.pruneCommitFiles()
 		})
 	}()
 }
@@ -489,7 +500,9 @@ func (a *App) gitChanges(c *mui.Context) {
 	changes := a.Git.Changes
 	mui.Column(c).FillHeight().Padding(6, 12, 4, 12).Children(func() {
 		mui.Scroll(c).Grow(1).Children(func() {
-			mui.Column(c).Gap(3).Children(func() {
+			// Leave room for the overlay scrollbar so it never covers the
+			// stage/unstage button of a row.
+			mui.Column(c).Gap(3).Padding(0, 10, 0, 0).Children(func() {
 				a.gitSectionHeader(c, "Staged", len(staged), "Unstage all", len(staged) > 0, func() {
 					a.runGitAction("Unstage all", true, func(ctx context.Context, root string) error {
 						return git.UnstageAll(ctx, root)
@@ -559,26 +572,21 @@ func (a *App) gitFileRow(c *mui.Context, file git.File, staged bool) {
 	if dir == "." {
 		dir = ""
 	}
-	tip := path
-	if file.OrigPath != "" {
-		tip = file.OrigPath + " → " + path
-	}
 	busy := a.Git.Busy != "" || a.Git.Loading
 
 	mui.Row(c).Gap(4).AlignItems(mui.Center).Children(func() {
 		mui.Text(c, code).Font("monospace").FontSize(8).TextColor(color)
-		preview := mui.ButtonBase(c).Column().AlignItems(mui.Start).Gap(0).Grow(1).Padding(1, 2).Radius(4).
-			Label("Diff of " + path).Tooltip("Show the diff of " + path)
+		preview := mui.ButtonBase(c).Gap(5).Grow(1).Padding(1, 2).Radius(4).
+			Justify(mui.Start).Label("Diff of " + path)
 		hover := float32(0)
 		if preview.Hovered() {
 			hover = 1
 		}
 		preview.Background(preview.AnimateColor("bg", t.SurfaceHover.Alpha(hover), mui.Snappy))
 		preview.Children(func() {
-			text := mui.Text(c, truncate(name, 30)).FontSize(10).SingleLine()
-			text.Tooltip(tip)
+			mui.Text(c, truncate(name, 24)).FontSize(10).SingleLine()
 			if dir != "" {
-				mutedText(c, truncate(dir, 34), 8).SingleLine()
+				mutedText(c, truncate(dir, 20), 8).SingleLine()
 			}
 		})
 		if preview.Clicked() {
@@ -604,15 +612,31 @@ func (a *App) gitFileRow(c *mui.Context, file git.File, staged bool) {
 	})
 }
 
-// openGitPreview reads one file's two sides off the UI thread and opens the
-// diff overlay; a newer click or workspace wins over a late read.
+// openGitPreview shows a staged or unstaged file against the index or HEAD.
 func (a *App) openGitPreview(file git.File, staged bool) {
+	a.startGitPreview(file.Path, "", staged, func(ctx context.Context, root string) (string, string, error) {
+		return git.Diff(ctx, root, file, staged)
+	})
+}
+
+// openGitCommitPreview shows one file as a commit changed it, against the
+// commit's first parent, as the expanded commit list lists it.
+func (a *App) openGitCommitPreview(hash string, file git.CommitFile) {
+	a.startGitPreview(file.Path, hash, false, func(ctx context.Context, root string) (string, string, error) {
+		return git.CommitDiff(ctx, root, hash, file)
+	})
+}
+
+// startGitPreview reads both sides off the UI thread and opens the overlay;
+// a newer click, another commit or another workspace wins over a late read.
+func (a *App) startGitPreview(path, commit string, staged bool, load func(context.Context, string) (string, string, error)) {
 	workspace, root := a.activeGitWorkspace(), a.Git.RepoRoot
-	if a.closed.Load() || workspace == "" || root == "" || file.Path == "" {
+	if a.closed.Load() || workspace == "" || root == "" || path == "" {
 		return
 	}
 	a.Git.PreviewOpen = true
-	a.Git.PreviewPath = file.Path
+	a.Git.PreviewPath = path
+	a.Git.PreviewCommit = commit
 	a.Git.PreviewStaged = staged
 	a.Git.PreviewBusy = true
 	a.Git.PreviewErr = ""
@@ -622,9 +646,10 @@ func (a *App) openGitPreview(file git.File, staged bool) {
 	go func() {
 		ctx, cancel := context.WithTimeout(a.lifeCtx, gitStatusTimeout)
 		defer cancel()
-		old, new, err := git.Diff(ctx, root, file, staged)
+		old, new, err := load(ctx, root)
 		a.Post(func() {
-			if a.closed.Load() || a.Git.PreviewGen != gen || a.Git.Workspace != workspace || a.Git.PreviewPath != file.Path {
+			if a.closed.Load() || a.Git.PreviewGen != gen || a.Git.Workspace != workspace ||
+				a.Git.PreviewPath != path || a.Git.PreviewCommit != commit {
 				return
 			}
 			a.Git.PreviewBusy = false
@@ -642,28 +667,71 @@ func (a *App) closeGitPreview() {
 	a.Git.PreviewOpen = false
 	a.Git.PreviewGen++
 	a.Git.PreviewPath = ""
+	a.Git.PreviewCommit = ""
 	a.Git.PreviewErr = ""
 	a.Git.PreviewOld, a.Git.PreviewNew = "", ""
 }
 
-// gitGraphCommits fits the panel: a 300 DIP column shows one ref with a short
-// name and leaves the author out, so the subject keeps the room it needs.
-func gitGraphCommits(commits []git.LogCommit) []crycode.GraphCommit {
-	out := make([]crycode.GraphCommit, 0, len(commits))
-	for _, c := range commits {
-		var refs []string
-		if len(c.Refs) > 0 {
-			refs = []string{shortGraphText(c.Refs[0], 12)}
-		}
-		out = append(out, crycode.GraphCommit{
-			Hash:    c.Hash,
-			Message: c.Message,
-			Parents: c.Parents,
-			Refs:    refs,
-			Lane:    c.Lane,
-		})
+// toggleCommit expands or collapses the changed files of one commit. One
+// commit is open at a time; a second click on the same row closes it.
+func (a *App) toggleCommit(hash string) {
+	if hash == "" {
+		return
 	}
-	return out
+	if a.Git.CommitOpen == hash {
+		a.closeCommitFiles()
+		return
+	}
+	workspace, root := a.Git.Workspace, a.Git.RepoRoot
+	if workspace == "" || root == "" {
+		return
+	}
+	a.Git.CommitFilesGen++
+	gen := a.Git.CommitFilesGen
+	a.Git.CommitOpen = hash
+	a.Git.CommitFiles = nil
+	a.Git.CommitFilesBusy = true
+	a.Git.CommitFilesErr = ""
+	go func() {
+		ctx, cancel := context.WithTimeout(a.lifeCtx, gitStatusTimeout)
+		defer cancel()
+		files, err := git.CommitFiles(ctx, root, hash)
+		a.Post(func() {
+			if a.closed.Load() || a.Git.CommitFilesGen != gen ||
+				a.Git.Workspace != workspace || a.Git.CommitOpen != hash {
+				return
+			}
+			a.Git.CommitFilesBusy = false
+			if err != nil {
+				a.Git.CommitFilesErr = gitErrorText(err)
+				return
+			}
+			a.Git.CommitFiles = files
+		})
+	}()
+}
+
+// closeCommitFiles collapses the row and drops any read still running.
+func (a *App) closeCommitFiles() {
+	a.Git.CommitOpen = ""
+	a.Git.CommitFiles = nil
+	a.Git.CommitFilesBusy = false
+	a.Git.CommitFilesErr = ""
+	a.Git.CommitFilesGen++
+}
+
+// pruneCommitFiles closes an expanded row whose commit left the bounded
+// history, as after undo or a fetch that rewrote refs.
+func (a *App) pruneCommitFiles() {
+	if a.Git.CommitOpen == "" {
+		return
+	}
+	for _, commit := range a.Git.Commits {
+		if commit.Hash == a.Git.CommitOpen {
+			return
+		}
+	}
+	a.closeCommitFiles()
 }
 
 // shortGraphText cuts by runes so names in any script stay whole.
@@ -706,11 +774,7 @@ func (a *App) gitGraph(c *mui.Context) {
 			})
 		})
 		mui.Scroll(c).Grow(1).Padding(5, 4, 8, 6).Children(func() {
-			if len(a.Git.Commits) == 0 {
-				mutedText(c, "No commits yet.", 10).Padding(0, 6)
-				return
-			}
-			crycode.CommitGraph(c, "History", gitGraphCommits(a.Git.Commits))
+			a.gitGraphBody(c)
 		})
 	})
 }
@@ -732,7 +796,10 @@ func (a *App) gitDiffDialog(c *mui.Context) {
 		return
 	}
 	title := "Diff · " + a.Git.PreviewPath
-	if a.Git.PreviewStaged {
+	switch {
+	case a.Git.PreviewCommit != "":
+		title = "Commit " + shortCommitHash(a.Git.PreviewCommit) + " · " + a.Git.PreviewPath
+	case a.Git.PreviewStaged:
 		title = "Staged diff · " + a.Git.PreviewPath
 	}
 	cryoverlay.FullscreenModal(c, title, &a.Git.PreviewOpen, cryoverlay.FullscreenModalOptions{}, func() {

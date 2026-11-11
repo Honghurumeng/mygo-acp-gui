@@ -1,12 +1,76 @@
 package git
 
 import (
+	"bytes"
 	"context"
+	"fmt"
+	"path/filepath"
 	"strings"
 )
 
 // GraphLanes is how many lanes a commit graph may draw.
 const GraphLanes = 8
+
+// CommitFile is one path a commit changed against its first parent. Status
+// is git's one-letter code: A, M, D, R, C or T; a rename or copy keeps its
+// previous path in OrigPath.
+type CommitFile struct {
+	Path     string
+	OrigPath string
+	Status   byte
+}
+
+// CommitFiles reads the paths a commit changed against its first parent, as
+// the graph's expanded row lists them. A merge shows what it took over its
+// first parent, not the combined diff.
+func CommitFiles(ctx context.Context, root, hash string) ([]CommitFile, error) {
+	hash = strings.TrimSpace(hash)
+	if !isHash(hash) {
+		return nil, fmt.Errorf("invalid commit hash %q", hash)
+	}
+	out, err := run(ctx, root, []string{"GIT_OPTIONAL_LOCKS=0"},
+		"show", "--no-color", "--name-status", "-z", "--format=",
+		"--find-renames", "--first-parent", hash)
+	if err != nil {
+		return nil, err
+	}
+	return parseCommitFiles(out), nil
+}
+
+// parseCommitFiles reads NUL-separated name-status records: a status, then
+// one path, or a previous and a new one for R and C.
+func parseCommitFiles(out []byte) []CommitFile {
+	fields := bytes.Split(out, []byte{0})
+	var files []CommitFile
+	for i := 0; i < len(fields); i++ {
+		record := fields[i]
+		if len(record) == 0 {
+			continue
+		}
+		status := record[0]
+		if status == 'R' || status == 'C' {
+			if i+2 >= len(fields) {
+				break
+			}
+			files = append(files, CommitFile{
+				Status:   status,
+				OrigPath: filepath.FromSlash(string(fields[i+1])),
+				Path:     filepath.FromSlash(string(fields[i+2])),
+			})
+			i += 2
+			continue
+		}
+		if i+1 >= len(fields) {
+			break
+		}
+		files = append(files, CommitFile{
+			Status: status,
+			Path:   filepath.FromSlash(string(fields[i+1])),
+		})
+		i++
+	}
+	return files
+}
 
 // LogCommit is one commit of the panel's history, newest first.
 type LogCommit struct {

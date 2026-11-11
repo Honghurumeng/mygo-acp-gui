@@ -25,13 +25,26 @@
 - `git status --porcelain=v1 -z --branch --untracked-files=all` 一次读出分支、ahead/behind、暂存、未暂存、未跟踪和重命名/复制信息。
 - 解析按 NUL 分隔，文件名不经过 shell；重命名记录保留 `OrigPath` 用于提示。
 - 同一文件可以同时出现在 Staged 和 Changes（例如 `RM`）。冲突显示为 `!`，归入 Changes。
-- “Staged” 和 “Changes” 都显示状态字母、文件名和目录；`＋` 暂存、`－` 取消暂存，标题旁提供 Stage all / Unstage all。
-- 图表用 `git log --topo-order --all -n 80 --pretty=format:%H%x1f%P%x1f%an%x1f%s%x1f%D`，解析成 `internal/git.LogCommit`（hash、parents、author、subject、refs），由 `internal/git` 计算 lane，界面用 CrychicUI `code.CommitGraph` 画泳道、分支/标签芯片和提交行。
-- 必须用 `--topo-order`：组件要求父提交排在所有子提交之后，普通逆时间顺序不保证这一点。
+- “Staged” 和 “Changes” 都显示状态字母、文件名和目录；目录在文件名同一行后面（灰色小字，超长截断），
+  不再另起一行。`＋` 暂存、`－` 取消暂存，标题旁提供 Stage all / Unstage all。
+- 列表内容右侧留 10 DIP 内边距：滚动条是覆盖在内容上的 overlay，不占布局宽度，留白保证 `＋`/`－`
+  和 Stage all / Unstage all 不被滚动条盖住。
+- 图表用 `git log --topo-order --all -n 80 --pretty=format:%H%x1f%P%x1f%an%x1f%s%x1f%D`，解析成 `internal/git.LogCommit`（hash、parents、author、subject、refs），由 `internal/git` 计算 lane，界面由 `internal/ui/gitgraph.go` 自绘泳道、分支/标签芯片和提交行。
+  不用 CrychicUI `code.CommitGraph`：它的行高固定 36 DIP、行不可点，没法缩间距或插入文件列表。
+- 行高 22 DIP，整行可点（含左侧 lane 区域）；hover/展开时背景覆盖整行，lane 线用 `DrawOver` 画在行上层，不会遮住文字。
+- 点击提交行展开该提交相对第一父提交的文件列表，再点收起；同屏只展开一个。文件行显示状态字母 + 文件名 + 目录（同一行），
+  `A` 绿、`D` 红、`M`/`T` 黄、`R`/`C` 用强调色。展开高度计入 lane 的 y 坐标，泳道在文件列表左侧继续。
+- 文件行可点，打开与 Staged/Changes 相同的全窗口 diff 遮罩，标题为 `Commit <7 位 hash> · <path>`；侧文本用
+  `git show <hash>^:<oldPath>` 与 `git show <hash>:<path>` 读取（新增 old 为空、删除 new 为空，重命名用 `OrigPath`
+  作旧侧），二进制/超大文件与普通预览一样报错。读取沿用 `PreviewGen` + workspace + hash + path 守卫。
+- 展开数据用 `git show --no-color --name-status -z --format= --find-renames --first-parent <hash>`：NUL 分隔，
+  重命名/复制记录依次是状态、旧路径、新路径，merge 只取第一父提交的差异。读取在 goroutine 中进行，
+  generation + workspace + hash 三重守卫防止旧结果落到新行；刷新后发现该提交已不在 80 条历史里时自动收起。
+- 必须用 `--topo-order`：绘图要求父提交排在所有子提交之后，普通逆时间顺序不保证这一点。
 - lane 最多 8 条（`GraphLanes`）。算法维护“仍等待的父提交”列表：子树在父子的 lane 上继续，合并的第二个及以后的父提交占用空闲 lane；超过 8 条并发时共用最后一条，不报错、不 panic。
 - refs 来自 `%D`：去掉 `HEAD ->` / `origin/HEAD ->` 的目标前缀和 `tag:` 前缀，去重。面板只有 300 DIP，界面只保留第一个 ref（通常是当前分支）并截到 12 个字符；作者不显示，把宽度留给 subject。
-- 提交 subject 为空时显示 `(no subject)`（组件不接受空 message）；无法识别的日志行（例如混入的 warning）直接跳过。
-- 仍不显示某个历史提交的 diff（预览针对 Staged/Changes 里的文件），也不画 rebase/merge 进行中的状态。
+- 提交 subject 为空时显示 `(no subject)`（提交行必须有文字）；无法识别的日志行（例如混入的 warning）直接跳过。
+- merge 提交只按第一父提交展开和预览，不展示相对每个父的 combined diff；也不画 rebase/merge/revert 进行中的状态。
 - 没有提交时显示 “No commits yet.”；`Undo` 对首个提交也有效（`update-ref -d HEAD`），其余提交用 `reset --soft HEAD~1`。
 
 ## 操作
@@ -54,14 +67,17 @@
 
 ## Diff 预览
 
-- 点“Staged”或“Changes”里的文件名，打开全窗口遮罩（CrychicUI `overlay.FullscreenModal`），标题写明 `Diff · <path>` 或 `Staged diff · <path>`；X/Esc 关闭。
+- 点“Staged”/“Changes”里的文件名，或展开提交后的文件行，打开全窗口遮罩（CrychicUI `overlay.FullscreenModal`）；
+  标题写明 `Diff · <path>`、`Staged diff · <path>` 或 `Commit <7 位 hash> · <path>`；X/Esc 关闭。
 - 内容用 CrychicUI `code.DiffView`（MyGo `editor.DiffState`）：默认 Split，可切 Unified，带行号、行内高亮和 +/− 统计。
 - 两侧文本的来源（`internal/git.Diff`）：
   - 已暂存：old = `git show HEAD:<path>`，new = `git show :<path>`；新增（`A`）的 old 为空，删除（`D`）的 new 为空。
   - 未暂存：old = `git show :<path>`，new = 工作区文件；未跟踪（`??`）的 old 为空，工作区已删除（`D`）的 new 为空。
   - 重命名用 `OrigPath` 作 old；冲突（`UU` 等）不猜内容，提示先解决冲突。
+  - 提交（`internal/git.CommitDiff`）：old = `git show <hash>^:<oldPath>`，new = `git show <hash>:<path>`；新增的 old 为空，删除的 new 为空。
 - 限制：单侧上限 512 KiB；含 NUL 字节按二进制处理。两种情况都显示错误而不是乱码，不截断展示。
-- 预览状态在 `gitPanelState`（`Preview*`），带 generation + workspace + path 校验；切换 workspace 或关闭面板时丢弃，后台读完成也不会覆盖更新的一次。
+- 预览状态在 `gitPanelState`（`Preview*`），带 generation + workspace + path（提交预览再加 hash）校验；切换 workspace
+  或关闭面板时丢弃，后台读完成也不会覆盖更新的一次。
 - 只读：预览不暂存、不修改文件，所有操作仍走原来的 stage/unstage/commit。
 
 ## 测试
@@ -71,4 +87,4 @@ go test ./internal/git -v
 go test ./internal/ui -run 'TestGitPanel' -v -count=1
 ```
 
-`internal/git` 测试覆盖状态/重命名解析、分支头解析、init、stage/unstage、commit、首提交撤销、嵌套工作区，以及 diff 两侧（未暂存/已暂存/未跟踪/新增/删除/重命名、二进制与超大文件、越界路径）、提交日志解析、refs 解析、merge 的 lane 分配与 8 lane 上限、父提交必须在子提交之后；UI 测试覆盖无仓库提示与 init、无 git 提示、Stage all + Commit 全链路、diff 预览打开与二进制报错、提交图渲染与窄面板裁剪。
+`internal/git` 测试覆盖状态/重命名解析、分支头解析、init、stage/unstage、commit、首提交撤销、嵌套工作区，以及 diff 两侧（未暂存/已暂存/未跟踪/新增/删除/重命名、二进制与超大文件、越界路径）、提交日志解析、refs 解析、commit 文件列表与提交 diff 两侧（首提交/单文件/重命名/删除）、merge 的 lane 分配与 8 lane 上限、父提交必须在子提交之后；UI 测试覆盖无仓库提示与 init、无 git 提示、Stage all + Commit 全链路、diff 预览打开与二进制报错、提交图渲染与窄面板裁剪、点击提交展开/收起文件列表、从展开列表打开提交 diff。

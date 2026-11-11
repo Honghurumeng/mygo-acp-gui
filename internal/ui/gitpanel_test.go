@@ -154,34 +154,79 @@ func TestGitPanelStagesAndCommits(t *testing.T) {
 	}
 }
 
-func TestGitGraphCommitsFitsThePanel(t *testing.T) {
-	in := []git.LogCommit{{
-		Hash:    "abc",
-		Message: "Merge branch 'feature/a-very-long-name'",
-		Author:  "Test User",
-		Parents: []string{"parent"},
-		Refs:    []string{"feature/a-very-long-name", "v1.0.0", "origin/main"},
-		Lane:    3,
-	}}
-	out := gitGraphCommits(in)
-	if len(out) != 1 {
-		t.Fatalf("out = %+v", out)
+func TestGitGraphShowsOneShortRefAndHash(t *testing.T) {
+	commit := git.LogCommit{
+		Hash: "0123456789abcdef",
+		Refs: []string{"feature/a-very-long-name", "v1.0.0", "origin/main"},
 	}
-	got := out[0]
-	if got.Author != "" {
-		t.Errorf("narrow graph kept the author %q", got.Author)
+	if got := graphRef(commit); len([]rune(got)) != 13 || !strings.HasSuffix(got, "…") {
+		t.Errorf("ref = %q, want 12 runes and an ellipsis", got)
 	}
-	if len(got.Refs) != 1 || !strings.HasSuffix(got.Refs[0], "…") {
-		t.Errorf("refs = %q, want one shortened ref", got.Refs)
+	if got := graphRef(git.LogCommit{}); got != "" {
+		t.Errorf("ref of a commit without refs = %q", got)
 	}
-	if len([]rune(got.Refs[0])) != 13 {
-		t.Errorf("ref = %q, want 12 runes and an ellipsis", got.Refs[0])
-	}
-	if got.Lane != 3 || got.Message != in[0].Message || got.Parents[0] != "parent" {
-		t.Errorf("commit = %+v", got)
+	if got := shortCommitHash(commit.Hash); got != "0123456" {
+		t.Errorf("hash = %q", got)
 	}
 	if shortGraphText("发布分支", 12) != "发布分支" {
 		t.Error("shortGraphText split a short non-Latin name")
+	}
+}
+
+func TestGitPanelExpandsCommitFiles(t *testing.T) {
+	workspace := initGitPanelRepo(t)
+	writeGitPanelFile(t, workspace, "hello.txt", "one\n")
+	writeGitPanelFile(t, workspace, "docs/readme.md", "readme\n")
+	runGitPanelCommand(t, workspace, "add", ".")
+	runGitPanelCommand(t, workspace, "commit", "-q", "-m", "first")
+
+	app, tt := newGitPanelApp(t, workspace)
+	waitFor(t, app, tt, func() bool {
+		return app.Git.Checked && !app.Git.Loading && len(app.Git.Commits) == 1
+	})
+	tt.Frame()
+	if err := tt.Click("first"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		return app.Git.CommitOpen != "" && !app.Git.CommitFilesBusy
+	})
+	if len(app.Git.CommitFiles) != 2 {
+		t.Fatalf("commit files = %+v", app.Git.CommitFiles)
+	}
+	tt.Frame()
+	for _, want := range []string{"hello.txt", "readme.md", "docs"} {
+		if !tt.HasText(want) {
+			t.Errorf("expanded list is missing %q; texts: %q", want, tt.Texts())
+		}
+	}
+
+	if err := tt.Click("Commit diff of hello.txt"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		return app.Git.PreviewOpen && !app.Git.PreviewBusy && app.Git.PreviewPath == "hello.txt"
+	})
+	if app.Git.PreviewCommit == "" {
+		t.Fatalf("commit preview has no commit: %+v", app.Git)
+	}
+	if app.Git.PreviewOld != "" || app.Git.PreviewNew != "one\n" {
+		t.Fatalf("commit preview sides = %q → %q", app.Git.PreviewOld, app.Git.PreviewNew)
+	}
+	tt.Frame()
+	if !tt.HasText("Commit " + shortCommitHash(app.Git.PreviewCommit) + " · hello.txt") {
+		t.Errorf("commit diff title missing; texts: %q", tt.Texts())
+	}
+	if err := tt.Click("Close"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool { return !app.Git.PreviewOpen })
+
+	if err := tt.Click("first"); err != nil {
+		t.Fatal(err)
+	}
+	if app.Git.CommitOpen != "" || app.Git.CommitFiles != nil {
+		t.Errorf("collapse left commit open = %q, files = %+v", app.Git.CommitOpen, app.Git.CommitFiles)
 	}
 }
 
@@ -309,7 +354,11 @@ func gitPanelHasCommit(app *App, want string) bool {
 
 func writeGitPanelFile(t *testing.T, dir, name, text string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0o600); err != nil {
+	path := filepath.Join(dir, name)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }

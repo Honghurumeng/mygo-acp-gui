@@ -156,3 +156,118 @@ func hasRef(refs []string, want string) bool {
 	}
 	return false
 }
+
+func TestCommitFilesListsChangesAgainstFirstParent(t *testing.T) {
+	ctx := context.Background()
+	dir := initRepo(t)
+	writeFile(t, dir, "a.txt", "a\n")
+	writeFile(t, dir, "keep.txt", "k\n")
+	runTestGit(t, dir, "add", ".")
+	runTestGit(t, dir, "commit", "-q", "-m", "base")
+	base := headHash(t, dir)
+
+	writeFile(t, dir, "b.txt", "b\n")
+	runTestGit(t, dir, "add", ".")
+	runTestGit(t, dir, "commit", "-q", "-m", "add b")
+	second := headHash(t, dir)
+
+	runTestGit(t, dir, "mv", "a.txt", "renamed.txt")
+	runTestGit(t, dir, "commit", "-q", "-m", "rename")
+	renamed := headHash(t, dir)
+
+	files, err := CommitFiles(ctx, dir, second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 1 || files[0].Path != "b.txt" || files[0].Status != 'A' {
+		t.Fatalf("second commit = %+v", files)
+	}
+
+	files, err = CommitFiles(ctx, dir, renamed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 1 || files[0].Status != 'R' || files[0].Path != "renamed.txt" || files[0].OrigPath != "a.txt" {
+		t.Fatalf("rename commit = %+v", files)
+	}
+
+	files, err = CommitFiles(ctx, dir, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]byte{}
+	for _, f := range files {
+		got[f.Path] = f.Status
+	}
+	if len(got) != 2 || got["a.txt"] != 'A' || got["keep.txt"] != 'A' {
+		t.Fatalf("root commit = %+v", files)
+	}
+
+	if _, err := CommitFiles(ctx, dir, "not-a-hash"); err == nil {
+		t.Error("CommitFiles accepted a short hash")
+	}
+}
+
+// headHash is the full hash of HEAD, for CommitFiles.
+func headHash(t *testing.T, dir string) string {
+	t.Helper()
+	out, err := run(context.Background(), dir, nil, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func TestCommitDiffReadsBothSides(t *testing.T) {
+	ctx := context.Background()
+	dir := initRepo(t)
+	writeFile(t, dir, "a.txt", "one\n")
+	runTestGit(t, dir, "add", ".")
+	runTestGit(t, dir, "commit", "-q", "-m", "base")
+
+	writeFile(t, dir, "a.txt", "two\n")
+	runTestGit(t, dir, "add", ".")
+	runTestGit(t, dir, "commit", "-q", "-m", "change")
+	changed := headHash(t, dir)
+	files, err := CommitFiles(ctx, dir, changed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old, new, err := CommitDiff(ctx, dir, changed, files[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if old != "one\n" || new != "two\n" {
+		t.Fatalf("modified file sides = %q → %q", old, new)
+	}
+
+	runTestGit(t, dir, "mv", "a.txt", "b.txt")
+	runTestGit(t, dir, "commit", "-q", "-m", "rename")
+	renamed := headHash(t, dir)
+	files, err = CommitFiles(ctx, dir, renamed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old, new, err = CommitDiff(ctx, dir, renamed, files[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if old != "two\n" || new != "two\n" {
+		t.Fatalf("renamed file sides = %q → %q", old, new)
+	}
+
+	runTestGit(t, dir, "rm", "-q", "b.txt")
+	runTestGit(t, dir, "commit", "-q", "-m", "delete")
+	deleted := headHash(t, dir)
+	files, err = CommitFiles(ctx, dir, deleted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old, new, err = CommitDiff(ctx, dir, deleted, files[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if old != "two\n" || new != "" {
+		t.Fatalf("deleted file sides = %q → %q", old, new)
+	}
+}

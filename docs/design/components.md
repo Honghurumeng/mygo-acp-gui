@@ -38,10 +38,6 @@ cryoverlay "github.com/ELY-Open-Source/CrychicUI/overlay"
   图标必须是 Lucide 里存在的名字，否则 `icon.Must` 会 panic。
 - Git diff 预览 `internal/ui/gitpanel.go`：`cryoverlay.FullscreenModal` + `crycode.DiffView`，加载/错误/无变化用
   `cryfeedback.Busy` / `Alert` / `EmptyState`；高度用 `crykit.Settle` 跟随遮罩实际高度（`DiffView` 只收固定高度）。
-- Git 提交图 `internal/ui/gitpanel.go`：`crycode.CommitGraph`，数据来自 `internal/git.LogCommit` 的结构化 log + lane。
-  300 DIP 的面板里只传第一个 ref（截 12 字）并留空 author，把宽度给 subject；组件要求 hash 唯一、lane 0..7、父提交在子提交之后，
-  否则 panic（`internal/git` 用 `--topo-order` 和 `assignLanes` 保证）。
-
 ## 自有组件层
 
 CrychicUI 只覆盖通用外观；界面里反复出现的「小样式」放在 `internal/ui/widgets.go`，一处定义、处处调用（MyGo
@@ -63,6 +59,11 @@ CrychicUI 只覆盖通用外观；界面里反复出现的「小样式」放在 
 - `chipBase(c)`：composer 的模型/模式/用量/分支胶囊，与按钮同形状、无边框，padding 收紧为 `3, 8`。
 - `menuTrigger(c, label, background)`：行尾「⋯」菜单按钮；label 供无障碍与 `Tester` 使用，背景跟随所在行。
 
+Git 历史不是 CrychicUI 的 `code.CommitGraph`，而是 `internal/ui/gitgraph.go` 的自绘列表：行高 22 DIP、整行可点、
+点击展开该提交改动的文件（`git show --name-status`，异步读）。CrychicUI 的组件行高固定 36 DIP 且行不可点，
+没法缩间距或插入文件列表；lane 数据仍来自 `internal/git.assignLanes`（0..7、父提交在子提交之后），只有 ref 保留
+第一个并截到 12 字。
+
 按钮约定：项目里不再直接调用 `mui.Button` / `mui.PrimaryButton` / `crybutton.*`；新增按钮一律走上面三个变体，
 需要更宽的点击区或字号时在返回值上叠加 `.Padding` / `.FontSize`，不要另起一套背景和边框。ButtonBase 的列表行
 （会话、存档、workspace 标题、git 文件行）不是按钮外观，保留各自的选中/hover 背景。
@@ -83,6 +84,7 @@ CrychicUI 只覆盖通用外观；界面里反复出现的「小样式」放在 
 已迁移：`app.go`、`composer.go`、`attachments.go`、`diagnostics.go`、`gitpanel.go`、`permission.go`、
 `saved.go`、`settings.go`、`sidebar.go` 中的重复次要文字、工具卡片、胶囊、「⋯」菜单，以及全部
 `mui.Button` / `mui.PrimaryButton` / `crybutton` 调用（统一为 `quietButton` / `primaryButton` / `dangerButton`）。
+Git 历史改为 `internal/ui/gitgraph.go` 的自绘可展开列表。
 
 ## 不替换
 
