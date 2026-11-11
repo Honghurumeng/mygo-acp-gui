@@ -22,6 +22,7 @@
 - `App` 只保存全局状态（内置 agent、发现结果、工作区列表、MCP 默认值、会话列表、当前会话）和 `[]*Chat`。
 - session 回调在创建时捕获所属 `*Chat`，按 session 指针路由，不读取“当前会话”，所以后台会话的 `session/update`、退出和权限都能落到正确位置。
 - 左侧工作区栏按 `Chat.Workspace` 分组：先显示打开会话（标题/流式转圈/未读点/权限提醒），再显示该目录的已保存会话。打开会话超过 5 条时只显示前 5 条并可展开/收起；已保存会话直接全部列出，不放在弹窗里。
+- 会话名前的内联图标是 agent 标记：pi 用 `pi.dev` 的方块 mark，Command Code 用其扩展里的 `#` 徽标（`internal/ui/icons/*.svg`，`//go:embed` 进二进制）。`mui.Icon` 以文字颜色绘制，所以跟随主题；未知 agent（如测试的 fake）不画图标。已保存会话按存档 `agentId` 画图标，标题栏也显示当前会话的 agent 图标，hover 提示 “pi agent” / “Command Code agent”。
 - 工作区头部右侧 `⋯` 提供 `Remove workspace`：软删除只隐藏该分组，已打开会话、已保存会话和目录本身都不动，记录仍在 `workspaces` 里。移除后侧栏出现 “Show removed (N)”，展开后分组显示为 `[removed]`，同一菜单可 `Restore workspace`；重新通过 `＋` 添加或打开该目录下的存档也会恢复。
 - 会话右侧 `⋯` 打开重命名/删除；删除会关闭该会话的进程，并把对应存档记录标为 `show=false`。`New conversation` 新建独立会话，工作区上的 `＋` 在该目录下新建。
 - 启动时默认创建一个草稿会话；在草稿里输入第一条消息时自动连接，成功后立即发送。
@@ -124,7 +125,7 @@
 
 ```bash
 go test ./... -race
-go test ./internal/ui -run 'TestSessionConfig|TestSaved|TestDeleteSaved|TestDeleteOpen|TestCloseChat|TestSendImage|TestMCP|TestPromptUsageFallback|TestMultipleChats|TestBackgroundChat|TestPermissionFrom|TestCloseTab|TestFirstMessage|TestWorkspaceConversation|TestRename|TestGit|TestComposerHeight|TestRemoveWorkspace|TestRemovedWorkspace' -v
+go test ./internal/ui -run 'TestSessionConfig|TestSaved|TestDeleteSaved|TestDeleteOpen|TestCloseChat|TestSendImage|TestMCP|TestPromptUsageFallback|TestMultipleChats|TestBackgroundChat|TestPermissionFrom|TestCloseTab|TestFirstMessage|TestWorkspaceConversation|TestRename|TestGit|TestComposerHeight|TestRemoveWorkspace|TestRemovedWorkspace|TestAgentIcon|TestAgentBadges' -v
 go test ./internal/archive -v
 go test ./internal/settings -v
 go test ./internal/logs -v

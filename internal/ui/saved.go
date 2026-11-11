@@ -227,6 +227,7 @@ func (a *App) savedSessionRow(c *mui.Context, item savedSession) {
 				icon = "⌫"
 			}
 			mui.Text(c, icon).FontSize(9).TextColor(t.TextMuted)
+			agentBadge(c, item.AgentID, 10)
 			mui.Text(c, truncate(display, 60)).FontSize(11).Grow(1).SingleLine()
 			if stamp := savedTimeLabel(item.UpdatedAt); stamp != "" {
 				mui.Text(c, stamp).FontSize(8).TextColor(t.TextMuted)

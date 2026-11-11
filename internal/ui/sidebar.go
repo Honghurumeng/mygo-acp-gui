@@ -297,6 +297,7 @@ func (a *App) conversationRow(c *mui.Context, chat *Chat) {
 			case chat.Unread:
 				mui.Text(c, "•").FontSize(10).TextColor(t.Accent)
 			}
+			agentBadge(c, chat.Agent.ID, 11)
 			mui.Text(c, chat.name()).FontSize(11).Grow(1).SingleLine()
 		})
 		if button.Clicked() {

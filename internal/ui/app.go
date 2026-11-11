@@ -482,7 +482,12 @@ func (a *App) header(c *mui.Context) {
 			a.SidebarOpen = !a.SidebarOpen
 		}
 		mui.Column(c).Gap(1).Grow(1).Children(func() {
-			mui.Text(c, truncate(title, 34)).FontSize(15).Bold().SingleLine()
+			mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
+				if chat != nil {
+					agentBadge(c, chat.Agent.ID, 13)
+				}
+				mui.Text(c, truncate(title, 34)).FontSize(15).Bold().SingleLine()
+			})
 			sub := a.statusLine()
 			if chat != nil && strings.TrimSpace(chat.Workspace) != "" {
 				if sub != "" {
