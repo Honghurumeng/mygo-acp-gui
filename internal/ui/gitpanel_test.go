@@ -420,6 +420,38 @@ func TestGitPanelDiffRejectsBinary(t *testing.T) {
 	}
 }
 
+func TestGitPanelRefreshesAfterTurn(t *testing.T) {
+	workspace := initGitPanelRepo(t)
+	app, tt := newFakeAppIn(t, workspace)
+	connect(t, app, tt)
+	tt.Frame()
+	waitFor(t, app, tt, func() bool {
+		return app.Git.Workspace == workspace && app.Git.Checked && !app.Git.Loading
+	})
+	if app.Git.RepoRoot == "" {
+		t.Fatalf("panel did not read the repository: %+v", app.Git)
+	}
+
+	// The fake agent does not touch the disk; write what it would have
+	// written, then finish a turn and expect the panel to pick it up.
+	writeGitPanelFile(t, workspace, "agent.txt", "written by the agent\n")
+	current(app).Input = "hello"
+	tt.Frame()
+	if err := tt.Click("Send"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		return !current(app).Streaming && !app.Git.Loading && len(app.Git.Changes) == 1
+	})
+	if app.Git.Changes[0].Path != "agent.txt" {
+		t.Errorf("changes = %+v", app.Git.Changes)
+	}
+	tt.Frame()
+	if !tt.HasText("agent.txt") {
+		t.Errorf("turn-end refresh did not show the new file; texts: %q", tt.Texts())
+	}
+}
+
 func gitPanelHasCommit(app *App, want string) bool {
 	for _, c := range app.Git.Commits {
 		if strings.Contains(c.Message, want) {

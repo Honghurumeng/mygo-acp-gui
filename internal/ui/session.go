@@ -1145,6 +1145,7 @@ func (a *App) applyPromptResult(chat *Chat, turn *turnState, res acp.PromptResul
 	// A turn may end while a permission request is still waiting (for
 	// example after an agent-side cancel). Do not leave a dead dialog.
 	a.cancelPermissionsFor(chat)
+	a.refreshGitAfterTurn(chat)
 	if res.StopReason != "" {
 		chat.LastStop = res.StopReason
 	}

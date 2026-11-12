@@ -127,6 +127,12 @@ func TestConnectRejectsRelativeWorkspace(t *testing.T) {
 
 func newFakeApp(t *testing.T) (*App, *mui.Tester) {
 	t.Helper()
+	return newFakeAppIn(t, t.TempDir())
+}
+
+// newFakeAppIn starts the fake agent with the given absolute workspace.
+func newFakeAppIn(t *testing.T, workspace string) (*App, *mui.Tester) {
+	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("fake-agent integration test is Unix-only for now")
 	}
@@ -146,7 +152,6 @@ func newFakeApp(t *testing.T) (*App, *mui.Tester) {
 	if _, err := os.Stat(script); err != nil {
 		t.Fatalf("fake agent: %v", err)
 	}
-	workspace := t.TempDir()
 	dataDir := t.TempDir()
 	seedSessionArchive(t, dataDir, archive.Session{
 		AgentID:   "fake",

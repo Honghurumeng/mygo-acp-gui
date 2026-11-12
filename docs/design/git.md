@@ -55,6 +55,9 @@
 - Pull：`git pull --no-edit`，并设置 `GIT_MERGE_AUTOEDIT=no` 防止等待编辑器。
 - Push：`git push`，只推当前分支已配置的 upstream；没有 upstream 时显示 git 错误。
 - Refresh：重新执行状态和图表读取。
+- 一轮对话结束时（`session/prompt` 返回或报错）自动重读一次，agent 刚写入的文件立即出现在列表里。
+  只刷新当前会话所在的 workspace；面板隐藏时只把状态标记为待刷新（下次打开再读），正在读取或操作进行中时跳过，
+  与窗口获得焦点时的规则一致。
 - 窗口获得焦点时自动重读状态和图表；面板关闭、正在读取或操作进行中时跳过，避免打断进行中的 Git 命令。
 - Undo：`reset --soft`，提交内容保留在暂存区，不丢文件改动。
 - Discard all：`git reset -q` 清空暂存 → 有 HEAD 时 `git checkout -- .` 恢复工作区 → `git clean -fd` 删除未跟踪文件和目录。
@@ -92,4 +95,4 @@ go test ./internal/git -v
 go test ./internal/ui -run 'TestGitPanel' -v -count=1
 ```
 
-`internal/git` 测试覆盖状态/重命名解析、分支头解析、init、stage/unstage、commit、首提交撤销、discard all（已暂存/未暂存/未跟踪/首提交前、忽略文件保留）、嵌套工作区，以及 diff 两侧（未暂存/已暂存/未跟踪/新增/删除/重命名、二进制与超大文件、越界路径）、提交日志解析、refs 解析、commit 文件列表与提交 diff 两侧（首提交/单文件/重命名/删除）、merge 的 lane 分配与 8 lane 上限、父提交必须在子提交之后；UI 测试覆盖无仓库提示与 init、无 git 提示、窗口获得焦点后刷新、Stage all + Commit 全链路、Discard all 确认/取消与位置、diff 预览打开与二进制报错、提交图渲染与窄面板裁剪、点击提交展开/收起文件列表、从展开列表打开提交 diff。
+`internal/git` 测试覆盖状态/重命名解析、分支头解析、init、stage/unstage、commit、首提交撤销、discard all（已暂存/未暂存/未跟踪/首提交前、忽略文件保留）、嵌套工作区，以及 diff 两侧（未暂存/已暂存/未跟踪/新增/删除/重命名、二进制与超大文件、越界路径）、提交日志解析、refs 解析、commit 文件列表与提交 diff 两侧（首提交/单文件/重命名/删除）、merge 的 lane 分配与 8 lane 上限、父提交必须在子提交之后；UI 测试覆盖无仓库提示与 init、无 git 提示、窗口获得焦点后刷新、一轮对话结束后刷新、Stage all + Commit 全链路、Discard all 确认/取消与位置、diff 预览打开与二进制报错、提交图渲染与窄面板裁剪、点击提交展开/收起文件列表、从展开列表打开提交 diff。

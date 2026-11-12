@@ -132,6 +132,27 @@ func (a *App) refreshGitOnFocus() {
 	a.startGitLoad(workspace, false)
 }
 
+// refreshGitAfterTurn rereads the repository when an agent turn ends, so the
+// files the agent just wrote show up without pressing Refresh. Only the chat
+// on screen matters because the panel follows the active workspace; a hidden
+// panel is just marked stale and reloads when it is shown again.
+func (a *App) refreshGitAfterTurn(chat *Chat) {
+	if a.closed.Load() || chat == nil || chat != a.activeChat() {
+		return
+	}
+	workspace := strings.TrimSpace(chat.Workspace)
+	if workspace == "" || !filepath.IsAbs(workspace) {
+		return
+	}
+	if !a.GitPanelOpen {
+		if a.Git.Workspace == workspace {
+			a.Git.Checked = false
+		}
+		return
+	}
+	a.refreshGitOnFocus()
+}
+
 func (a *App) startGitLoad(workspace string, clearFeedback bool) {
 	if a.closed.Load() {
 		return
