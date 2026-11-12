@@ -495,12 +495,15 @@ func (a *App) View(c *mui.Context) {
 				mui.Column(c).Grow(1).Children(func() { a.emptyState(c) })
 				return
 			}
-			mui.List(c, &chat.list, len(chat.Messages), func(i int) {
-				a.message(c, chat.Messages[i])
-			}).Grow(1).Padding(16, 20).Gap(16).Justify(mui.End).Children(func() {
-				if len(chat.Messages) == 0 {
-					a.emptyState(c)
-				}
+			mui.Box(c).Grow(1).Children(func() {
+				mui.List(c, &chat.list, len(chat.Messages), func(i int) {
+					a.message(c, chat.Messages[i])
+				}).Fill().Padding(16, 20).Gap(16).Justify(mui.End).Children(func() {
+					if len(chat.Messages) == 0 {
+						a.emptyState(c)
+					}
+				})
+				a.jumpToLatestButton(c, chat)
 			})
 			if a.commandOpen(chat) {
 				a.commandPalette(c, chat)

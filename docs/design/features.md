@@ -132,6 +132,12 @@ pi-acp 的启动信息（pi 版本、Extensions、Skills 等）、重试、自�
 - 列表区域最大高度 380 DIP，并按窗口高度收缩；超出时在弹窗内滚动。弹窗打开时先滚到最新一条（底部），再向上翻看旧发言。
 - 点击条目关闭弹窗并调用 `chat.list.ScrollTo(row, Start)`，把该发言滚到消息区顶部；只影响当前会话的滚动位置。
 
+## 滚动到底部
+
+- 消息列表用 `ListState.FollowEnd` + `Smooth`：在底部时跟住新消息和正在变长的回答；滚离底部后停止跟随，不会被新输出拽回去。
+- 不在底部时，消息区底部中央浮出 `↓ Latest` 按钮（可访问名为 `Jump to latest`，边框 + 阴影），读 `chat.list.AtEnd()`；MyGo 在滚动改变该状态时自动重绘一帧，所以按钮随滚动出现/消失。
+- 点击调用 `chat.list.ScrollToEnd()`，列表回到底部并重新跟随。按钮绝对定位在消息列表外层的 `Box` 上（`LeftPercent(50)` + `TranslatePercent(-50, 0)`），不参与列布局，显示或隐藏都不会改变滚动位置。
+
 ## 计划、标题与用量
 
 - `plan` → composer 上方的可折叠计划列表，显示状态。
