@@ -91,6 +91,7 @@ type State struct {
 	HasCommits bool
 	Files      []File
 	Commits    []LogCommit
+	Stat       DiffStat
 }
 
 // Staged returns the files with staged changes, in status order.
@@ -146,6 +147,14 @@ func Load(ctx context.Context, workspace string) (State, error) {
 		Behind:     status.behind,
 		HasCommits: status.hasCommits,
 		Files:      status.files,
+	}
+	// Header counts are cosmetic: a failing diff must not hide the panel.
+	if stat, err := readStat(ctx, root, status.files, status.hasCommits); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return State{}, ctxErr
+		}
+	} else {
+		state.Stat = stat
 	}
 	if state.HasCommits {
 		commits, err := readCommits(ctx, root)

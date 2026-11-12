@@ -52,6 +52,9 @@ type gitPanelState struct {
 	Changes    []git.File
 	Commits    []git.LogCommit
 
+	// Stat counts the changed paths and their lines for the header.
+	Stat git.DiffStat
+
 	// CommitOpen is the commit whose changed files show under its graph
 	// row. CommitFilesGen guards a late read against another commit, a
 	// workspace change, or a collapsed row.
@@ -207,6 +210,7 @@ func (a *App) startGitLoad(workspace string, clearFeedback bool) {
 				a.Git.HasCommits = false
 				a.Git.Staged, a.Git.Changes = nil, nil
 				a.Git.Commits = nil
+				a.Git.Stat = git.DiffStat{}
 				return
 			}
 			if noRepo {
@@ -217,6 +221,7 @@ func (a *App) startGitLoad(workspace string, clearFeedback bool) {
 				a.Git.HasCommits = false
 				a.Git.Staged, a.Git.Changes = nil, nil
 				a.Git.Commits = nil
+				a.Git.Stat = git.DiffStat{}
 				if clearFeedback {
 					a.Git.Error = ""
 				}
@@ -236,6 +241,7 @@ func (a *App) startGitLoad(workspace string, clearFeedback bool) {
 			a.Git.Staged = state.Staged()
 			a.Git.Changes = state.Changes()
 			a.Git.Commits = state.Commits
+			a.Git.Stat = state.Stat
 			a.pruneCommitFiles()
 		})
 	}()
@@ -353,6 +359,8 @@ func (a *App) gitPanelHeader(c *mui.Context) {
 				if a.Git.Busy != "" {
 					caption(c, a.Git.Busy+"…")
 				}
+				mui.Spacer(c)
+				a.gitHeaderStat(c)
 			})
 			line, tip := a.gitHeaderLine()
 			if line != "" {
@@ -363,6 +371,27 @@ func (a *App) gitPanelHeader(c *mui.Context) {
 			}
 		})
 	})
+}
+
+// gitHeaderStat shows the changed file count and line changes beside the
+// panel title. It stays empty while there is nothing uncommitted.
+func (a *App) gitHeaderStat(c *mui.Context) {
+	t := c.Theme()
+	stat := a.Git.Stat
+	if stat.Files == 0 {
+		return
+	}
+	files := strconv.Itoa(stat.Files) + " files"
+	if stat.Files == 1 {
+		files = "1 file"
+	}
+	caption(c, files)
+	if stat.Added > 0 {
+		mui.Text(c, "+"+strconv.Itoa(stat.Added)).FontSize(9).TextColor(t.Success)
+	}
+	if stat.Removed > 0 {
+		mui.Text(c, "−"+strconv.Itoa(stat.Removed)).FontSize(9).TextColor(t.Danger)
+	}
 }
 
 func (a *App) gitHeaderLine() (string, string) {

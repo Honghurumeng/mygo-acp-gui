@@ -127,6 +127,52 @@ func TestGitPanelRefreshesOnFocus(t *testing.T) {
 	}
 }
 
+func TestGitPanelHeaderShowsDiffStat(t *testing.T) {
+	workspace := initGitPanelRepo(t)
+	writeGitPanelFile(t, workspace, "a.txt", "one\ntwo\n")
+	writeGitPanelFile(t, workspace, "b.txt", "three\n")
+	app, tt := newGitPanelApp(t, workspace)
+	waitFor(t, app, tt, func() bool {
+		return app.Git.Checked && !app.Git.Loading && app.Git.Stat.Files == 2
+	})
+	if stat := app.Git.Stat; stat.Added != 3 || stat.Removed != 0 {
+		t.Fatalf("stat = %+v; want 3 added", stat)
+	}
+	if !tt.HasText("2 files") || !tt.HasText("+3") {
+		t.Errorf("header summary missing; texts: %q", tt.Texts())
+	}
+
+	if err := tt.Click("Stage all"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		return len(app.Git.Staged) == 2 && app.Git.Busy == ""
+	})
+	app.Git.Message = "first"
+	tt.Frame()
+	if err := tt.Click("Commit"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		return app.Git.Busy == "" && app.Git.Stat == (git.DiffStat{})
+	})
+	if tt.HasText("2 files") {
+		t.Errorf("summary survived the commit; texts: %q", tt.Texts())
+	}
+
+	writeGitPanelFile(t, workspace, "b.txt", "four\nfive\n")
+	app.refreshGitOnFocus()
+	waitFor(t, app, tt, func() bool {
+		return app.Git.Checked && !app.Git.Loading && app.Git.Stat.Files == 1
+	})
+	if stat := app.Git.Stat; stat.Added != 2 || stat.Removed != 1 {
+		t.Fatalf("stat = %+v; want 2 added, 1 removed", stat)
+	}
+	if !tt.HasText("1 file") || !tt.HasText("+2") || !tt.HasText("−1") {
+		t.Errorf("updated header summary missing; texts: %q", tt.Texts())
+	}
+}
+
 func TestGitPanelStagesAndCommits(t *testing.T) {
 	workspace := initGitPanelRepo(t)
 	if err := os.WriteFile(filepath.Join(workspace, "hello.txt"), []byte("hello\n"), 0o600); err != nil {
