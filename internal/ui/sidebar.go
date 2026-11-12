@@ -77,19 +77,26 @@ func (a *App) sidebar(c *mui.Context) {
 				mutedText(c, "v"+a.Version, 10)
 			})
 
-			mui.Column(c).Gap(8).Padding(0, 12, 10, 12).Grow(1).Children(func() {
-				mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
+			mui.Column(c).Gap(8).Padding(0, 0, 10, 0).Grow(1).Children(func() {
+				mui.Row(c).Gap(6).AlignItems(mui.Center).Padding(0, 14, 0, 12).Children(func() {
 					mui.Text(c, "Workspaces").FontSize(10).Bold().TextColor(t.TextMuted).Grow(1)
 					if quietButton(c, "＋").Label("Add workspace").FontSize(13).Clicked() {
 						a.addWorkspace()
 					}
 				})
-				a.savedSessionsStatus(c)
-				a.sidebarFilters(c)
-				mui.Scroll(c).Grow(1).Gap(2).Children(func() {
-					for _, workspace := range a.shownWorkspaces() {
-						a.workspaceGroup(c, workspace)
-					}
+				mui.Column(c).Gap(8).Padding(0, 12).Children(func() {
+					a.savedSessionsStatus(c)
+					a.sidebarFilters(c)
+				})
+				// The scroll view runs to the sidebar's right edge so its overlay
+				// scrollbar sits near the border, not inside the content gutter.
+				// Rows keep a matching inset that also clears the scrollbar.
+				mui.Scroll(c).Grow(1).Children(func() {
+					mui.Column(c).Gap(2).Padding(0, 14, 0, 12).Children(func() {
+						for _, workspace := range a.shownWorkspaces() {
+							a.workspaceGroup(c, workspace)
+						}
+					})
 				})
 			})
 			a.sidebarStatus(c)
@@ -262,22 +269,13 @@ func (a *App) workspaceGroup(c *mui.Context, workspace string) {
 
 func (a *App) conversationRow(c *mui.Context, chat *Chat) {
 	t := c.Theme()
-	active := chat == a.activeChat()
-	background := t.Background
-	if active {
-		background = t.SurfaceHover
-	}
+	state := chatRowStateOf(chat, chat == a.activeChat())
+	background := chatRowBackground(t, state)
 	mui.Row(c).Gap(2).AlignItems(mui.Center).Children(func() {
-		button := mui.ButtonBase(c).Grow(1).Gap(5).Padding(4, 10).Radius(8).Background(background)
+		button := mui.ButtonBase(c).Grow(1).Gap(5).Padding(4, 10).Radius(chatRowRadius).
+			Background(background).
+			Draw(func(p *mui.Painter, r mui.Rect) { chatRowOverlay(p, r, state) })
 		button.Children(func() {
-			switch {
-			case chat.Streaming:
-				mui.Spinner(c)
-			case chat.Attention:
-				mui.Text(c, "!").FontSize(10).TextColor(t.Warning)
-			case chat.Unread:
-				mui.Text(c, "•").FontSize(10).TextColor(t.Accent)
-			}
 			agentBadge(c, chat.Agent.ID, 11)
 			mui.Text(c, chat.name()).FontSize(11).Grow(1).SingleLine()
 		})
