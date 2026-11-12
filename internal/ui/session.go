@@ -1229,10 +1229,17 @@ func connectError(err error, spec agent.LaunchSpec) string {
 	return err.Error()
 }
 
+// truncate shortens text to at most max runes. It cuts on rune boundaries so
+// that CJK text stays valid UTF-8; slicing bytes would leave a lone lead byte
+// that renders as a replacement glyph.
 func truncate(text string, max int) string {
 	text = strings.TrimSpace(text)
-	if len(text) <= max {
+	if max <= 0 {
+		return ""
+	}
+	runes := []rune(text)
+	if len(runes) <= max {
 		return text
 	}
-	return text[:max] + "…"
+	return string(runes[:max]) + "…"
 }

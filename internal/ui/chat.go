@@ -104,7 +104,9 @@ func (c *Chat) name() string {
 		return ""
 	}
 	if title := strings.TrimSpace(c.Title); title != "" {
-		return truncate(singleLine(title), 48)
+		// Views give the full label a SingleLine text, which layout cuts to
+		// their width; a fixed rune count here would ignore the window size.
+		return singleLine(title)
 	}
 	return fmt.Sprintf("Chat %d", c.ID)
 }

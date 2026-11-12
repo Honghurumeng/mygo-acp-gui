@@ -277,7 +277,7 @@ func (a *App) conversationRow(c *mui.Context, chat *Chat) {
 			Draw(func(p *mui.Painter, r mui.Rect) { chatRowOverlay(p, r, state) })
 		button.Children(func() {
 			agentBadge(c, chat.Agent.ID, 11)
-			mui.Text(c, chat.name()).FontSize(11).Grow(1).SingleLine()
+			mui.Text(c, chat.name()).FontSize(11).Grow(1).MinWidth(0).SingleLine()
 		})
 		if button.Clicked() {
 			a.selectChat(chat)

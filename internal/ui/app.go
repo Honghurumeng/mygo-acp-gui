@@ -541,12 +541,14 @@ func (a *App) header(c *mui.Context) {
 		if quietButton(c, toggle).Label(tip).FontSize(15).Clicked() {
 			a.SidebarOpen = !a.SidebarOpen
 		}
-		mui.Column(c).Gap(1).Grow(1).Children(func() {
-			mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
+		mui.Column(c).Gap(1).Grow(1).MinWidth(0).Children(func() {
+			mui.Row(c).Gap(6).AlignItems(mui.Center).MinWidth(0).Children(func() {
 				if chat != nil {
 					agentBadge(c, chat.Agent.ID, 13)
 				}
-				mui.Text(c, truncate(title, 34)).FontSize(15).Bold().SingleLine()
+				// Let layout cut the title to the room the actions leave, so it
+				// ellipsizes by width instead of at a fixed rune count.
+				mui.Text(c, title).FontSize(15).Bold().SingleLine().MinWidth(0)
 			})
 			sub := a.statusLine()
 			if chat != nil && strings.TrimSpace(chat.Workspace) != "" {
@@ -556,7 +558,7 @@ func (a *App) header(c *mui.Context) {
 				sub += filepath.Base(chat.Workspace)
 			}
 			if sub != "" {
-				mutedText(c, truncate(sub, 140), 10).SingleLine()
+				mutedText(c, sub, 10).SingleLine().MinWidth(0)
 			}
 		})
 		a.headerActions(c, chat)
