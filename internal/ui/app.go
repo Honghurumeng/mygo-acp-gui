@@ -67,6 +67,9 @@ type Message struct {
 	Status      string
 	ToolCallID  string
 	Detail      string
+	// DetailOpen opens a tool card: the full command and its output show
+	// only while it is true. Tool cards start collapsed.
+	DetailOpen  bool
 	Attachments []Attachment
 }
 
@@ -752,31 +755,56 @@ func (a *App) message(c *mui.Context, m *Message) {
 			}
 		})
 	case RoleTool:
-		statusColor := t.TextMuted
-		switch m.Status {
-		case "completed":
-			statusColor = t.Success
-		case "failed":
-			statusColor = t.Danger
-		case "in_progress", "pending":
-			statusColor = t.Warning
-		}
-		surfaceCard(c, mui.Column(c).Gap(3).Padding(8, 10)).Children(func() {
-			mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-				mui.Text(c, m.Title).Bold().FontSize(12)
-				if m.Status != "" {
-					mui.Text(c, m.Status).FontSize(11).TextColor(statusColor)
-				}
-			})
-			if m.Detail != "" {
-				mutedText(c, m.Detail, 11).Selectable()
-			}
-		})
+		a.toolMessage(c, m)
 	case RoleError:
 		mui.Text(c, "⚠ "+m.Text).TextColor(t.Danger).Selectable()
 	case RoleSystem:
 		mui.Text(c, m.Text).TextColor(t.TextMuted).TextAlign(mui.Center)
 	}
+}
+
+// toolMessage draws one tool call as a card that starts collapsed: its header
+// keeps the command to one line, and the output is hidden. A click on the
+// header opens the full command and the output below it; another click closes
+// them again.
+func (a *App) toolMessage(c *mui.Context, m *Message) {
+	t := c.Theme()
+	statusColor := t.TextMuted
+	switch m.Status {
+	case "completed":
+		statusColor = t.Success
+	case "failed":
+		statusColor = t.Danger
+	case "in_progress", "pending":
+		statusColor = t.Warning
+	}
+	surfaceCard(c, mui.Column(c).Gap(3).Padding(8, 10)).Children(func() {
+		// Created inside the card: nodes join their parent as they are built,
+		// so a trigger built before it would sit outside the card's surface.
+		parts := mui.CollapsibleBase(c, &m.DetailOpen)
+		parts.Trigger.Grow(1).Gap(6).AlignItems(mui.Center).
+			Label("Toggle tool output: " + m.Title).Children(func() {
+			mark := "▸"
+			if m.DetailOpen {
+				mark = "▾"
+			}
+			// A fixed arrow width keeps the panel aligned with the command.
+			mutedText(c, mark, 10).Width(10)
+			title := mui.Text(c, m.Title).Bold().FontSize(12).Grow(1)
+			if !m.DetailOpen {
+				// Long commands stay one line until the card is opened.
+				title.SingleLine()
+			}
+			if m.Status != "" {
+				mui.Text(c, m.Status).FontSize(11).TextColor(statusColor).Shrink(0)
+			}
+		})
+		parts.Panel(func() {
+			if m.Detail != "" {
+				mutedText(c, m.Detail, 11).Selectable()
+			}
+		}).PaddingStart(16)
+	})
 }
 
 func (a *App) addMessage(chat *Chat, m *Message) *Message {

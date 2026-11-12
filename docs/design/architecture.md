@@ -138,7 +138,7 @@ pi 自己的工具在工作区内读写执行；客户端只负责展示和审�
 
 - 消息流：`markdown.Stream` 显示进行中的回复，结束后切换 `markdown.View`（同一位置）。
 - 聊天列表：`ui.List`，`FollowEnd` + `FollowAnimation = &ui.Smooth`；用户上滑后停止跟随。
-- 思考/工具：`ui.Collapsible`；工具卡片显示标题、状态、可展开的入参/输出。
+- 思考/工具：`ui.Collapsible`；工具卡片用 `ui.CollapsibleBase` 做成整卡可点击：默认折叠，标题（指令）单行省略，展开后显示完整指令与入参/输出，再次点击重新折叠。
 - 权限：`session/request_permission` 回调阻塞，CrychicUI `overlay.Modal` 展示工具名、入参和 agent 给出的 `options`；按钮直接回 `optionId`，关闭/取消回 `cancelled`。
 - 通用外观取自 CrychicUI（按钮、弹窗、空状态、代码块），业务渲染仍是本仓库的 `internal/ui`；版本与替换范围见 [components.md](components.md)。
 - 配置：`ui.Popover` 的模型面板按 agent → provider → model → thinking 选择；模型/思考来自 `configOptions`，mode 来自 `modes`，不硬编码。agent 只在会话开始前可选。
