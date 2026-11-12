@@ -380,6 +380,11 @@ func (a *App) usageChip(c *mui.Context, chat *Chat) {
 		label := "—"
 		if known {
 			label = fmt.Sprintf("%d%%", pct)
+			// A 1M-token window with a short conversation rounds to 0%,
+			// which looks like no context at all. Mark the non-zero sliver.
+			if pct == 0 && chat.Usage.Used > 0 {
+				label = "<1%"
+			}
 		}
 		mui.Text(c, label).FontSize(9)
 	})
@@ -389,7 +394,11 @@ func (a *App) usageChip(c *mui.Context, chat *Chat) {
 		if chat.Usage.Size > 0 {
 			tip += " / " + formatCount(chat.Usage.Size)
 		}
-		tip += fmt.Sprintf(" (%d%%)", pct)
+		if pct == 0 && chat.Usage.Used > 0 {
+			tip += " (<1%)"
+		} else {
+			tip += fmt.Sprintf(" (%d%%)", pct)
+		}
 		if chat.Usage.Cost != nil && chat.Usage.Cost.Amount > 0 {
 			tip += " · " + formatMoney(chat.Usage.Cost)
 		}

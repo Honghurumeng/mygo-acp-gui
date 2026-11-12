@@ -32,6 +32,10 @@
 
 权限弹窗是全局的，但标注所属会话（`Chat: …`）。多个后台会话同时请求权限时排队显示，回答按 `Chat` 路由；侧栏的 `!` 在有未答权限时显示。
 
+## ACP 状态提示
+
+pi-acp 的启动信息（pi 版本、Extensions、Skills 等）、重试、自动压缩和排队状态不是模型回答。fork 给这些 `agent_message_chunk` 打 `_meta.piAcp.startupInfo` 或 `_meta.piAcp.notice`；GUI 丢弃启动信息，把 notice 画成居中的系统行，同一次重试/压缩/排队的开始和结束更新同一行。扩展 `ctx.ui.notify` 也按系统提示显示。状态行会结束当前 assistant 行，状态之后的文本另起一行，不会把“Retrying…”和回答粘在一起。
+
 ## 配置与模式
 
 `Info` 解析 `configOptions`（model、effort 等）和 `modes`，并兼容只有 `models` 的旧 agent（合成为 `model` 配置项）。
@@ -40,7 +44,7 @@
 - 草稿（还没有 session）也能选 provider / model / thinking：面板数据来自发现阶段的配置探测（`AgentConfigs`），选择存在 `Chat.PendingConfig`，Connect 拿到 session 后按 model 优先的顺序调 `session/set_config_option` 补上；断开连接时把当前值回填为草稿选择，重连不丢。
 - 启动时的配置缓存不是永久事实：草稿每次打开模型面板都会异步重读 agent 的 model 列表（正常 30 秒节流，缓存为空时 5 秒重试；失败保留旧列表，读取中没有 session 也保留），所以登录/改配置后不再出现的 provider 会在刷新后消失；连接成功、`config_option_update`、切换配置和断开时都用真实 session 的 `configOptions` 更新缓存。`PendingConfig` 里已被刷新掉的 model 在 Connect 时跳过，不会静默换用别的模型。
 - agent 只在会话开始前可选；连接后锁定。切换 agent 后重新 Connect 才生效，同时清掉属于旧 agent 的草稿配置选择。
-- 选择 model / thinking 调用 `session/set_config_option` `{sessionId, configId, value}`；其他 select 型配置追加显示在 thinking 列。
+- 选择 model / thinking 调用 `session/set_config_option` `{sessionId, configId, value}`；其他 select 型配置追加显示在 thinking 列。thinking 选项以 agent 当前返回的 configOptions 为准，pi fork 会按当前模型重算（如 `low/high/max`，含 `max`）。
 - 模式 chip 显示当前 mode，点击后调用 `session/set_mode` `{sessionId, modeId}`。
 - 两者都更新 `Info`，并接收 agent 的 `config_option_update` / `current_mode_update` 通知。
 - 流式回合、连接中或即将切换会话时禁用，避免 agent 返回 `-32600`。
@@ -119,9 +123,9 @@
 
 - `plan` → composer 上方的可折叠计划列表，显示状态。
 - `session_info_update.title` → 标题显示在顶部会话栏和侧栏会话项。
-- `usage_update` → composer 中的环形进度 + 百分比；hover 显示 used/size、百分比和费用。agent 不发时没有上下文数字；ACP 没有主动查询的方法。
+- `usage_update` → composer 中的环形进度 + 百分比（有用量但四舍五入为 0 时显示 `<1%`）；hover 显示 used/size、百分比和费用。agent 不发时没有上下文数字；ACP 没有主动查询的方法。
 - prompt 结果里的 `usage` 解析为 `acp.PromptUsage`，显示为 `turn 1.2k in · 100 out · 40 thought`（只在 agent 返回时出现），与 `context` 分开；`_meta` 保留在 `acp.PromptResult`，不展示明细。
-- 当前 command-code 会发 `usage_update`；pi-acp 0.4.0 不发，也不返回 prompt `usage`（见 [pi.md](pi.md#用量)）。
+- 当前 command-code 和 vendored pi-acp fork（0.4.0 + usage 补丁）都会发 `usage_update` 并返回 prompt `usage`；上游 npm `@geohar/pi-acp@0.4.0` 没有这两处映射（见 [pi.md](pi.md#用量)）。
 
 ## 事件顺序与生命周期
 

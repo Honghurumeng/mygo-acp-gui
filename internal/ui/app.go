@@ -67,6 +67,8 @@ type Message struct {
 	Status      string
 	ToolCallID  string
 	Detail      string
+	NoticeKind  string
+	NoticeLevel string
 	// DetailOpen opens a tool card: the full command and its output show
 	// only while it is true. Tool cards start collapsed.
 	DetailOpen  bool
@@ -763,7 +765,14 @@ func (a *App) message(c *mui.Context, m *Message) {
 	case RoleError:
 		mui.Text(c, "⚠ "+m.Text).TextColor(t.Danger).Selectable()
 	case RoleSystem:
-		mui.Text(c, m.Text).TextColor(t.TextMuted).TextAlign(mui.Center)
+		color := t.TextMuted
+		switch m.NoticeLevel {
+		case "warning":
+			color = t.Warning
+		case "error":
+			color = t.Danger
+		}
+		mui.Text(c, m.Text).TextColor(color).TextAlign(mui.Center)
 	}
 }
 

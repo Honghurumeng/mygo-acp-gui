@@ -38,7 +38,19 @@ type Event struct {
 	Commands      []acp.AvailableCommand
 	Title         string
 	Usage         *acp.Usage
-	Update        json.RawMessage
+	// StartupInfo marks the synthetic pi-acp startup prelude. It is not part
+	// of the model's answer and should be shown separately or dropped.
+	StartupInfo bool
+	// Notice marks adapter status text (retry, compaction, queue, extension
+	// notification) that must not be appended to the assistant message.
+	Notice *Notice
+	Update json.RawMessage
+}
+
+// Notice is adapter-generated status text carried on an agent message chunk.
+type Notice struct {
+	Kind  string
+	Level string
 }
 
 // ToolCall is the common shape of tool_call and tool_call_update.
@@ -159,6 +171,29 @@ func parseEvent(s *Session, params json.RawMessage) *Event {
 		SessionID: envelope.SessionID,
 		Kind:      head.Kind,
 		Update:    cloneRaw(update),
+	}
+	var meta struct {
+		Meta *struct {
+			PiAcp *struct {
+				StartupInfo bool `json:"startupInfo"`
+				Notice      *struct {
+					Kind  string `json:"kind"`
+					Level string `json:"level"`
+				} `json:"notice"`
+				Notify *struct {
+					Level string `json:"level"`
+				} `json:"notify"`
+			} `json:"piAcp"`
+		} `json:"_meta"`
+	}
+	if json.Unmarshal(update, &meta) == nil && meta.Meta != nil && meta.Meta.PiAcp != nil {
+		pi := meta.Meta.PiAcp
+		ev.StartupInfo = pi.StartupInfo
+		if pi.Notice != nil {
+			ev.Notice = &Notice{Kind: pi.Notice.Kind, Level: pi.Notice.Level}
+		} else if pi.Notify != nil {
+			ev.Notice = &Notice{Kind: "extension", Level: pi.Notify.Level}
+		}
 	}
 	switch head.Kind {
 	case UpdateMessageChunk, UpdateUserChunk, UpdateThoughtChunk:

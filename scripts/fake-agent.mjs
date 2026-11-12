@@ -9,6 +9,8 @@
  *   /mcp          回复最近一次 session/new 收到的 MCP server 数
  *   /image        回复收到的图片内容块数量
  *   /turnusage    不发 usage_update，只在 prompt 结果里返回 usage
+ *   /tinyusage    发一个小于 1% 的 usage_update
+ *   /notice       先发 startup / auto_retry 状态块，再正常回复
  *
  * 环境变量：
  *   FAKE_AGENT_CHILD_PID_FILE  启动一个子进程并把 pid 写入该文件，
@@ -123,14 +125,13 @@ function finishTurn(turn, reason = 'end_turn', usage = null) {
   send({ jsonrpc: '2.0', id: turn.id, result });
 }
 
-function sendChunk(turn, text) {
-  sendUpdate({
-    sessionId: turn.sessionId,
-    update: {
-      sessionUpdate: 'agent_message_chunk',
-      content: { type: 'text', text },
-    },
-  });
+function sendChunk(turn, text, meta = null) {
+  const update = {
+    sessionUpdate: 'agent_message_chunk',
+    content: { type: 'text', text },
+  };
+  if (meta) update._meta = meta;
+  sendUpdate({ sessionId: turn.sessionId, update });
 }
 
 function requestPermission(turn) {
@@ -201,9 +202,15 @@ function startTurn(turn, text, images = 0, mcpCount = 0) {
     update: { sessionUpdate: 'session_info_update', title: 'Fake session title' },
   });
   if (!turnUsage) {
+    const tiny = text.includes('/tinyusage');
     sendUpdate({
       sessionId: turn.sessionId,
-      update: { sessionUpdate: 'usage_update', used: 1200, size: 10000, cost: { amount: 0.0012, currency: 'USD' } },
+      update: {
+        sessionUpdate: 'usage_update',
+        used: tiny ? 1600 : 1200,
+        size: tiny ? 1_000_000 : 10000,
+        cost: { amount: 0.0012, currency: 'USD' },
+      },
     });
   }
   if (plan) {
@@ -226,6 +233,18 @@ function startTurn(turn, text, images = 0, mcpCount = 0) {
         sessionUpdate: 'agent_thought_chunk',
         content: { type: 'text', text: 'Let me think about that…' },
       },
+    });
+  }
+
+  if (text.includes('/notice')) {
+    sendChunk(turn, 'pi v9.9.9\n\n## Extensions\n- /tmp/fake-extension.ts\n', {
+      piAcp: { startupInfo: true },
+    });
+    sendChunk(turn, 'Retrying (attempt 1/3, waiting 2s)...', {
+      piAcp: { notice: { kind: 'auto_retry', level: 'warning' } },
+    });
+    sendChunk(turn, 'Retry finished, resuming.', {
+      piAcp: { notice: { kind: 'auto_retry', level: 'info' } },
     });
   }
 

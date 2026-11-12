@@ -6,7 +6,7 @@ pi-acp 已按「单文件 bundle」方式 vendor 到仓库，构建一次后固�
 
 ```
 resources/agents/pi-acp/
-  pi-acp.bundle.mjs      唯一运行时入口（~453 KiB）
+  pi-acp.bundle.mjs      唯一运行时入口（~456 KiB）
   package.json           生成的元数据，仅供 agentInfo 读取（不要删）
   VERSION                0.4.0
   LICENSE                pi-acp 的 MIT 协议
@@ -27,7 +27,9 @@ resources/agents/pi-acp/
 | esbuild（仅构建期） | `0.28.2` | — |
 
 `pi-acp.bundle.mjs` 的 sha256：
-`28341f24eaf74f73f06d6f86a0cf63ed9dc1dd24c09763463d3b7531e67143c4`
+`b3188b02e434dd16cab37964b2a18a70d99c98e53404296271f814761fc0a6e8`
+
+当前 bundle 来自本地 fork（`pi-acp-main`，上游 0.4.0 + usage/推理强度补丁），不是 npm 上的原版 0.4.0；差异和重打步骤见 [pi-fork.md](pi-fork.md)。
 
 应用启动时直接执行这个文件：
 
@@ -43,19 +45,24 @@ cmd := exec.Command(nodePath, bundle)
 
 - 只拷 `dist/index.js` 不够：它仍 `import "@agentclientprotocol/sdk"`，而 SDK 依赖 `zod`；完整依赖树约 7.1 MB。
 - 不走 npx：npx 需要联网、版本漂移、启动慢，且从 Finder 启动时 PATH 不可靠。
-- 单文件 bundle：离线可用、启动确定、体积小（453 KiB）；代价只是升级时要跑一次脚本，已自动化。
+- 单文件 bundle：离线可用、启动确定、体积小（456 KiB）；代价只是升级时要跑一次脚本，已自动化。
 
 ## 构建 / 升级
 
-唯一入口：`scripts/vendor-pi-acp.sh`。
+有两个入口：
+
+- `scripts/vendor-pi-acp.sh`：从 npm registry 或指定 tarball 打包，适合升级上游版本。
+- `scripts/vendor-pi-acp-local.sh`：构建本地 fork `pi-acp-main` 并调用上面的脚本，日常修改 pi-acp 后用这个。
 
 ```bash
-scripts/vendor-pi-acp.sh              # 默认 0.4.0
-scripts/vendor-pi-acp.sh 0.4.1        # 指定版本
-node scripts/pi-acp-smoke.mjs         # 单独复跑 initialize 冒烟
+scripts/vendor-pi-acp-local.sh              # 本地 fork：npm ci -> build -> pack -> vendor
+PI_ACP_SKIP_INSTALL=1 scripts/vendor-pi-acp-local.sh  # 复用 node_modules，快速重打
+scripts/vendor-pi-acp.sh                    # npm 上的 @geohar/pi-acp 0.4.0
+scripts/vendor-pi-acp.sh 0.4.1              # 指定上游版本
+node scripts/pi-acp-smoke.mjs               # 单独复跑 initialize 冒烟
 ```
 
-脚本流程：临时目录 `npm install --save-exact` → esbuild `--bundle --platform=node --format=esm --target=node22` → `node --check` → initialize 冒烟 → 原子替换 `resources/agents/pi-acp/` → 生成 NOTICE 和 `SHA256SUMS`。
+脚本流程：临时目录 `npm install --save-exact`（本地 fork 先 `npm ci` + `npm run build` + `npm pack`）→ esbuild `--bundle --platform=node --format=esm --target=node22` → `node --check` → initialize 冒烟 → 原子替换 `resources/agents/pi-acp/` → 生成 NOTICE 和 `SHA256SUMS`。任何一步失败都会保留旧 bundle。
 
 直接依赖版本锁在脚本里，可用环境变量覆盖：
 
@@ -64,14 +71,23 @@ PI_ACP_VERSION=0.4.0 ACP_SDK_VERSION=0.26.0 ZOD_VERSION=3.25.76 \
   ESBUILD_VERSION=0.28.2 scripts/vendor-pi-acp.sh
 ```
 
-构建使用 `--minify-whitespace --legal-comments=none` 去掉 esbuild 生成的临时目录注释，保证同样输入产出同样字节（已验证连续两次构建 SHA 相同），bundle 可以提交并校验。
+本地 tarball 也可以手动接入：
+
+```bash
+(cd pi-acp-main && npm ci && npm run build && npm pack --pack-destination /tmp)
+PI_ACP_SOURCE=/tmp/geohar-pi-acp-0.4.0.tgz \
+  PI_ACP_SOURCE_LABEL='local fork (pi-acp-main)' \
+  scripts/vendor-pi-acp.sh 0.4.0
+```
+
+构建使用 `--minify-whitespace --legal-comments=none` 去掉 esbuild 生成的临时目录注释，保证同样输入产出同样字节（已验证连续两次构建 SHA 相同），bundle 可以提交并校验。本地 fork 的 tarball 路径不会写进 NOTICE，来源固定显示为 `local fork (pi-acp-main)`。
 
 升级步骤：
 
-1. 跑 vendor 脚本（依赖范围变化时同时覆盖 SDK / zod 版本）。
+1. 改 `pi-acp-main` 后跑 `scripts/vendor-pi-acp-local.sh`；升级上游版本则拉新源码、合并补丁后再跑。
 2. `node scripts/pi-acp-smoke.mjs`。
-3. 本机真实 pi 冒烟（`initialize` + 一轮提示）。
-4. 更新本文的版本表、sha256。
+3. 本机真实 pi 冒烟（`ACP_REAL_PI=1 go test ./internal/session -run TestRealPi -v -count=1`，会断言 usage）。
+4. 更新本文的版本表、sha256 和 [pi-fork.md](pi-fork.md)。
 5. 提交 bundle 和元数据。
 
 ## 为什么旁边要放 package.json
@@ -100,9 +116,20 @@ GUI 从 Finder 启动时 PATH 往往不含 `/usr/local/bin`、`~/.npm-global/bin
 
 这里只负责“找到已有的 Node/pi”，不做版本管理或安装引导。未实现：设置界面里的选择器；目前用 `settings.json` 的 `paths.node` / `paths.pi` 或环境变量覆盖。
 
+## 模型与推理强度
+
+pi-acp 的 model `configOption` 来自 pi RPC `get_available_models`；`thought_level` 不再写死，而是来自 `get_available_thinking_levels`，因此选项随当前模型变化（pi 1.5+ 可能是 `low/high/max`，也可能带 `off/minimal/medium/xhigh`）。当前值来自 `get_state.thinkingLevel`。
+
+切换模型后，pi-acp 会重读模型、thinking levels 和当前 thinking level，返回新的 `configOptions`；同时用 `current_mode_update` 同步 thinking。旧 pi 没有 `get_available_thinking_levels` 时回退到 `state.model.thinkingLevelMap`，再回退到旧版固定列表。
+
 ## 用量
 
-pi 底层 RPC 的 `get_session_stats` 有 `contextUsage.tokens/contextWindow/percent`，但 vendored `@geohar/pi-acp@0.4.0`（当前最新）没有把它映射成 ACP `usage_update`，`session/prompt` 也不返回 `usage`。因此 pi 标签目前没有上下文或单轮 token 用量；command-code 会发 `usage_update`。pi-acp 上游补上映射后，升级 bundle 即可生效，客户端不需要改。
+vendored pi-acp fork 在每轮 `session/prompt` 结束后做两件事：
+
+- 调 pi RPC `get_session_stats`，把 `contextUsage.tokens/contextWindow` 发成 ACP `usage_update`（有 `cost` 时按 USD 附带累计费用），UI 显示 composer 右侧的上下文环和 used/size。
+- 从 pi `message_update.usage` 读取本轮 input/output/cache/reasoning/totalTokens，映射为 `PromptResponse.usage`，UI 显示 `turn 1.2k in · 100 out · 40 thought`。
+
+`/compact` 结束后也会立即刷新一次 `usage_update`；`contextUsage.tokens` 为 `null`（刚压缩完）或查询失败时跳过，不影响对话。上游 npm `@geohar/pi-acp@0.4.0` 没有这两处映射，因此必须使用本仓库 fork 打出的 bundle；客户端不需要改。
 
 ## 认证
 
@@ -125,7 +152,7 @@ node <resources>/agents/pi-acp/pi-acp.bundle.mjs --terminal-login
 ## 更新
 
 - 版本固定，不自动跟随 npm，也不在运行时检查更新。
-- 更新只走 `scripts/vendor-pi-acp.sh`；不要手改 `pi-acp.bundle.mjs`。
+- 更新只走 `scripts/vendor-pi-acp-local.sh`（本地 fork）或 `scripts/vendor-pi-acp.sh`（上游）；不要手改 `pi-acp.bundle.mjs`。
 - 更新后先跑 `node scripts/pi-acp-smoke.mjs`，再跑真实 pi 冒烟，最后跑 UI 测试。
 
 ## 常见错误
@@ -138,6 +165,7 @@ node <resources>/agents/pi-acp/pi-acp.bundle.mjs --terminal-login
 
 ## 来源
 
-- `@geohar/pi-acp@0.4.0`（MIT），npm 包；上游 fork：`https://github.com/georgeharker/pi-acp`，原始项目：`https://github.com/svkozak/pi-acp`。
+- 上游 `@geohar/pi-acp@0.4.0`（MIT），npm 包；上游 fork：`https://github.com/georgeharker/pi-acp`，原始项目：`https://github.com/svkozak/pi-acp`。
+- 本仓库 bundle 由本地 fork `pi-acp-main` 打出：上游 0.4.0 + usage 映射补丁（见 [pi-fork.md](pi-fork.md)）。`pi-acp-main` 被 `.gitignore` 忽略，不随主仓库提交。
 - 包的 `src/pi-extension.ts` 是给 `pi install npm:pi-acp` 用的 extension，外部 ACP adapter 模式不需要它，未打进 bundle。
 - 本仓库的 bundle 入口即该包的 `dist/index.js`。

@@ -25,4 +25,4 @@
 - 不代登录、不内嵌终端、不捆绑 Node；Node 与模型凭据由用户自备，登录只展示 agent 的 `authMethods`/命令。
 - 退出清理 agent 进程组；initialize 探测 5 秒超时，配置探测异步执行，失败不阻塞启动。
 - 不做 registry 全量发现/在线目录/自动安装；只支持内置表，新 agent 走代码 + 发版。
-- pi 不走 npx；直接用 `resources/agents/pi-acp/pi-acp.bundle.mjs`，不重复打包；升级只跑 `scripts/vendor-pi-acp.sh`。
+- pi 不走 npx；直接用 `resources/agents/pi-acp/pi-acp.bundle.mjs`，不在启动时打包；重打走 `scripts/vendor-pi-acp-local.sh`（本地 fork）或 `scripts/vendor-pi-acp.sh`（上游）。

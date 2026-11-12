@@ -916,6 +916,18 @@ func (a *App) applyUpdate(chat *Chat, ev session.Event) {
 	if chat != a.activeChat() {
 		chat.Unread = true
 	}
+	if ev.Kind == session.UpdateMessageChunk {
+		if ev.StartupInfo {
+			// pi-acp's prelude (pi version, extensions, skills, ...) is not
+			// part of the model's answer. The status bar already shows what
+			// matters; never append it to the assistant message.
+			return
+		}
+		if ev.Notice != nil {
+			a.addNotice(chat, ev.Text, ev.Notice)
+			return
+		}
+	}
 	switch ev.Kind {
 	case session.UpdateCommands:
 		chat.Commands = append([]acp.AvailableCommand(nil), ev.Commands...)
@@ -1029,6 +1041,61 @@ func (a *App) applyUpdate(chat *Chat, ev session.Event) {
 				turn.assistant.Done = true
 			}
 			turn.assistant = nil
+		}
+	}
+}
+
+// addNotice inserts adapter status text (retry, compaction, queue, ...) as a
+// centered system row. The current assistant row is closed so continuation
+// text after the notice starts a new row instead of appending above it.
+func (a *App) addNotice(chat *Chat, text string, notice *session.Notice) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
+	}
+	kind, level := notice.Kind, notice.Level
+	if level == "" {
+		level = "info"
+	}
+	a.closeAssistantForNotice(chat)
+	switch kind {
+	case "queue", "auto_retry", "auto_compaction":
+		if n := len(chat.Messages); n > 0 {
+			last := chat.Messages[n-1]
+			if last.Role == RoleSystem && last.NoticeKind == kind {
+				last.Text = text
+				last.NoticeLevel = level
+				return
+			}
+		}
+	}
+	a.addMessage(chat, &Message{
+		ID:          a.nextID(),
+		Role:        RoleSystem,
+		Text:        text,
+		Done:        true,
+		NoticeKind:  kind,
+		NoticeLevel: level,
+	})
+}
+
+// closeAssistantForNotice ends the current assistant row. An eager empty row
+// (created when the prompt was sent) is removed instead of leaving a blank
+// bubble above the status text.
+func (a *App) closeAssistantForNotice(chat *Chat) {
+	if chat.turn == nil || chat.turn.assistant == nil {
+		return
+	}
+	message := chat.turn.assistant
+	chat.turn.assistant = nil
+	if message.Text != "" || message.Thought != "" {
+		message.Done = true
+		return
+	}
+	for i, candidate := range chat.Messages {
+		if candidate == message {
+			chat.Messages = append(chat.Messages[:i], chat.Messages[i+1:]...)
+			return
 		}
 	}
 }

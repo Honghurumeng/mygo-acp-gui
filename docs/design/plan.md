@@ -59,7 +59,7 @@ ACP_REAL_COMMAND_CODE=1 go test ./internal/session -run '^TestRealCommandCode$' 
 ACP_REAL_COMMAND_CODE=1 go test ./internal/session -run '^TestRealCommandCodeAuthRequired$' -v -count=1
 ```
 
-pi 测试走 `initialize` + `session/new` + 一轮 `session/prompt`；command-code 测试额外覆盖写文件权限、`session/cancel`、取消后继续对话和退出清理，另一个测试用临时 `HOME` 覆盖未登录的 `-32000` / `authMethods`。调用模型的测试默认跳过。发现阶段的只读 `initialize` 探测已由 `internal/session.Probe` 实现，UI 启动时逐 agent 并行执行。
+pi 测试走 `initialize` + `session/new` + 一轮 `session/prompt`，并断言 `usage_update` 和 prompt `usage`；command-code 测试额外覆盖写文件权限、`session/cancel`、取消后继续对话和退出清理，另一个测试用临时 `HOME` 覆盖未登录的 `-32000` / `authMethods`。调用模型的测试默认跳过。发现阶段的只读 `initialize` 探测已由 `internal/session.Probe` 实现，UI 启动时逐 agent 并行执行。
 
 Command Code 的协议细节见 [command-code.md](command-code.md)；UI 能力见 [features.md](features.md)。
 

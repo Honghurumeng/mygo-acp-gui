@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/reed/acp-gui/internal/acp"
 	"github.com/reed/acp-gui/internal/agent"
 )
 
@@ -45,9 +46,41 @@ func TestRealPi(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prompt: %v", err)
 	}
-	text, _ := drainEvents(t, updates)
+	text, usage := drainEventsWithUsage(t, updates)
 	t.Logf("stop=%s text=%q", res.StopReason, strings.TrimSpace(text))
 	if strings.TrimSpace(text) == "" {
 		t.Fatal("pi returned no agent message")
+	}
+	if usage == nil || usage.Used <= 0 || usage.Size <= 0 {
+		t.Fatalf("pi did not emit a usable usage_update: %+v", usage)
+	}
+	if turnUsage, ok := res.Tokens(); !ok || turnUsage.TotalTokens <= 0 {
+		t.Fatalf("pi did not return per-turn usage: %+v (ok=%v)", turnUsage, ok)
+	} else {
+		t.Logf("context=%d/%d turn=%+v", usage.Used, usage.Size, turnUsage)
+	}
+}
+
+// drainEventsWithUsage is drainEvents plus the latest usage_update payload.
+func drainEventsWithUsage(t *testing.T, updates <-chan Event) (text string, usage *acp.Usage) {
+	t.Helper()
+	for {
+		select {
+		case ev := <-updates:
+			switch ev.Kind {
+			case UpdateMessageChunk:
+				// The pi-acp startup prelude (version/extensions/skills) is
+				// synthetic adapter text, not the model's answer.
+				if !ev.StartupInfo {
+					text += ev.Text
+				}
+			case UpdateUserChunk:
+				text += ev.Text
+			case UpdateUsage:
+				usage = ev.Usage
+			}
+		default:
+			return text, usage
+		}
 	}
 }

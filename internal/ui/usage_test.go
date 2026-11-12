@@ -49,3 +49,20 @@ func TestPromptUsageFallback(t *testing.T) {
 		t.Errorf("stale turn usage still rendered; texts: %q", tt.Texts())
 	}
 }
+
+func TestTinyContextShowsLessThanOnePercent(t *testing.T) {
+	app, tt := newFakeApp(t)
+	connect(t, app, tt)
+
+	current(app).Input = "/tinyusage hello"
+	tt.Frame()
+	if err := tt.Click("Send"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		return !current(app).Streaming && lastAssistantHas(app, "收到：/tinyusage hello")
+	})
+	if !tt.HasText("<1%") {
+		t.Errorf("tiny context not shown as <1%%; texts: %q", tt.Texts())
+	}
+}
