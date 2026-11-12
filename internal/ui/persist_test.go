@@ -206,3 +206,42 @@ func TestSettingsPersistsWorkspaces(t *testing.T) {
 		t.Errorf("workspaces = %+v, missing %q", file.Workspaces, workspace)
 	}
 }
+
+func TestWorkspaceCollapsedStatePersists(t *testing.T) {
+	dataDir := t.TempDir()
+	workspace := t.TempDir()
+	app, tt := newSettingsApp(t, dataDir, workspace)
+	tt.Frame()
+
+	app.toggleWorkspaceCollapsed(workspace)
+	if !app.WorkspaceCollapsed[workspace] {
+		t.Fatal("toggle did not collapse the workspace")
+	}
+	file := loadPersistedSettings(t, dataDir)
+	if len(file.CollapsedWorkspaces) != 1 || file.CollapsedWorkspaces[0] != workspace {
+		t.Fatalf("collapsedWorkspaces = %+v", file.CollapsedWorkspaces)
+	}
+
+	restarted := New(Options{
+		Version:   "test",
+		Workspace: workspace,
+		DataDir:   dataDir,
+		Agents:    app.Agents,
+	})
+	restarted.MD.Reveal = &markdown.Reveal{Unit: markdown.AtOnce}
+	tt2 := mui.NewTester(restarted.View, 1060, 760)
+	t.Cleanup(func() {
+		restarted.Shutdown()
+		restarted.Flush()
+	})
+	tt2.Frame()
+	if !restarted.WorkspaceCollapsed[workspace] {
+		t.Fatal("collapsed state was lost across restart")
+	}
+
+	restarted.toggleWorkspaceCollapsed(workspace)
+	file = loadPersistedSettings(t, dataDir)
+	if len(file.CollapsedWorkspaces) != 0 {
+		t.Fatalf("collapsedWorkspaces after expand = %+v", file.CollapsedWorkspaces)
+	}
+}

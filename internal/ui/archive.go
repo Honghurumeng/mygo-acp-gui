@@ -32,9 +32,6 @@ func (a *App) loadArchive() {
 		a.SavedError = err.Error()
 	}
 	a.Archived = append([]archive.Session(nil), file.Sessions...)
-	for _, record := range a.Archived {
-		a.ensureWorkspace(record.Cwd)
-	}
 	a.syncArchiveRows()
 }
 
@@ -47,7 +44,6 @@ func (a *App) syncArchiveRows() {
 			continue
 		}
 		cwd := strings.TrimSpace(record.Cwd)
-		a.ensureWorkspace(cwd)
 		rows = append(rows, savedSession{
 			SessionSummary: acp.SessionSummary{
 				SessionID: record.SessionID,
@@ -179,6 +175,11 @@ func (a *App) mergeArchivedSessions(agentID string, sessions []acp.SessionSummar
 			continue
 		}
 		cwd := cleanArchivePath(item.Cwd)
+		// Only sessions from workspaces the user added belong in the sidebar.
+		// Import must never create workspace groups on its own.
+		if cwd != "" && !a.workspaceKnown(cwd) {
+			continue
+		}
 		title := strings.TrimSpace(item.Title)
 		updatedAt := strings.TrimSpace(item.UpdatedAt)
 		if index := a.archiveIndex(agentID, sessionID); index >= 0 {

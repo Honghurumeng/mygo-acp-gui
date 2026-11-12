@@ -9,6 +9,7 @@ import (
 
 	mui "github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
+	"github.com/reed/acp-gui/internal/acp"
 	"github.com/reed/acp-gui/internal/agent"
 	"github.com/reed/acp-gui/internal/archive"
 )
@@ -218,5 +219,92 @@ func TestSavedSessionUsesRecordedAgent(t *testing.T) {
 	})
 	if got := app.activeChat().Agent.ID; got != "other" {
 		t.Fatalf("opened with agent %q, want other", got)
+	}
+}
+
+func TestSavedSessionsSyncWithoutLiveChat(t *testing.T) {
+	app, tt := newFakeApp(t)
+	// Start from an empty archive so the row can only come from session/list.
+	app.Archived = nil
+	app.syncArchiveRows()
+	app.savedSynced = nil
+
+	app.syncSavedSessionsOnce("fake")
+	waitFor(t, app, tt, func() bool {
+		return !app.SavedLoading && len(app.savedSessionsFor(app.Workspace)) == 1
+	})
+	if index := app.archiveIndex("fake", "fake-history"); index < 0 {
+		t.Fatalf("history was not imported without a live chat: %+v", app.Archived)
+	}
+}
+
+func TestImportIgnoresUnaddedWorkspaces(t *testing.T) {
+	app, _ := newFakeApp(t)
+	before := len(app.Workspaces)
+
+	app.mergeArchivedSessions("fake", []acp.SessionSummary{
+		{SessionID: "added", Cwd: app.Workspace, Title: "Added"},
+		{SessionID: "other", Cwd: "/definitely/not/added", Title: "Other"},
+	})
+
+	if app.archiveIndex("fake", "added") < 0 {
+		t.Errorf("session in an added workspace was dropped: %+v", app.Archived)
+	}
+	if app.archiveIndex("fake", "other") >= 0 {
+		t.Errorf("session outside the added workspaces was imported: %+v", app.Archived)
+	}
+	if got := len(app.Workspaces); got != before {
+		t.Errorf("import auto-added workspaces: %d -> %d (%+v)", before, got, app.Workspaces)
+	}
+}
+
+func TestWorkspaceSyncImportsOnlyThatWorkspace(t *testing.T) {
+	app, tt := newFakeApp(t)
+	// Drop the seeded row so only the new workspace can contribute.
+	app.Archived = nil
+	app.syncArchiveRows()
+
+	other := t.TempDir()
+	app.showWorkspace(other)
+	app.syncWorkspaceSessions(other)
+
+	waitFor(t, app, tt, func() bool {
+		return !app.SavedLoading && len(app.savedSessionsFor(other)) == 1
+	})
+	if rows := app.savedSessionsFor(app.Workspace); len(rows) != 0 {
+		t.Errorf("workspace sync leaked rows into another workspace: %+v", rows)
+	}
+	if row := app.SavedSessions[0]; canonicalWorkspace(row.Cwd) != canonicalWorkspace(other) {
+		t.Errorf("imported cwd = %q, want %q", row.Cwd, other)
+	}
+}
+
+func TestLoadArchiveDoesNotAddWorkspaces(t *testing.T) {
+	store := archive.Open(filepath.Join(t.TempDir(), archiveFileName))
+	err := store.Save(archive.File{
+		Version: archive.CurrentVersion,
+		Sessions: []archive.Session{{
+			AgentID:   "fake",
+			SessionID: "outside",
+			Cwd:       "/definitely/not/added",
+			Show:      true,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	app := &App{
+		Workspace:  "/work/mine",
+		Workspaces: []string{"/work/mine"},
+		archive:    store,
+	}
+	app.loadArchive()
+
+	if len(app.Workspaces) != 1 || app.Workspaces[0] != "/work/mine" {
+		t.Fatalf("archive auto-added workspaces: %+v", app.Workspaces)
+	}
+	if len(app.SavedSessions) != 1 {
+		t.Fatalf("archived row was dropped from the index: %+v", app.SavedSessions)
 	}
 }

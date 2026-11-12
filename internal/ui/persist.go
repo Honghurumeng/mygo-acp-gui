@@ -17,6 +17,7 @@ func (a *App) persistSettings() {
 	file := settings.File{Version: settings.CurrentVersion, Paths: a.settingsPaths}
 	file.Workspaces = a.savedWorkspaces()
 	file.RemovedWorkspaces = a.removedWorkspaceList()
+	file.CollapsedWorkspaces = a.collapsedWorkspaceList()
 	if chat := a.activeChat(); chat != nil {
 		file.LastAgent = chat.Agent.ID
 		file.LastWorkspace = strings.TrimSpace(chat.Workspace)

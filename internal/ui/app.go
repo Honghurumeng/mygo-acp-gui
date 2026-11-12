@@ -164,7 +164,9 @@ type App struct {
 	SavedSessions []savedSession
 	ShowDeleted   bool
 	SavedMenuOpen string
-	savedVersion  int
+	// savedVersions keeps the latest session/list generation per agent, so a
+	// slow result cannot overwrite a newer one for the same agent.
+	savedVersions map[string]int
 	// savedSynced records the agents whose session/list was imported once
 	// after they connected, replacing the old manual refresh button.
 	savedSynced map[string]bool
@@ -297,7 +299,14 @@ func New(opts Options) *App {
 	}
 	// Start with a draft conversation so the compose box and its controls are
 	// visible; the first message connects it.
+	// The initial draft expands its group. Capture the persisted state first
+	// and re-apply it, so a collapsed workspace stays collapsed across
+	// restarts.
+	collapsed := append([]string(nil), a.collapsedWorkspaceList()...)
 	a.newChatTabIn(a.defaultWorkspace())
+	for _, workspace := range collapsed {
+		a.WorkspaceCollapsed[workspace] = true
+	}
 	return a
 }
 
@@ -322,6 +331,12 @@ func (a *App) loadSettings(dataDir string, workspaceDefault bool) {
 		// Keep the record addressable so "Show removed" can restore it.
 		a.ensureWorkspace(workspace)
 		a.markWorkspaceRemoved(workspace)
+	}
+	if a.WorkspaceCollapsed == nil {
+		a.WorkspaceCollapsed = make(map[string]bool)
+	}
+	for _, workspace := range file.CollapsedWorkspaces {
+		a.WorkspaceCollapsed[workspace] = true
 	}
 	if workspaceDefault && file.LastWorkspace != "" {
 		a.Workspace = file.LastWorkspace

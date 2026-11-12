@@ -35,6 +35,9 @@ func (a *App) addWorkspace() {
 			a.WorkspaceError = ""
 			a.WorkspaceCollapsed[path] = false
 			a.persistSettings()
+			// Show this folder's existing history immediately instead of
+			// waiting for the next launch.
+			a.syncWorkspaceSessions(path)
 		})
 	}()
 }
@@ -69,18 +72,21 @@ func (a *App) chooseWorkspace() {
 			if a.closed.Load() {
 				return
 			}
+			path := filepath.Clean(strings.TrimSpace(paths[0]))
 			if chat != nil && a.chatIndex(chat) >= 0 {
-				chat.Workspace = paths[0]
+				chat.Workspace = path
 				chat.WorkspaceError = ""
-				a.showWorkspace(paths[0])
-				a.WorkspaceCollapsed[paths[0]] = false
+				a.showWorkspace(path)
+				a.WorkspaceCollapsed[path] = false
 				a.persistSettings()
+				a.syncWorkspaceSessions(path)
 				return
 			}
-			a.Workspace = paths[0]
+			a.Workspace = path
 			a.WorkspaceError = ""
-			a.showWorkspace(paths[0])
+			a.showWorkspace(path)
 			a.persistSettings()
+			a.syncWorkspaceSessions(path)
 		})
 	}()
 }
@@ -200,4 +206,30 @@ func (a *App) removedWorkspaceList() []string {
 		}
 	}
 	return out
+}
+
+// collapsedWorkspaceList returns the folded groups in sidebar order so the
+// settings file stays stable between writes.
+func (a *App) collapsedWorkspaceList() []string {
+	var out []string
+	for _, workspace := range a.Workspaces {
+		if a.WorkspaceCollapsed[workspace] {
+			out = append(out, workspace)
+		}
+	}
+	return out
+}
+
+// toggleWorkspaceCollapsed folds or unfolds one sidebar group and persists
+// the new state. Collapsing is a view preference, so it survives restarts.
+func (a *App) toggleWorkspaceCollapsed(workspace string) {
+	workspace = strings.TrimSpace(workspace)
+	if workspace == "" {
+		return
+	}
+	if a.WorkspaceCollapsed == nil {
+		a.WorkspaceCollapsed = make(map[string]bool)
+	}
+	a.WorkspaceCollapsed[workspace] = !a.WorkspaceCollapsed[workspace]
+	a.persistSettings()
 }

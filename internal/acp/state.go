@@ -135,14 +135,20 @@ type SessionSummary struct {
 }
 
 // ListSessionsParams is the payload of session/list. Cwd filters to one
-// workspace when non-empty.
+// workspace when set. Nil is marshalled as an explicit "cwd": null so agents
+// do not fall back to the process workspace: pi-acp uses
+// `params.cwd ?? lastSessionCwd` and would hide sessions from other
+// workspaces when the field is omitted entirely.
 type ListSessionsParams struct {
-	Cwd string `json:"cwd,omitempty"`
+	Cwd    *string `json:"cwd"`
+	Cursor string  `json:"cursor,omitempty"`
 }
 
-// ListSessionsResult is the session/list response.
+// ListSessionsResult is the session/list response. NextCursor is empty on the
+// last page.
 type ListSessionsResult struct {
-	Sessions []SessionSummary `json:"sessions"`
+	Sessions   []SessionSummary `json:"sessions"`
+	NextCursor string           `json:"nextCursor,omitempty"`
 }
 
 // SetConfigOptionParams is the payload of session/set_config_option.

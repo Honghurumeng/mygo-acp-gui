@@ -13,7 +13,7 @@ import (
 	"github.com/reed/acp-gui/internal/session"
 )
 
-const savedSessionsTimeout = 15 * time.Second
+const savedSessionsTimeout = 30 * time.Second
 
 // savedSession is one sidebar row. The archive record supplies AgentID,
 // ShowName and Show; the embedded summary keeps the agent metadata.
@@ -35,24 +35,66 @@ type savedSession struct {
 // saved list. Existing Show/ShowName values win, so a deleted session stays
 // deleted and a rename stays renamed.
 func (a *App) refreshSavedSessions() {
-	if a.closed.Load() || a.Resolving {
+	if a.closed.Load() {
 		return
 	}
 	spec, ok := a.preferredAgent()
 	if !ok {
 		return
 	}
-	chat := a.activeChat()
+	a.startSavedSync(spec.ID, "")
+}
+
+// startSavedSync starts one session/list call for agentID and reports whether
+// a call was started. An empty cwdFilter asks for every workspace; a non-empty
+// one asks the agent to return just that workspace. It prefers a live process
+// for that agent, so a session connecting in a background tab imports its own
+// agent instead of whichever tab happens to be active.
+func (a *App) startSavedSync(agentID, cwdFilter string) bool {
+	if a.closed.Load() {
+		return false
+	}
+	spec, ok := a.agentByID(agentID)
+	if !ok {
+		spec, ok = a.preferredAgent()
+	}
+	if !ok {
+		return false
+	}
 	var s *session.Session
-	if chat != nil && chat.Agent.ID == spec.ID {
+	dir := a.defaultWorkspace()
+	if filepath.IsAbs(cwdFilter) {
+		dir = cwdFilter
+	}
+	for _, chat := range a.Chats {
+		if chat.Session == nil || chat.Agent.ID != spec.ID {
+			continue
+		}
 		s = chat.Session
+		if trim := strings.TrimSpace(chat.Workspace); trim != "" && cwdFilter == "" {
+			dir = trim
+		}
+		if chat == a.activeChat() {
+			break
+		}
+	}
+	if s == nil && a.Resolving {
+		// No process to ask yet. Leave savedSynced unset so the next connect
+		// retries instead of losing this agent's history for the whole run.
+		return false
 	}
 
-	a.savedVersion++
-	version := a.savedVersion
+	key := spec.ID
+	if cwdFilter != "" {
+		key = spec.ID + "\x00" + canonicalWorkspace(cwdFilter)
+	}
+	if a.savedVersions == nil {
+		a.savedVersions = make(map[string]int)
+	}
+	a.savedVersions[key]++
+	version := a.savedVersions[key]
 	a.SavedLoading = true
 	a.SavedError = ""
-	dir := a.defaultWorkspace()
 
 	a.cleanup.Add(1)
 	go func() {
@@ -68,32 +110,52 @@ func (a *App) refreshSavedSessions() {
 			err      error
 		)
 		if s != nil {
-			sessions, err = s.ListSessions(ctx, "")
+			sessions, err = s.ListSessions(ctx, cwdFilter)
 		} else {
-			sessions, err = session.ListSessionsIn(ctx, spec, dir, "")
+			sessions, err = session.ListSessionsIn(ctx, spec, dir, cwdFilter)
 		}
 		a.Post(func() {
-			if a.closed.Load() || version != a.savedVersion {
+			if a.closed.Load() || version != a.savedVersions[key] {
 				return
 			}
 			a.SavedLoading = false
 			if err != nil {
 				a.SavedError = err.Error()
+				if cwdFilter == "" {
+					// Retry the full sync after the next connect rather than
+					// losing this agent for the rest of the run.
+					delete(a.savedSynced, spec.ID)
+				}
 				return
 			}
 			a.SavedError = ""
 			a.mergeArchivedSessions(spec.ID, sessions)
 		})
 	}()
+	return true
 }
 
-// syncSavedSessionsOnce imports an agent's session/list the first time a live
-// process for it exists. The sidebar has no manual refresh button, so the
-// archive is filled from an agent that is already running instead of spawning
-// a short-lived process at startup.
+// syncWorkspaceSessions imports the saved sessions of one workspace from every
+// ready agent. It runs when the user adds a workspace so its existing history
+// appears without waiting for a restart. Sessions from other workspaces are
+// never added to the sidebar or the archive.
+func (a *App) syncWorkspaceSessions(workspace string) {
+	workspace = strings.TrimSpace(workspace)
+	if workspace == "" || !filepath.IsAbs(workspace) {
+		return
+	}
+	for _, spec := range a.Agents {
+		a.startSavedSync(spec.ID, workspace)
+	}
+}
+
+// syncSavedSessionsOnce imports an agent's session/list once per run. It runs
+// for every ready agent right after discovery, and again when an agent
+// connects in case the startup sync failed. The sidebar has no manual refresh
+// button; a short-lived process is spawned when no live process exists.
 func (a *App) syncSavedSessionsOnce(agentID string) {
 	agentID = strings.TrimSpace(agentID)
-	if agentID == "" || a.Resolving {
+	if agentID == "" {
 		return
 	}
 	if a.savedSynced == nil {
@@ -102,8 +164,10 @@ func (a *App) syncSavedSessionsOnce(agentID string) {
 	if a.savedSynced[agentID] {
 		return
 	}
+	if !a.startSavedSync(agentID, "") {
+		return
+	}
 	a.savedSynced[agentID] = true
-	a.refreshSavedSessions()
 }
 
 func sortSavedSessions(sessions []savedSession) []savedSession {
@@ -152,6 +216,22 @@ func (a *App) workspacePath(cwd string) string {
 		}
 	}
 	return filepath.Clean(cwd)
+}
+
+// workspaceKnown reports whether cwd belongs to a workspace the user already
+// added. session/list import uses it to ignore every other project.
+func (a *App) workspaceKnown(cwd string) bool {
+	cwd = strings.TrimSpace(cwd)
+	if cwd == "" {
+		return false
+	}
+	target := canonicalWorkspace(cwd)
+	for _, workspace := range a.Workspaces {
+		if sameWorkspace(workspace, cwd) || sameWorkspace(canonicalWorkspace(workspace), target) {
+			return true
+		}
+	}
+	return false
 }
 
 // savedSessionsFor returns the saved sessions shown under one workspace.
@@ -233,22 +313,6 @@ func (a *App) savedSessionRow(c *mui.Context, item savedSession) {
 				mutedText(c, stamp, 8)
 			}
 		})
-		tooltip := "Saved session · " + title
-		if item.AgentID != "" {
-			tooltip += "\nAgent: " + item.AgentID
-		}
-		if item.UpdatedAt != "" {
-			tooltip += "\nUpdated " + formatTimestamp(item.UpdatedAt)
-		}
-		if item.Cwd != "" {
-			tooltip += "\n" + item.Cwd
-		}
-		if hidden {
-			tooltip += "\nDeleted locally; restore from the ⋯ menu."
-		} else {
-			tooltip += "\nClick to open this session and replay its history."
-		}
-		button.Tooltip(tooltip)
 		if button.Clicked() {
 			a.SavedMenuOpen = ""
 			a.openSavedSession(item)
@@ -403,10 +467,10 @@ func (a *App) openSavedSession(item savedSession) {
 	a.Connect()
 }
 
-func (a *App) savedSessionAgent(item savedSession) (agent.LaunchSpec, bool) {
-	agentID := strings.TrimSpace(item.AgentID)
+func (a *App) agentByID(agentID string) (agent.LaunchSpec, bool) {
+	agentID = strings.TrimSpace(agentID)
 	if agentID == "" {
-		return a.preferredAgent()
+		return agent.LaunchSpec{}, false
 	}
 	for _, spec := range a.Agents {
 		if spec.ID == agentID {
@@ -414,6 +478,14 @@ func (a *App) savedSessionAgent(item savedSession) (agent.LaunchSpec, bool) {
 		}
 	}
 	return agent.LaunchSpec{}, false
+}
+
+func (a *App) savedSessionAgent(item savedSession) (agent.LaunchSpec, bool) {
+	agentID := strings.TrimSpace(item.AgentID)
+	if agentID == "" {
+		return a.preferredAgent()
+	}
+	return a.agentByID(agentID)
 }
 
 func (a *App) openSavedRename(item savedSession) {
@@ -426,13 +498,4 @@ func (a *App) openSavedRename(item savedSession) {
 	a.RenameSessionID = item.SessionID
 	a.RenameText = savedSessionTitle(item)
 	a.RenameOpen = true
-}
-
-func formatTimestamp(value string) string {
-	for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
-		if parsed, err := time.Parse(layout, value); err == nil {
-			return parsed.Local().Format("2006-01-02 15:04")
-		}
-	}
-	return value
 }

@@ -372,17 +372,40 @@ func (s *Session) Cancel() error {
 	return nil
 }
 
-// ListSessions asks the agent for saved sessions. An empty cwd lists all.
+// maxSessionListPages bounds pagination so a broken nextCursor cannot loop
+// forever. Agents page by 50, so this still covers a few thousand sessions.
+const maxSessionListPages = 40
+
+// ListSessions asks the agent for saved sessions. An empty cwd lists all
+// workspaces: it is sent as an explicit null, not omitted. Pages are followed
+// until nextCursor is empty.
 func (s *Session) ListSessions(ctx context.Context, cwd string) ([]acp.SessionSummary, error) {
-	raw, err := s.client.Call(ctx, "session/list", acp.ListSessionsParams{Cwd: cwd})
-	if err != nil {
-		return nil, fmt.Errorf("session/list: %w", err)
+	var filter *string
+	if cwd != "" {
+		filter = &cwd
 	}
-	var result acp.ListSessionsResult
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, fmt.Errorf("session/list: decode result: %w", err)
+	var all []acp.SessionSummary
+	cursor := ""
+	for page := 0; page < maxSessionListPages; page++ {
+		params := acp.ListSessionsParams{Cwd: filter}
+		if cursor != "" {
+			params.Cursor = cursor
+		}
+		raw, err := s.client.Call(ctx, "session/list", params)
+		if err != nil {
+			return nil, fmt.Errorf("session/list: %w", err)
+		}
+		var result acp.ListSessionsResult
+		if err := json.Unmarshal(raw, &result); err != nil {
+			return nil, fmt.Errorf("session/list: decode result: %w", err)
+		}
+		all = append(all, result.Sessions...)
+		if result.NextCursor == "" || result.NextCursor == cursor {
+			return all, nil
+		}
+		cursor = result.NextCursor
 	}
-	return result.Sessions, nil
+	return all, nil
 }
 
 // SetConfigOption changes a model, effort or similar session setting.

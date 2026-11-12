@@ -27,11 +27,12 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	store := Open(path)
 	workspace := t.TempDir()
 	want := File{
-		Version:           CurrentVersion,
-		LastAgent:         "command-code",
-		LastWorkspace:     workspace,
-		Workspaces:        []string{workspace},
-		RemovedWorkspaces: []string{workspace},
+		Version:             CurrentVersion,
+		LastAgent:           "command-code",
+		LastWorkspace:       workspace,
+		Workspaces:          []string{workspace},
+		RemovedWorkspaces:   []string{workspace},
+		CollapsedWorkspaces: []string{workspace},
 		MCPServers: []any{
 			map[string]any{"name": "demo", "command": "true"},
 		},
@@ -68,6 +69,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if len(got.RemovedWorkspaces) != 1 || got.RemovedWorkspaces[0] != workspace {
 		t.Errorf("removedWorkspaces = %+v", got.RemovedWorkspaces)
+	}
+	if len(got.CollapsedWorkspaces) != 1 || got.CollapsedWorkspaces[0] != workspace {
+		t.Errorf("collapsedWorkspaces = %+v", got.CollapsedWorkspaces)
 	}
 	if len(got.MCPServers) != 1 {
 		t.Fatalf("mcp servers = %+v", got.MCPServers)

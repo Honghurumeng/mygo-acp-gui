@@ -143,7 +143,7 @@ pi 自己的工具在工作区内读写执行；客户端只负责展示和审�
 - 通用外观取自 CrychicUI（按钮、弹窗、空状态、代码块），业务渲染仍是本仓库的 `internal/ui`；版本与替换范围见 [components.md](components.md)。
 - 配置：模型面板按 agent → provider → model → thinking 选择；模型/思考来自 `configOptions`，mode 来自 `modes`，不硬编码。agent 只在会话开始前可选。
 - 输入：`ui.TextAreaBase` 嵌在可拖动高度的 composer 卡片中；Enter 发送、Shift+Enter 换行；流式期间 Send 切换为 Stop；支持图片附件。
-- 多会话：左侧栏按 workspace 分组，先显示打开会话，再显示该目录的已保存会话；打开会话显示标题/流式/未读/权限提醒，超过 5 条折叠，可展开、重命名、删除。会话名前的内联图标标明 agent（pi 的方块 mark、Command Code 的 # 徽标，`internal/ui/agenticons.go`，随主题变色）；已保存会话用存档里的 `agentId` 画同一个图标，标题栏也用同一图标标当前会话。工作区头部 `⋯` 可移除该分组（软删除，只隐藏不删记录/会话），移除项通过 “Show removed (N)” 查看并从同一菜单恢复。侧栏 `New conversation` 新建独立进程；连接在首条消息或打开存档时自动发生。
+- 多会话：左侧栏按 workspace 分组，先显示打开会话，再显示该目录的已保存会话；打开会话显示标题/流式/未读/权限提醒。两类会话合并后默认只列前 5 条，`Show N more` / `Show less` 展开收起，展开状态不落盘（启动时默认折叠）。会话名前的内联图标标明 agent（pi 的方块 mark、Command Code 的 # 徽标，`internal/ui/agenticons.go`，随主题变色）；已保存会话用存档里的 `agentId` 画同一个图标，标题栏也用同一图标标当前会话。工作区头部 `⋯` 可移除该分组（软删除，只隐藏不删记录/会话），移除项通过 “Show removed (N)” 查看并从同一菜单恢复。侧栏 `New conversation` 新建独立进程；连接在首条消息或打开存档时自动发生。
 - 权限：全局模态但带 `Chat: …` 标签，后台请求排队；回答按所属 `Chat` 路由，侧栏 `!` 提醒未答请求。
 - 历史：启动直接从 `sessions.json` 展示；点击存档行按记录的 agent + sessionId 执行 `session/load` 重放历史。已打开会话不重复显示，当前会话已有消息或流式时在新标签页打开。`⋯` 可重命名（showName）或软删除（show=false），删除项通过 “Show deleted” 恢复。
 - MCP：JSON 模态，校验后传给 new/load；输入 `/` 时 composer 上方出现命令面板，解析 `available_commands_update`。
@@ -171,9 +171,9 @@ logs/                每个 agent 的 stderr / 协议日志（1 MiB 滚动，保
 - 保存时机：切换会话、选择 agent/目录、添加/移除/恢复工作区、Connect 校验成功、MCP Apply、退出。写入是原子的（同目录临时文件 + rename，0600），父目录不存在时创建。
 - 加载容错：文件缺失用默认值；JSON 损坏、MCP 不是数组、相对路径、未来版本只产生警告（标题栏/侧栏显示），其余字段照常使用，绝不阻塞启动。
 - 路径优先级：`ACP_GUI_*` 环境变量 > `settings.json` 的 `paths` > 登录 shell 解析。显式覆盖无效时保留 shell 结果并警告，不会把可用的路径清空。
-- 保存最后一次状态（当前会话的 agent/工作区/MCP）和侧栏工作区列表；不保存会话布局、图片草稿或消息。
+- 保存最后一次状态（当前会话的 agent/工作区/MCP）、侧栏工作区列表和每个工作区的折叠状态；不保存会话布局、图片草稿或消息。
 - 会话索引单独放在 `sessions.json`，由 `internal/archive` 读写：`{version, sessions:[{agentId,sessionId,cwd,title,showName,createdAt,updatedAt,show}]}`。`(agentId, sessionId)` 唯一；`show=false` 是软删除，`showName` 是本地重命名。
-- 存档写入时机：session/new、load 成功，标题/轮次更新，重命名、删除/恢复。启动只读存档；每个 agent 首次连接成功后自动调一次 `session/list` 合并（复用已连接进程，不额外 spawn），且绝不覆盖 `show/showName`。文件为原子写入、0600；损坏 JSON 只在侧栏提示，不阻塞启动。
+- 存档写入时机：session/new、load 成功，标题/轮次更新，重命名、删除/恢复。启动只读存档，且不会从存档补建 workspace；discovery 完成后，每个 ready agent 在后台自动调一次 `session/list` 合并（`cwd: null` 表示全部工作区并走完分页；有已连接进程时复用，否则临时 spawn；失败下次连接重试），之后该 agent 连接成功时再补一次。合并只保留 cwd 属于已添加 workspace 的会话，且绝不覆盖 `show/showName`。新增 workspace 时按该 cwd 过滤同步一次。文件为原子写入、0600；损坏 JSON 只在侧栏提示，不阻塞启动。
 - 不存 registry 快照，也不缓存探测结果：启动时重新检测。
 
 `main.go` 把 `mygo.App.Path(mygo.PathUserData)` 传给 `ui.Options.DataDir`；`DataDir` 为空时完全不落盘（测试、便携运行）。

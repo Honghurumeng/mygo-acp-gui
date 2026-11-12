@@ -4,11 +4,21 @@
 
 状态：已实施。本地源码在仓库根目录的 `pi-acp-main/`（被 `.gitignore` 忽略，不随主仓库提交），产物已重新打包到 `resources/agents/pi-acp/`。
 
-- bundle sha256：`b3188b02e434dd16cab37964b2a18a70d99c98e53404296271f814761fc0a6e8`
-- 体积：456 KiB
+- bundle sha256：`fa2f93c12da644f11c21d7b9965f48f4b914675df82a7be51a59b9654a0a11e6`
+- 体积：457 KiB
 - 上游基线：`@geohar/pi-acp@0.4.0`
 
 ## 1. fork 源码
+
+### `session/list` 的工作区语义
+
+上游用 `params.cwd ?? lastSessionCwd` 决定过滤条件，导致客户端省略字段或传 `null` 时都只返回当前进程工作区的会话。GUI 需要一次导入所有工作区的历史，因此改为：
+
+- `cwd` 缺失（undefined，Zed 的 `{}`）→ 仍回退到 `lastSessionCwd`，保留项目内 `/resume` 语义。
+- `cwd: null` → 明确表示“全部工作区”，不再回退。
+- `cwd: "<绝对路径>"` → 只过滤该工作区。
+
+分页仍按 50 条一页、数字 offset 游标。`listSessions()` 每页原本都会重新扫描全部会话文件（O(n²)），现在用 10 秒 TTL 的进程内缓存复用同一次扫描，GUI 拉 460 条历史从约 14 秒降到约 4 秒（含进程启动）。
 
 ### 上下文用量
 

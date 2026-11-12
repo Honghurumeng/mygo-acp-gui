@@ -162,15 +162,18 @@ func TestWorkspaceConversationPreviewAndCollapse(t *testing.T) {
 	if tt.HasText("Conversation 6") {
 		t.Fatalf("preview showed more than five conversations; texts: %q", tt.Texts())
 	}
+	if tt.HasText("Fake history") {
+		t.Fatalf("preview showed saved history beyond the limit; texts: %q", tt.Texts())
+	}
 	label := filepath.Base(base)
-	if !tt.HasText("Show 1 more") {
+	if !tt.HasText("Show 2 more") {
 		t.Fatalf("show-more affordance missing; texts: %q", tt.Texts())
 	}
 	if err := tt.Click("Show more in " + label); err != nil {
 		t.Fatal(err)
 	}
 	tt.Frame()
-	if !tt.HasText("Conversation 6") || !tt.HasText("Show less") {
+	if !tt.HasText("Conversation 6") || !tt.HasText("Fake history") || !tt.HasText("Show less") {
 		t.Fatalf("expanded list missing; texts: %q", tt.Texts())
 	}
 

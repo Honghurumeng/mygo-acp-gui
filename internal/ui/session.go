@@ -133,6 +133,12 @@ func (a *App) discover(ctx context.Context) {
 		// Second pass: read each ready agent's config options so the composer
 		// can offer provider, model and thinking without a connect.
 		a.probeAgentConfigs()
+		// Import every ready agent's saved sessions in the background. The
+		// sidebar draws from the archive, so a workspace added later in this
+		// run still shows history from agents that were never connected.
+		for _, spec := range a.Agents {
+			a.syncSavedSessionsOnce(spec.ID)
+		}
 	})
 }
 

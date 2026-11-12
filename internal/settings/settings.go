@@ -30,15 +30,17 @@ type Paths struct {
 
 // File is the on-disk settings document. Workspaces keeps every known folder
 // in sidebar order; RemovedWorkspaces holds the soft-deleted ones, which stay
-// in the list so they can be restored later.
+// in the list so they can be restored later. CollapsedWorkspaces lists the
+// groups whose session lists are folded in the sidebar.
 type File struct {
-	Version           int      `json:"version"`
-	LastAgent         string   `json:"lastAgent,omitempty"`
-	LastWorkspace     string   `json:"lastWorkspace,omitempty"`
-	Workspaces        []string `json:"workspaces,omitempty"`
-	RemovedWorkspaces []string `json:"removedWorkspaces,omitempty"`
-	MCPServers        []any    `json:"mcpServers,omitempty"`
-	Paths             Paths    `json:"paths,omitempty"`
+	Version             int      `json:"version"`
+	LastAgent           string   `json:"lastAgent,omitempty"`
+	LastWorkspace       string   `json:"lastWorkspace,omitempty"`
+	Workspaces          []string `json:"workspaces,omitempty"`
+	RemovedWorkspaces   []string `json:"removedWorkspaces,omitempty"`
+	CollapsedWorkspaces []string `json:"collapsedWorkspaces,omitempty"`
+	MCPServers          []any    `json:"mcpServers,omitempty"`
+	Paths               Paths    `json:"paths,omitempty"`
 }
 
 // Store reads and writes one settings file. A nil Store or an empty path is
@@ -137,13 +139,14 @@ func (s *Store) Save(file File) error {
 // rawFile keeps mcpServers undecoded so one malformed list does not discard
 // the other fields.
 type rawFile struct {
-	Version           int             `json:"version"`
-	LastAgent         string          `json:"lastAgent"`
-	LastWorkspace     string          `json:"lastWorkspace"`
-	Workspaces        json.RawMessage `json:"workspaces"`
-	RemovedWorkspaces json.RawMessage `json:"removedWorkspaces"`
-	MCPServers        json.RawMessage `json:"mcpServers"`
-	Paths             Paths           `json:"paths"`
+	Version             int             `json:"version"`
+	LastAgent           string          `json:"lastAgent"`
+	LastWorkspace       string          `json:"lastWorkspace"`
+	Workspaces          json.RawMessage `json:"workspaces"`
+	RemovedWorkspaces   json.RawMessage `json:"removedWorkspaces"`
+	CollapsedWorkspaces json.RawMessage `json:"collapsedWorkspaces"`
+	MCPServers          json.RawMessage `json:"mcpServers"`
+	Paths               Paths           `json:"paths"`
 }
 
 func decode(data []byte) (File, error) {
@@ -165,6 +168,7 @@ func decode(data []byte) (File, error) {
 	}
 	file.Workspaces = decodeWorkspaceList(raw.Workspaces, "workspaces", &problems)
 	file.RemovedWorkspaces = decodeWorkspaceList(raw.RemovedWorkspaces, "removedWorkspaces", &problems)
+	file.CollapsedWorkspaces = decodeWorkspaceList(raw.CollapsedWorkspaces, "collapsedWorkspaces", &problems)
 	if len(raw.MCPServers) > 0 && string(raw.MCPServers) != "null" {
 		var servers []any
 		if err := json.Unmarshal(raw.MCPServers, &servers); err != nil {

@@ -188,13 +188,8 @@ func (a *App) workspaceGroup(c *mui.Context, workspace string) {
 				mutedText(c, formatCount(total), 9)
 			}
 		})
-		tip := workspace
-		if removed {
-			tip += "\nRemoved locally; restore from the ⋯ menu."
-		}
-		head.Tooltip(tip)
 		if head.Clicked() {
-			a.WorkspaceCollapsed[workspace] = !collapsed
+			a.toggleWorkspaceCollapsed(workspace)
 		}
 
 		menu := menuTrigger(c, "Workspace actions for "+label, t.Background)
@@ -246,28 +241,32 @@ func (a *App) workspaceGroup(c *mui.Context, workspace string) {
 	}
 
 	expanded := a.WorkspaceExpanded[workspace]
-	limit := len(chats)
+	total = len(chats) + len(saved)
+	limit := total
 	if !expanded && limit > workspacePreviewLimit {
 		limit = workspacePreviewLimit
 	}
 	mui.Column(c).Gap(1).Padding(0, 0, 0, 12).Children(func() {
-		for _, chat := range chats[:limit] {
-			a.conversationRow(c, chat)
+		for i := 0; i < limit; i++ {
+			// Open conversations come first, then the workspace's saved
+			// history; the preview limit applies to the combined list.
+			if i < len(chats) {
+				a.conversationRow(c, chats[i])
+			} else {
+				a.savedSessionRow(c, saved[i-len(chats)])
+			}
 		}
-		if len(chats) > workspacePreviewLimit {
+		if total > workspacePreviewLimit {
 			if expanded {
 				if quietButton(c, "Show less").Label("Show less in " + label).FontSize(9).Clicked() {
 					a.WorkspaceExpanded[workspace] = false
 				}
 			} else {
-				more := len(chats) - workspacePreviewLimit
+				more := total - workspacePreviewLimit
 				if quietButton(c, "Show "+formatCount(more)+" more").Label("Show more in " + label).FontSize(9).Clicked() {
 					a.WorkspaceExpanded[workspace] = true
 				}
 			}
-		}
-		for _, item := range saved {
-			a.savedSessionRow(c, item)
 		}
 	})
 }
