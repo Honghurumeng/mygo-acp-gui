@@ -1,10 +1,10 @@
 # pi-acp fork 修改清单
 
-目标：fork `https://github.com/georgeharker/pi-acp`（vendored 0.4.0 的来源），让 pi 通过 ACP 发出上下文用量、单轮用量，并正确暴露当前模型的推理强度。Go 客户端不改，仍然只运行 vendored bundle，不引入运行时 npm/npx。
+目标：fork `https://github.com/georgeharker/pi-acp`（vendored 0.4.0 的来源），让 pi 通过 ACP 发出上下文用量、单轮用量，正确暴露当前模型的推理强度，并在历史回放里保留 thinking。Go 客户端不改，仍然只运行 vendored bundle，不引入运行时 npm/npx。
 
 状态：已实施。本地源码在仓库根目录的 `pi-acp-main/`（被 `.gitignore` 忽略，不随主仓库提交），产物已重新打包到 `resources/agents/pi-acp/`。
 
-- bundle sha256：`fa2f93c12da644f11c21d7b9965f48f4b914675df82a7be51a59b9654a0a11e6`
+- bundle sha256：`a947fc51138487a2ff4f4cb92d61ec73945dacb2ee8c864792bf5341cf5abd5c`
 - 体积：457 KiB
 - 上游基线：`@geohar/pi-acp@0.4.0`
 
@@ -56,6 +56,18 @@ return { stopReason, ...(usage ? { usage } : {}) }
 - 回退顺序：`get_available_thinking_levels` → `state.model.thinkingLevelMap` 中非 null 的 key → 旧版固定列表。当前值若不在列表中会补进去，避免 UI 显示空值。
 - 切模型后 `emitConfigOptionsUpdate()` 会重新调用同一套逻辑，所以 thinking 选项和当前值跟着新模型变。
 - 真实 pi 实测：默认 `deepseek-v4.1-flash` 返回 `low/high/max`、当前 `max`；切到 `opencode-go/hy4` 返回 `off/high`、当前 `high`；切到 `openai/gpt-5` 返回 `minimal/low/medium/high`、当前 `high`。
+
+### 历史回放里的 thinking
+
+上游 `loadSession` 回放 assistant 消息时只发文本块（`normalizePiAssistantText` 的注释就是 “only replay text blocks for MVP”），而 pi 把推理持久化成 `{ type: 'thinking', thinking: '…' }` 块，于是恢复历史后推理全部消失（实时流式路径本来就有 `thinking_delta → agent_thought_chunk`，不受影响）。
+
+fork 改动：
+
+- `src/acp/translate/pi-messages.ts`：新增 `normalizePiAssistantBlocks()`，把 assistant content 按顺序拆成 `{ kind: 'text' | 'thought', text }`；`normalizePiAssistantText()` 改为复用它的 text 部分。空块、`toolCall` 块、非数组 content 直接跳过。
+- `src/acp/agent.ts`（`loadSession`）：按块顺序逐条发 `agent_thought_chunk` / `agent_message_chunk`，保持“先推理后回答”的消息顺序。
+- 测试：`test/unit/pi-messages.test.ts`、`test/component/session-load-thinking.test.ts`。
+
+GUI 侧不用改：`internal/session/events.go` 已解析 `agent_thought_chunk`，`ui.replayMessage` 把同角色连续 chunk 并进同一条消息，thought 仍显示在「Thinking」折叠块里。真实会话 `session/load` 实测：5 个 thinking 块（390 字符）全部回放，文本字节与改动前一致（无重复）。
 
 ### ACP 状态文本
 

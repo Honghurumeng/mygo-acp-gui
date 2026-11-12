@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	mui "github.com/egoist/mygo/ui"
@@ -219,6 +220,12 @@ func TestSavedSessionUsesRecordedAgent(t *testing.T) {
 	})
 	if got := app.activeChat().Agent.ID; got != "other" {
 		t.Fatalf("opened with agent %q, want other", got)
+	}
+	// session/load replays reasoning as agent_thought_chunk; it must land on the
+	// same assistant row as the replayed answer rather than being dropped.
+	thought, ok := lastAssistantThought(app)
+	if !ok || !strings.Contains(thought, "Reasoning from history") {
+		t.Fatalf("replayed thought = %q (found=%v)", thought, ok)
 	}
 }
 

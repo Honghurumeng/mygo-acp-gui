@@ -27,9 +27,9 @@ resources/agents/pi-acp/
 | esbuild（仅构建期） | `0.28.2` | — |
 
 `pi-acp.bundle.mjs` 的 sha256：
-`b3188b02e434dd16cab37964b2a18a70d99c98e53404296271f814761fc0a6e8`
+`a947fc51138487a2ff4f4cb92d61ec73945dacb2ee8c864792bf5341cf5abd5c`
 
-当前 bundle 来自本地 fork（`pi-acp-main`，上游 0.4.0 + usage/推理强度补丁），不是 npm 上的原版 0.4.0；差异和重打步骤见 [pi-fork.md](pi-fork.md)。
+当前 bundle 来自本地 fork（`pi-acp-main`，上游 0.4.0 + usage/推理强度/thinking 回放补丁），不是 npm 上的原版 0.4.0；差异和重打步骤见 [pi-fork.md](pi-fork.md)。
 
 应用启动时直接执行这个文件：
 
@@ -121,6 +121,10 @@ GUI 从 Finder 启动时 PATH 往往不含 `/usr/local/bin`、`~/.npm-global/bin
 pi-acp 的 model `configOption` 来自 pi RPC `get_available_models`；`thought_level` 不再写死，而是来自 `get_available_thinking_levels`，因此选项随当前模型变化（pi 1.5+ 可能是 `low/high/max`，也可能带 `off/minimal/medium/xhigh`）。当前值来自 `get_state.thinkingLevel`。
 
 切换模型后，pi-acp 会重读模型、thinking levels 和当前 thinking level，返回新的 `configOptions`；同时用 `current_mode_update` 同步 thinking。旧 pi 没有 `get_available_thinking_levels` 时回退到 `state.model.thinkingLevelMap`，再回退到旧版固定列表。
+
+## 思考内容
+
+推理文本走 `agent_thought_chunk`：实时流由 `message_update.assistantMessageEvent.type === 'thinking_delta'` 映射，历史恢复（`session/load`）由 fork 的 `normalizePiAssistantBlocks()` 从持久化的 `{ type: 'thinking', thinking }` 块回放（上游只回放 text 块，会丢掉推理）。GUI 把它画成回答上方的「Thinking」折叠块，默认收起；两条路径用的是同一个 update 类型，所以恢复会话后的显示和刚跑完时一致。
 
 ## 用量
 

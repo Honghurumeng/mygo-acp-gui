@@ -70,7 +70,8 @@ pi-acp 的启动信息（pi 版本、Extensions、Skills 等）、重试、自�
 - 从其他工作区打开时，把存档里的 `cwd` 传给 load、加入侧栏工作区列表；路径比较解析 symlink，避免同一目录出现两个分组。
 - 存档写入是原子的（同目录临时文件 + rename，0600）。文件缺失视为空；损坏 JSON、未来版本、缺少 agentId/sessionId 或重复记录只产生侧栏警告，其余记录照常展示，不阻塞启动。
 - 历史重放事件在 `Start` 阶段缓冲，UI 安装好 Session 后调用 `Activate` 按顺序消费，避免丢失。
-- 重放中的 `user_message_chunk` 和 `agent_message_chunk` 合并成连续的用户/助手行，结束后统一标记 Done。
+- 重放中的 `user_message_chunk`、`agent_message_chunk` 和 `agent_thought_chunk` 合并成连续的用户/助手行，结束后统一标记 Done。
+- `agent_thought_chunk`（实时 `thinking_delta` 和历史回放都走这个类型）累积到当前助手行的 `Thought`，渲染为回答上方的「Thinking」折叠块，默认收起；只有推理没有正文的空行不会画出来。
 
 ## 图片
 

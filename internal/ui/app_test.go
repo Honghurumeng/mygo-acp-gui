@@ -238,6 +238,17 @@ func lastAssistantHas(app *App, want string) bool {
 	return false
 }
 
+func lastAssistantThought(app *App) (string, bool) {
+	chat := current(app)
+	for i := len(chat.Messages) - 1; i >= 0; i-- {
+		m := chat.Messages[i]
+		if m.Role == RoleAssistant {
+			return m.Thought, true
+		}
+	}
+	return "", false
+}
+
 func TestComposerEnterSends(t *testing.T) {
 	app, tt := newFakeApp(t)
 	connect(t, app, tt)

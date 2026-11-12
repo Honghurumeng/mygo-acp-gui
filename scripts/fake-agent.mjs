@@ -366,6 +366,13 @@ rl.on('line', (line) => {
       });
       sendUpdate({
         sessionId: lastSessionId,
+        update: {
+          sessionUpdate: 'agent_thought_chunk',
+          content: { type: 'text', text: 'Reasoning from history' },
+        },
+      });
+      sendUpdate({
+        sessionId: lastSessionId,
         update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Answer from history' } },
       });
       send({ jsonrpc: '2.0', id, result: sessionState() });
