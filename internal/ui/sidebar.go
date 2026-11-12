@@ -78,7 +78,6 @@ func (a *App) sidebar(c *mui.Context) {
 			})
 
 			mui.Column(c).Gap(8).Padding(0, 12, 10, 12).Grow(1).Children(func() {
-				a.newConversationButton(c)
 				mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
 					mui.Text(c, "Workspaces").FontSize(10).Bold().TextColor(t.TextMuted).Grow(1)
 					if quietButton(c, "＋").Label("Add workspace").FontSize(13).Clicked() {
@@ -95,16 +94,6 @@ func (a *App) sidebar(c *mui.Context) {
 			})
 			a.sidebarStatus(c)
 		})
-}
-
-func (a *App) newConversationButton(c *mui.Context) {
-	button := primaryButton(c, "＋  New conversation").
-		FillWidth().Height(38).Gap(6).
-		FontSize(12).Bold().
-		Label("New conversation")
-	if button.Clicked() {
-		a.newChatTabIn(a.defaultWorkspace())
-	}
 }
 
 func (a *App) savedSessionsStatus(c *mui.Context) {

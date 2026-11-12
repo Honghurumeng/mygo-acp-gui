@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -8,11 +9,12 @@ import (
 	"github.com/reed/acp-gui/internal/acp"
 )
 
-// newTab opens a draft chat from the tab strip.
+// newTab opens a draft chat from the workspace "＋" button.
 func newTab(t *testing.T, app *App, tt *mui.Tester) *Chat {
 	t.Helper()
 	tt.Frame()
-	if err := tt.Click("New conversation"); err != nil {
+	label := "New conversation in " + filepath.Base(app.defaultWorkspace())
+	if err := tt.Click(label); err != nil {
 		t.Fatal(err)
 	}
 	chat := app.activeChat()

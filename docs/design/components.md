@@ -54,7 +54,7 @@ CrychicUI 只覆盖通用外观；界面里反复出现的「小样式」放在 
 - `quietButton(c, label)`：默认按钮（「⋯」那种扁平胶囊）：`t.Background` 填充、hover/pressed 变色、无边框；
   `Cancel`、`Refresh`、菜单/弹窗里的普通动作都用它。
 - `primaryButton(c, label)`：主操作，同一形状但用 `t.Accent` 填充；窗口非激活时退回 `quietButton` 的灰底，
-  与 MyGo 自带 `PrimaryButton` 行为一致。`Send`、`Save`、`Apply`、`Commit`、`New conversation` 用它。
+  与 MyGo 自带 `PrimaryButton` 行为一致。`Send`、`Save`、`Apply`、`Commit` 用它。
 - `dangerButton(c, label)`：破坏性操作，`quietButton` 形状 + `t.Danger` 文字颜色（`Delete`、`Stop`、拒绝授权）。
 - `chipBase(c)`：composer 的模型/模式/用量/分支胶囊，与按钮同形状、无边框，padding 收紧为 `3, 8`。
 - `menuTrigger(c, label, background)`：行尾「⋯」菜单按钮；label 供无障碍与 `Tester` 使用，背景跟随所在行。
