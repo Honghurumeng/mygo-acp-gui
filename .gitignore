@@ -28,3 +28,5 @@ coverage.out
 docs/*.png
 
 # 注意：resources/agents/pi-acp/ 是 vendored bundle，必须提交，不要忽略
+
+pi-acp-main

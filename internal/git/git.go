@@ -282,6 +282,27 @@ func UnstageAll(ctx context.Context, root string) error {
 	return err
 }
 
+// DiscardAll throws away every change in the work tree: it unstages the index,
+// restores tracked files to HEAD, and deletes untracked files and directories.
+// Ignored files are kept. It is destructive and only meant for a confirmed
+// "discard everything" action.
+func DiscardAll(ctx context.Context, root string) error {
+	if _, err := run(ctx, root, nil, "reset", "-q"); err != nil {
+		return err
+	}
+	// Without a commit there is nothing in HEAD to restore: the reset above
+	// made every path untracked, so clean removes them.
+	if _, err := run(ctx, root, []string{"GIT_OPTIONAL_LOCKS=0"}, "rev-parse", "--verify", "--quiet", "HEAD"); err == nil {
+		if _, err := run(ctx, root, nil, "checkout", "--", "."); err != nil {
+			return err
+		}
+	} else if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	_, err := run(ctx, root, nil, "clean", "-fd")
+	return err
+}
+
 // Commit records the staged changes with message.
 func Commit(ctx context.Context, root, message string) error {
 	message = strings.TrimSpace(message)

@@ -496,6 +496,7 @@ func (a *App) View(c *mui.Context) {
 	})
 
 	a.gitDiffDialog(c)
+	a.gitDiscardDialog(c)
 	a.permissionDialog(c)
 	a.settingsDialog(c)
 	a.diagnosticsDialog(c)
@@ -557,6 +558,9 @@ func (a *App) headerActions(c *mui.Context, chat *Chat) {
 	gitButton.Label(gitLabel).FontSize(11)
 	if gitButton.Clicked() {
 		a.GitPanelOpen = !a.GitPanelOpen
+		if !a.GitPanelOpen {
+			a.Git.DiscardOpen = false
+		}
 	}
 	if chat == nil {
 		return

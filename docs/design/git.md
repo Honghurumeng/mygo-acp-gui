@@ -26,7 +26,8 @@
 - 解析按 NUL 分隔，文件名不经过 shell；重命名记录保留 `OrigPath` 用于提示。
 - 同一文件可以同时出现在 Staged 和 Changes（例如 `RM`）。冲突显示为 `!`，归入 Changes。
 - “Staged” 和 “Changes” 都显示状态字母、文件名和目录；目录在文件名同一行后面（灰色小字，超长截断），
-  不再另起一行。`＋` 暂存、`－` 取消暂存，标题旁提供 Stage all / Unstage all。
+  不再另起一行。`＋` 暂存、`－` 取消暂存，标题旁提供 Discard all / Unstage all / Stage all；
+  Discard all 用危险色放在 Stage all 左侧，点击先弹确认框。
 - 列表内容右侧留 10 DIP 内边距：滚动条是覆盖在内容上的 overlay，不占布局宽度，留白保证 `＋`/`－`
   和 Stage all / Unstage all 不被滚动条盖住。
 - 图表用 `git log --topo-order --all -n 80 --pretty=format:%H%x1f%P%x1f%an%x1f%s%x1f%D`，解析成 `internal/git.LogCommit`（hash、parents、author、subject、refs），由 `internal/git` 计算 lane，界面由 `internal/ui/gitgraph.go` 自绘泳道、分支/标签芯片和提交行。
@@ -56,13 +57,16 @@
 - Refresh：重新执行状态和图表读取。
 - 窗口获得焦点时自动重读状态和图表；面板关闭、正在读取或操作进行中时跳过，避免打断进行中的 Git 命令。
 - Undo：`reset --soft`，提交内容保留在暂存区，不丢文件改动。
-- 所有命令通过 `exec.Command` 直接传参数，不经过 shell；不使用 force push、reset --hard、clean 等破坏性操作。
+- Discard all：`git reset -q` 清空暂存 → 有 HEAD 时 `git checkout -- .` 恢复工作区 → `git clean -fd` 删除未跟踪文件和目录。
+  已暂存、未暂存和未跟踪的更改都会被丢掉；忽略文件保留（不用 `clean -x`）。必须先在确认框里点 `Discard`，
+  Cancel、Esc 或点遮罩外都不执行；确认框显示 staged/unstaged 数量，面板关闭或切换 workspace 时自动关闭。
+- 所有命令通过 `exec.Command` 直接传参数，不经过 shell；不使用 force push、reset --hard。
 
 ## 异步与安全
 
 - 所有 git 命令在 goroutine 中执行，结果通过 `App.Post` 回到 UI 线程。
 - 每次读取/操作带 generation 和 workspace 校验；切换会话或再次刷新后，过期结果直接丢弃。
-- 状态/图表超时 10 秒，普通操作 15 秒，Commit 30 秒，Fetch/Pull/Push 60 秒；应用退出时由 `lifeCtx` 取消。
+- 状态/图表超时 10 秒，普通操作 15 秒，Commit 与 Discard all 30 秒，Fetch/Pull/Push 60 秒；应用退出时由 `lifeCtx` 取消。
 - 环境固定 `GIT_TERMINAL_PROMPT=0`、`GIT_PAGER=cat`、`LC_ALL=C`；不弹出隐藏的凭据输入，不内嵌终端。
 - 不改写用户仓库之外的内容；面板只操作当前 workspace 所在仓库。
 
@@ -88,4 +92,4 @@ go test ./internal/git -v
 go test ./internal/ui -run 'TestGitPanel' -v -count=1
 ```
 
-`internal/git` 测试覆盖状态/重命名解析、分支头解析、init、stage/unstage、commit、首提交撤销、嵌套工作区，以及 diff 两侧（未暂存/已暂存/未跟踪/新增/删除/重命名、二进制与超大文件、越界路径）、提交日志解析、refs 解析、commit 文件列表与提交 diff 两侧（首提交/单文件/重命名/删除）、merge 的 lane 分配与 8 lane 上限、父提交必须在子提交之后；UI 测试覆盖无仓库提示与 init、无 git 提示、窗口获得焦点后刷新、Stage all + Commit 全链路、diff 预览打开与二进制报错、提交图渲染与窄面板裁剪、点击提交展开/收起文件列表、从展开列表打开提交 diff。
+`internal/git` 测试覆盖状态/重命名解析、分支头解析、init、stage/unstage、commit、首提交撤销、discard all（已暂存/未暂存/未跟踪/首提交前、忽略文件保留）、嵌套工作区，以及 diff 两侧（未暂存/已暂存/未跟踪/新增/删除/重命名、二进制与超大文件、越界路径）、提交日志解析、refs 解析、commit 文件列表与提交 diff 两侧（首提交/单文件/重命名/删除）、merge 的 lane 分配与 8 lane 上限、父提交必须在子提交之后；UI 测试覆盖无仓库提示与 init、无 git 提示、窗口获得焦点后刷新、Stage all + Commit 全链路、Discard all 确认/取消与位置、diff 预览打开与二进制报错、提交图渲染与窄面板裁剪、点击提交展开/收起文件列表、从展开列表打开提交 diff。

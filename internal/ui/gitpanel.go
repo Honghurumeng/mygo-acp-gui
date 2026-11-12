@@ -65,6 +65,9 @@ type gitPanelState struct {
 	ChangesHeight float32
 	Gen           int
 
+	// DiscardOpen asks before throwing away every change in the repository.
+	DiscardOpen bool
+
 	// Preview is the diff overlay for one changed file; PreviewGen guards
 	// a late read against a newer file or workspace.
 	PreviewOpen   bool
@@ -263,7 +266,7 @@ func gitTimeoutFor(label string) time.Duration {
 	switch label {
 	case "Fetch", "Pull", "Push":
 		return gitNetworkTimeout
-	case "Commit":
+	case "Commit", "Discard all":
 		return gitCommitTimeout
 	default:
 		return gitActionTimeout
@@ -284,6 +287,8 @@ func gitNoticeFor(label string) string {
 		return "Pushed."
 	case "Undo last commit":
 		return "Last commit undone; changes stay staged."
+	case "Discard all":
+		return "Discarded all changes."
 	default:
 		return ""
 	}
@@ -513,10 +518,15 @@ func (a *App) gitChanges(c *mui.Context) {
 			// Leave room for the overlay scrollbar so it never covers the
 			// stage/unstage button of a row.
 			mui.Column(c).Gap(3).Padding(0, 10, 0, 0).Children(func() {
-				a.gitSectionHeader(c, "Staged", len(staged), "Unstage all", len(staged) > 0, func() {
-					a.runGitAction("Unstage all", true, func(ctx context.Context, root string) error {
-						return git.UnstageAll(ctx, root)
-					})
+				a.gitSectionHeader(c, "Staged", len(staged), gitSectionAction{
+					label: "Unstage all",
+					tip:   "Unstage all files in this section",
+					show:  len(staged) > 0,
+					fn: func() {
+						a.runGitAction("Unstage all", true, func(ctx context.Context, root string) error {
+							return git.UnstageAll(ctx, root)
+						})
+					},
 				})
 				if len(staged) == 0 {
 					caption(c, "No staged changes")
@@ -527,11 +537,25 @@ func (a *App) gitChanges(c *mui.Context) {
 				}
 
 				mui.Box(c).Height(6)
-				a.gitSectionHeader(c, "Changes", len(changes), "Stage all", len(changes) > 0, func() {
-					a.runGitAction("Stage all", true, func(ctx context.Context, root string) error {
-						return git.StageAll(ctx, root)
-					})
-				})
+				a.gitSectionHeader(c, "Changes", len(changes),
+					gitSectionAction{
+						label:  "Discard all",
+						tip:    "Discard every staged and unstaged change; asks first",
+						danger: true,
+						show:   len(staged) > 0 || len(changes) > 0,
+						fn:     func() { a.Git.DiscardOpen = true },
+					},
+					gitSectionAction{
+						label: "Stage all",
+						tip:   "Stage all files in this section",
+						show:  len(changes) > 0,
+						fn: func() {
+							a.runGitAction("Stage all", true, func(ctx context.Context, root string) error {
+								return git.StageAll(ctx, root)
+							})
+						},
+					},
+				)
 				if len(changes) == 0 {
 					caption(c, "No changes")
 				} else {
@@ -544,18 +568,37 @@ func (a *App) gitChanges(c *mui.Context) {
 	})
 }
 
-func (a *App) gitSectionHeader(c *mui.Context, title string, count int, action string, showAction bool, fn func()) {
+// gitSectionAction is one button in a section header. A danger action uses the
+// destructive text color; show hides the button while it has nothing to act on.
+type gitSectionAction struct {
+	label  string
+	tip    string
+	danger bool
+	show   bool
+	fn     func()
+}
+
+func (a *App) gitSectionHeader(c *mui.Context, title string, count int, actions ...gitSectionAction) {
 	busy := a.Git.Busy != "" || a.Git.Loading
 	mui.Row(c).Gap(4).AlignItems(mui.Center).Children(func() {
 		sectionLabel(c, title)
 		mutedText(c, strconv.Itoa(count), 8)
 		mui.Spacer(c)
-		if showAction {
-			button := quietButton(c, action).FontSize(8)
+		for _, action := range actions {
+			if !action.show {
+				continue
+			}
+			var button mui.Element
+			if action.danger {
+				button = dangerButton(c, action.label)
+			} else {
+				button = quietButton(c, action.label)
+			}
+			button.FontSize(8)
 			button.Disabled(busy)
-			button.Tooltip(action + " files in this section")
+			button.Tooltip(action.tip)
 			if button.Clicked() && !busy {
-				fn()
+				action.fn()
 			}
 		}
 	})
@@ -787,6 +830,41 @@ func (a *App) gitGraph(c *mui.Context) {
 			a.gitGraphBody(c)
 		})
 	})
+}
+
+// gitDiscardDialog confirms discarding every change in the repository before
+// the destructive git command runs.
+func (a *App) gitDiscardDialog(c *mui.Context) {
+	if !a.Git.DiscardOpen {
+		return
+	}
+	if a.Git.Workspace == "" || a.Git.Workspace != a.activeGitWorkspace() {
+		a.Git.DiscardOpen = false
+		return
+	}
+	t := c.Theme()
+	busy := a.Git.Busy != "" || a.Git.Loading
+	confirm := false
+	mui.Modal(c, &a.Git.DiscardOpen, func() {
+		mui.Column(c).Gap(10).Width(380).Children(func() {
+			mui.Text(c, "Discard all changes?").FontSize(16).Bold()
+			mui.Text(c, "Tracked files go back to the last commit, and untracked files and folders are deleted. Ignored files stay. This cannot be undone.").
+				FontSize(11).TextColor(t.TextMuted)
+			mutedText(c, fmt.Sprintf("%d staged · %d unstaged", len(a.Git.Staged), len(a.Git.Changes)), 10)
+			mui.Row(c).Gap(8).Justify(mui.End).Children(func() {
+				if quietButton(c, "Cancel").Clicked() {
+					a.Git.DiscardOpen = false
+				}
+				if dangerButton(c, "Discard").Disabled(busy).Clicked() {
+					confirm = true
+					a.Git.DiscardOpen = false
+				}
+			})
+		})
+	})
+	if confirm {
+		a.runGitAction("Discard all", true, git.DiscardAll)
+	}
 }
 
 // gitDiffView holds one preview's buffers; they are rebuilt when the sides

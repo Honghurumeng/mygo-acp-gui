@@ -171,6 +171,66 @@ func TestGitPanelStagesAndCommits(t *testing.T) {
 	}
 }
 
+func TestGitPanelDiscardsAllChangesAfterConfirm(t *testing.T) {
+	workspace := initGitPanelRepo(t)
+	writeGitPanelFile(t, workspace, "hello.txt", "one\n")
+	runGitPanelCommand(t, workspace, "add", ".")
+	runGitPanelCommand(t, workspace, "commit", "-q", "-m", "first")
+	writeGitPanelFile(t, workspace, "hello.txt", "two\n")
+	writeGitPanelFile(t, workspace, "new.txt", "new\n")
+
+	app, tt := newGitPanelApp(t, workspace)
+	waitFor(t, app, tt, func() bool {
+		return app.Git.Checked && !app.Git.Loading && len(app.Git.Changes) == 2
+	})
+	discard, ok := tt.Find("Discard all")
+	stage, staged := tt.Find("Stage all")
+	if !ok || !staged {
+		t.Fatalf("section actions missing; texts: %q", tt.Texts())
+	}
+	if discard.X >= stage.X {
+		t.Fatalf("Discard all at %v is not left of Stage all at %v", discard, stage)
+	}
+
+	// The button asks first, and cancelling keeps every change.
+	if err := tt.Click("Discard all"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if !app.Git.DiscardOpen || !tt.HasText("Discard all changes?") {
+		t.Fatalf("confirmation missing; open = %v, texts = %q", app.Git.DiscardOpen, tt.Texts())
+	}
+	if err := tt.Click("Cancel"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if app.Git.DiscardOpen || len(app.Git.Changes) != 2 {
+		t.Fatalf("cancel kept the dialog or discarded changes: open = %v, changes = %d", app.Git.DiscardOpen, len(app.Git.Changes))
+	}
+
+	if err := tt.Click("Discard all"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if err := tt.Click("Discard"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		return !app.Git.DiscardOpen && app.Git.Busy == "" && !app.Git.Loading &&
+			len(app.Git.Staged) == 0 && len(app.Git.Changes) == 0
+	})
+	data, err := os.ReadFile(filepath.Join(workspace, "hello.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "one\n" {
+		t.Errorf("tracked file = %q, want the committed contents", data)
+	}
+	if _, err := os.Stat(filepath.Join(workspace, "new.txt")); !os.IsNotExist(err) {
+		t.Errorf("untracked file survived the discard (err = %v)", err)
+	}
+}
+
 func TestGitGraphShowsOneShortRefAndHash(t *testing.T) {
 	commit := git.LogCommit{
 		Hash: "0123456789abcdef",

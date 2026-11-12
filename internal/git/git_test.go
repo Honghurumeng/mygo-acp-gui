@@ -96,6 +96,97 @@ func TestLoadStatusGraphAndActions(t *testing.T) {
 	}
 }
 
+func TestDiscardAllClearsWorkTree(t *testing.T) {
+	if !Available() {
+		t.Skip("git not installed")
+	}
+	dir := initRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("ignored.log\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tracked := filepath.Join(dir, "tracked.txt")
+	if err := os.WriteFile(tracked, []byte("one\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runTestGit(t, dir, "add", ".")
+	runTestGit(t, dir, "commit", "-qm", "first")
+
+	// A staged edit on top of an unstaged one, an untracked file, an untracked
+	// folder, and an ignored file that must survive.
+	if err := os.WriteFile(tracked, []byte("two\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runTestGit(t, dir, "add", "tracked.txt")
+	if err := os.WriteFile(tracked, []byte("three\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "new.txt"), []byte("new\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	scratch := filepath.Join(dir, "scratch", "nested")
+	if err := os.MkdirAll(scratch, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(scratch, "x.txt"), []byte("x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "ignored.log"), []byte("keep\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := DiscardAll(context.Background(), dir); err != nil {
+		t.Fatal(err)
+	}
+	state, err := Load(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Staged()) != 0 || len(state.Changes()) != 0 {
+		t.Fatalf("after discard staged = %+v, changes = %+v", state.Staged(), state.Changes())
+	}
+	data, err := os.ReadFile(tracked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "one\n" {
+		t.Errorf("tracked file = %q, want the committed contents", data)
+	}
+	for _, gone := range []string{"new.txt", "scratch"} {
+		if _, err := os.Stat(filepath.Join(dir, gone)); !os.IsNotExist(err) {
+			t.Errorf("%s survived the discard (err = %v)", gone, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "ignored.log")); err != nil {
+		t.Errorf("ignored file was removed: %v", err)
+	}
+}
+
+func TestDiscardAllBeforeFirstCommit(t *testing.T) {
+	if !Available() {
+		t.Skip("git not installed")
+	}
+	dir := initRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "first.txt"), []byte("first\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := StageAll(context.Background(), dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := DiscardAll(context.Background(), dir); err != nil {
+		t.Fatal(err)
+	}
+	state, err := Load(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Staged()) != 0 || len(state.Changes()) != 0 {
+		t.Fatalf("after discard staged = %+v, changes = %+v", state.Staged(), state.Changes())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "first.txt")); !os.IsNotExist(err) {
+		t.Errorf("staged file survived the discard (err = %v)", err)
+	}
+}
+
 func TestLoadNestedWorkspaceAndRename(t *testing.T) {
 	if !Available() {
 		t.Skip("git not installed")
