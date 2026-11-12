@@ -286,6 +286,57 @@ func TestWorkspaceSyncImportsOnlyThatWorkspace(t *testing.T) {
 	}
 }
 
+func TestLoadArchiveCleansAttachmentPathTitles(t *testing.T) {
+	store := archive.Open(filepath.Join(t.TempDir(), archiveFileName))
+	err := store.Save(archive.File{
+		Version: archive.CurrentVersion,
+		Sessions: []archive.Session{
+			{
+				AgentID:   "pi",
+				SessionID: "path-and-text",
+				Cwd:       "/work/mine",
+				Title:     "/var/folders/a/one.png 看看这个项目",
+				Show:      true,
+			},
+			{
+				AgentID:   "pi",
+				SessionID: "path-only",
+				Cwd:       "/work/mine",
+				Title:     "/var/folders/a/two.png",
+				Show:      true,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	app := &App{
+		Workspace:  "/work/mine",
+		Workspaces: []string{"/work/mine"},
+		archive:    store,
+	}
+	app.loadArchive()
+
+	if got := app.Archived[0].Title; got != "看看这个项目" {
+		t.Errorf("path + text title = %q", got)
+	}
+	if got := app.Archived[1].Title; got != imageSessionTitle {
+		t.Errorf("path-only title = %q", got)
+	}
+	if got := savedSessionTitle(app.SavedSessions[0]); got != "看看这个项目" {
+		t.Errorf("sidebar title = %q", got)
+	}
+
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Sessions[0].Title != "看看这个项目" || loaded.Sessions[1].Title != imageSessionTitle {
+		t.Errorf("cleaned titles were not persisted: %+v", loaded.Sessions)
+	}
+}
+
 func TestLoadArchiveDoesNotAddWorkspaces(t *testing.T) {
 	store := archive.Open(filepath.Join(t.TempDir(), archiveFileName))
 	err := store.Save(archive.File{

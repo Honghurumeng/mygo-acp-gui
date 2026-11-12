@@ -4,8 +4,8 @@
 
 状态：已实施。本地源码在仓库根目录的 `pi-acp-main/`（被 `.gitignore` 忽略，不随主仓库提交），产物已重新打包到 `resources/agents/pi-acp/`。
 
-- bundle sha256：`a947fc51138487a2ff4f4cb92d61ec73945dacb2ee8c864792bf5341cf5abd5c`
-- 体积：457 KiB
+- bundle sha256：`98a68b601338fef7addc599cd778bed30c481fe1e82cbbac14274c946755702f`
+- 体积：459 KiB
 - 上游基线：`@geohar/pi-acp@0.4.0`
 
 ## 1. fork 源码
@@ -19,6 +19,19 @@
 - `cwd: "<绝对路径>"` → 只过滤该工作区。
 
 分页仍按 50 条一页、数字 offset 游标。`listSessions()` 每页原本都会重新扫描全部会话文件（O(n²)），现在用 10 秒 TTL 的进程内缓存复用同一次扫描，GUI 拉 460 条历史从约 14 秒降到约 4 秒（含进程启动）。
+
+### 会话标题
+
+pi 没有自动起名：JSONL 里的 `session_info` 只在用户显式命名（`/name`、`pi --name`）时出现，`session/list` 的标题是读取时用首条 user 消息算出的兜底值，不是事件。带图片的 prompt 会被 pi 写成 `<临时图片路径> <正文>`，兜底标题因此变成 `/var/folders/.../pi-clipboard-....png`；GUI 只能等下次 `session/list` 同步才更新本地存档。
+
+fork 改动：
+
+- 新增 `src/acp/fallback-title.ts`：去掉开头的附件路径（要求绝对路径、至少两个斜杠，避免误伤 `/name` 和 URL），保留后面的正文；只有路径时返回 `[Image]`；标题按 80 个 Unicode code point 截断。
+- `src/acp/pi-sessions.ts` 的 `pickFallbackTitleFromHead()` 改用 `fallbackTitleFromContent()`，同时识别 content 里的 `image` 块。
+- `src/acp/session.ts` 新增 `announceFallbackTitle()`：仅新建会话（`newSession`）启用；首次 `session/prompt` 前用 `get_state.sessionName` 判断是否已有显式名字，没有就合成一条 `session_info_update`（标题来自 ACP prompt 文本，不含 pi 注入的图片路径）。恢复的会话不合成，避免用「继续」覆盖原有的首条消息标题。`get_state` 失败时下次 prompt 重试；已有显式名字时绝不覆盖。
+- 测试：`test/unit/fallback-title.test.ts`、`test/unit/session-title-update.test.ts`。
+
+GUI 侧收到 `session_info_update.title` 后会走 `applyUpdate → setArchivedTitle` 直接写 `sessions.json`；启动读存档时也会清洗旧版本留下的路径标题（见 `internal/ui/title.go`）。
 
 ### 上下文用量
 

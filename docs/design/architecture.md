@@ -173,7 +173,7 @@ logs/                每个 agent 的 stderr / 协议日志（1 MiB 滚动，保
 - 路径优先级：`ACP_GUI_*` 环境变量 > `settings.json` 的 `paths` > 登录 shell 解析。显式覆盖无效时保留 shell 结果并警告，不会把可用的路径清空。
 - 保存最后一次状态（当前会话的 agent/工作区/MCP）、侧栏工作区列表和每个工作区的折叠状态；不保存会话布局、图片草稿或消息。
 - 会话索引单独放在 `sessions.json`，由 `internal/archive` 读写：`{version, sessions:[{agentId,sessionId,cwd,title,showName,createdAt,updatedAt,show}]}`。`(agentId, sessionId)` 唯一；`show=false` 是软删除，`showName` 是本地重命名。
-- 存档写入时机：session/new、load 成功，标题/轮次更新，重命名、删除/恢复。启动只读存档，且不会从存档补建 workspace；discovery 完成后，每个 ready agent 在后台自动调一次 `session/list` 合并（`cwd: null` 表示全部工作区并走完分页；有已连接进程时复用，否则临时 spawn；失败下次连接重试），之后该 agent 连接成功时再补一次。合并只保留 cwd 属于已添加 workspace 的会话，且绝不覆盖 `show/showName`。新增 workspace 时按该 cwd 过滤同步一次。文件为原子写入、0600；损坏 JSON 只在侧栏提示，不阻塞启动。
+- 存档写入时机：session/new、load 成功，标题/轮次更新，重命名、删除/恢复。启动只读存档，且不会从存档补建 workspace；discovery 完成后，每个 ready agent 在后台自动调一次 `session/list` 合并（`cwd: null` 表示全部工作区并走完分页；有已连接进程时复用，否则临时 spawn；失败下次连接重试），之后该 agent 连接成功时再补一次。合并只保留 cwd 属于已添加 workspace 的会话，且绝不覆盖 `show/showName`。`session_info_update.title` 会立即写入存档；启动读存档时会把旧版本用首条 user 消息生成的图片临时路径标题清洗成正文或 `[Image]`（`internal/ui/title.go`），避免侧栏先显示路径再等同步。新增 workspace 时按该 cwd 过滤同步一次。文件为原子写入、0600；损坏 JSON 只在侧栏提示，不阻塞启动。
 - 不存 registry 快照，也不缓存探测结果：启动时重新检测。
 
 `main.go` 把 `mygo.App.Path(mygo.PathUserData)` 传给 `ui.Options.DataDir`；`DataDir` 为空时完全不落盘（测试、便携运行）。

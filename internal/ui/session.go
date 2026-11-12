@@ -793,7 +793,9 @@ func (a *App) newSession() {
 				return
 			}
 			chat.Info = info
-			chat.Title = info.Title
+			if title := cleanSessionTitle(info.Title); title != "" {
+				chat.Title = title
+			}
 			a.cacheAgentConfigs(chat.Agent.ID, info.ConfigOptions)
 			a.rememberArchivedSession(chat)
 		})
@@ -880,8 +882,8 @@ func (a *App) loadHistory(sessionID, title, cwd string) {
 				a.ensureWorkspace(workspace)
 				a.WorkspaceCollapsed[workspace] = false
 			}
-			if newInfo.Title != "" {
-				chat.Title = newInfo.Title
+			if loadedTitle := cleanSessionTitle(newInfo.Title); loadedTitle != "" {
+				chat.Title = loadedTitle
 			} else if title != "" {
 				chat.Title = title
 			}
@@ -953,13 +955,13 @@ func (a *App) applyUpdate(chat *Chat, ev session.Event) {
 		chat.ConfigBusy = ""
 		return
 	case session.UpdateSessionInfo:
-		if ev.Title != "" {
-			chat.Info.Title = ev.Title
-			a.setArchivedTitle(chat, ev.Title)
+		if title := cleanSessionTitle(ev.Title); title != "" {
+			chat.Info.Title = title
+			a.setArchivedTitle(chat, title)
 			if name := a.archivedShowName(chat.Agent.ID, chat.Info.SessionID); name != "" {
 				chat.Title = name
 			} else {
-				chat.Title = ev.Title
+				chat.Title = title
 			}
 		}
 		return

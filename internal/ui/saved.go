@@ -356,7 +356,7 @@ func (a *App) savedSessionRow(c *mui.Context, item savedSession) {
 func savedSessionTitle(item savedSession) string {
 	title := strings.TrimSpace(item.ShowName)
 	if title == "" {
-		title = strings.TrimSpace(item.Title)
+		title = cleanSessionTitle(item.Title)
 	}
 	if title == "" {
 		title = truncate(strings.TrimSpace(item.SessionID), 24)

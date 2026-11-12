@@ -32,7 +32,26 @@ func (a *App) loadArchive() {
 		a.SavedError = err.Error()
 	}
 	a.Archived = append([]archive.Session(nil), file.Sessions...)
+	if a.sanitizeArchiveTitles() {
+		a.saveArchive()
+	}
 	a.syncArchiveRows()
+}
+
+// sanitizeArchiveTitles rewrites titles saved by older versions that used the
+// first user message verbatim. Those sessions are often just a clipboard
+// image path, which would otherwise flash in the sidebar before session/list
+// replaces it. It reports whether the archive changed.
+func (a *App) sanitizeArchiveTitles() bool {
+	changed := false
+	for i := range a.Archived {
+		cleaned := cleanSessionTitle(a.Archived[i].Title)
+		if cleaned != strings.TrimSpace(a.Archived[i].Title) {
+			a.Archived[i].Title = cleaned
+			changed = true
+		}
+	}
+	return changed
 }
 
 // syncArchiveRows rebuilds the sidebar rows from the local archive. It is the
@@ -48,7 +67,7 @@ func (a *App) syncArchiveRows() {
 			SessionSummary: acp.SessionSummary{
 				SessionID: record.SessionID,
 				Cwd:       cwd,
-				Title:     strings.TrimSpace(record.Title),
+				Title:     cleanSessionTitle(record.Title),
 				UpdatedAt: strings.TrimSpace(record.UpdatedAt),
 			},
 			AgentID:   strings.TrimSpace(record.AgentID),
@@ -119,6 +138,7 @@ func (a *App) rememberArchivedSession(chat *Chat) {
 	if title == "" && agentID != "" && sessionID != "" && a.archiveIndex(agentID, sessionID) < 0 {
 		title = strings.TrimSpace(chat.Title)
 	}
+	title = cleanSessionTitle(title)
 	a.activateArchivedSession(agentID, sessionID, chat.Workspace, title)
 }
 
@@ -130,7 +150,7 @@ func (a *App) activateArchivedSession(agentID, sessionID, cwd, title string) {
 	}
 	now := archiveNow()
 	cwd = cleanArchivePath(cwd)
-	title = strings.TrimSpace(title)
+	title = cleanSessionTitle(title)
 	if index := a.archiveIndex(agentID, sessionID); index >= 0 {
 		record := &a.Archived[index]
 		if cwd != "" {
@@ -180,14 +200,16 @@ func (a *App) mergeArchivedSessions(agentID string, sessions []acp.SessionSummar
 		if cwd != "" && !a.workspaceKnown(cwd) {
 			continue
 		}
-		title := strings.TrimSpace(item.Title)
+		title := cleanSessionTitle(item.Title)
 		updatedAt := strings.TrimSpace(item.UpdatedAt)
 		if index := a.archiveIndex(agentID, sessionID); index >= 0 {
 			record := &a.Archived[index]
 			if cwd != "" {
 				record.Cwd = cwd
 			}
-			if title != "" {
+			// An attachment-only fallback must not replace a more specific
+			// title an earlier sync or this app already stored.
+			if title != "" && !(title == imageSessionTitle && record.Title != "" && record.Title != imageSessionTitle) {
 				record.Title = title
 			}
 			if updatedAt != "" {
@@ -238,7 +260,7 @@ func (a *App) touchArchivedSession(chat *Chat) {
 			AgentID:   agentID,
 			SessionID: sessionID,
 			Cwd:       cleanArchivePath(chat.Workspace),
-			Title:     strings.TrimSpace(chat.Info.Title),
+			Title:     cleanSessionTitle(chat.Info.Title),
 			CreatedAt: now,
 			UpdatedAt: now,
 			Show:      true,
@@ -258,7 +280,7 @@ func (a *App) setArchivedTitle(chat *Chat, title string) {
 	if chat == nil {
 		return
 	}
-	title = strings.TrimSpace(title)
+	title = cleanSessionTitle(title)
 	if title == "" {
 		return
 	}

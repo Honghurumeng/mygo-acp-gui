@@ -59,6 +59,8 @@ pi-acp 的启动信息（pi 版本、Extensions、Skills 等）、重试、自�
 
 记录结构：`{agentId, sessionId, cwd, title, showName, createdAt, updatedAt, show}`；`(agentId, sessionId)` 唯一，这样不同 agent 的相同 session ID 不会互相覆盖。
 
+- 标题清洗：agent 常拿首条 user 消息当兜底标题；带图片的 prompt 会以图片临时路径开头（例如 `/var/folders/.../pi-clipboard-....png`）。`internal/ui/title.go` 去掉开头的绝对路径、保留后面的正文，只有路径时显示 `[Image]`；读存档、合并 `session/list`、接收 `session_info_update` 时都会清洗，旧存档里的路径标题在启动时改写回 `sessions.json`。
+
 - 启动时先读存档并立即按 `cwd` 分组展示，不等 agent 发现，也不自动调 `session/list`。已打开会话不重复显示。
 - session/new / load 成功、标题更新和一轮结束后，自动把 session ID、agent、cwd、agent title 和 `updatedAt` 写进存档；不覆盖 `show/showName`。
 - App 不在本地保存消息正文，右侧历史只能由 agent 重放。点击存档行按记录中的 `agentId` 启动/复用对应 agent，并执行 `session/load` 重放历史；当前会话已有消息、流式、目标 agent 与当前进程不同，或 `cwd` 与当前进程工作区不同时，在新标签页用该会话的 `cwd` 新建进程（Command Code 的 ACP 进程只服务启动时的工作区）。
@@ -66,7 +68,7 @@ pi-acp 的启动信息（pi 版本、Extensions、Skills 等）、重试、自�
 - 默认不显示 `show=false` 的行；侧栏 “Show deleted (N)” 展开，`⋯` → Restore 恢复。
 - discovery 完成后，每个 ready agent 会在后台自动拉一次 `session/list` 合并进存档；即使从未连接过该 agent，新增工作区也能看到它的历史。之后该 agent 首次连接成功时再同步一次，用来重试启动时失败的导入。请求显式发送 `cwd: null`（不是省略字段）表示全部工作区，并跟随 `nextCursor` 取完所有分页；否则 pi-acp 会回退到当前进程工作区，只导入一个工作区的历史。有该 agent 的已连接进程（后台标签页也算）时直接复用，否则临时 spawn 一次。同步失败（超时、进程退出）会清除该 agent 的已同步标记，下次连接重试。
 - 导入只保留 `cwd` 属于已添加 workspace 的会话；其他项目的记录直接丢弃。导入和启动读存档都不会自动新增 workspace 分组，分组只来自用户显式添加、打开会话或选择目录。用户新增 workspace 时，对该目录按 `cwd` 过滤再同步一次，让已有历史立即出现。
-- 合并只补 `cwd/title/updatedAt` 和新记录，不改变 `show/showName`，所以已删除/已重命名的会话不会在同步后复活或改名。
+- 合并只补 `cwd/title/updatedAt` 和新记录，不改变 `show/showName`，所以已删除/已重命名的会话不会在同步后复活或改名。合并不会用 `[Image]` 这种纯图片兜底覆盖已有的更具体标题。
 - 从其他工作区打开时，把存档里的 `cwd` 传给 load、加入侧栏工作区列表；路径比较解析 symlink，避免同一目录出现两个分组。
 - 存档写入是原子的（同目录临时文件 + rename，0600）。文件缺失视为空；损坏 JSON、未来版本、缺少 agentId/sessionId 或重复记录只产生侧栏警告，其余记录照常展示，不阻塞启动。
 - 历史重放事件在 `Start` 阶段缓冲，UI 安装好 Session 后调用 `Activate` 按顺序消费，避免丢失。
@@ -133,7 +135,7 @@ pi-acp 的启动信息（pi 版本、Extensions、Skills 等）、重试、自�
 ## 计划、标题与用量
 
 - `plan` → composer 上方的可折叠计划列表，显示状态。
-- `session_info_update.title` → 标题显示在顶部会话栏和侧栏会话项。
+- `session_info_update.title` → 标题显示在顶部会话栏和侧栏会话项。收到后立即写 `sessions.json`；pi-acp fork 在首次 prompt 用用户正文合成一条兜底标题，command-code 在首轮后生成标题，用户手动 rename 写入 `showName` 并始终优先。
 - `usage_update` → composer 中的环形进度 + 百分比（有用量但四舍五入为 0 时显示 `<1%`）；hover 显示 used/size、百分比和费用。agent 不发时没有上下文数字；ACP 没有主动查询的方法。
 - prompt 结果里的 `usage` 解析为 `acp.PromptUsage`，显示为 `turn 1.2k in · 100 out · 40 thought`（只在 agent 返回时出现），与 `context` 分开；`_meta` 保留在 `acp.PromptResult`，不展示明细。
 - 当前 command-code 和 vendored pi-acp fork（0.4.0 + usage 补丁）都会发 `usage_update` 并返回 prompt `usage`；上游 npm `@geohar/pi-acp@0.4.0` 没有这两处映射（见 [pi.md](pi.md#用量)）。
