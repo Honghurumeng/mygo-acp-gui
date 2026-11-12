@@ -591,6 +591,7 @@ func (a *App) resetConversation(chat *Chat) {
 	chat.ModelOpen = false
 	chat.ModeOpen = false
 	chat.MenuOpen = false
+	chat.JumpOpen = false
 	chat.ModelProvider = ""
 }
 

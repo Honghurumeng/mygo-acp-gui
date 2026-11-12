@@ -13,7 +13,7 @@ MyGo 原生窗口 (Go + ui)
   ├─ 左侧工作区/会话栏（每个会话一个 agent 进程 + ACP session）
   ├─ 顶部会话标题栏 + MCP/诊断操作
   ├─ 消息区 + 可拖动高度的 composer
-  ├─ composer 底栏：附件、git 分支、mode、上下文环、agent/model/thinking、发送
+  ├─ composer 底栏：附件、Jump、git 分支、mode、上下文环、agent/model/thinking、发送
   ├─ 右侧 Git 面板（可折叠）：提交、暂存/更改、分支图与 fetch/pull/push
   ├─ ui/markdown.Stream / View      ← agent_message_chunk
   ├─ ui.List(FollowEnd)             ← 消息列表

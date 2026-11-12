@@ -57,11 +57,13 @@ type Chat struct {
 	// ComposerHeight is the draggable height of the composer card.
 	ComposerHeight float32
 	// ModelOpen, ModeOpen and MenuOpen are the popovers of the composer and
-	// the sidebar; the view closes them when the chat is left.
+	// the sidebar; JumpOpen is the jump-to-message modal. The view closes
+	// them when the chat is left.
 	ModelOpen     bool
 	ModelProvider string
 	ModeOpen      bool
 	MenuOpen      bool
+	JumpOpen      bool
 
 	// PendingConfig holds config choices made while this chat is still a
 	// draft: the composer shows the discovery cache, and Connect applies the
@@ -87,6 +89,9 @@ type Chat struct {
 
 	turn *turnState
 	list mui.ListState
+	// jumpScroll keeps the place of the jump-to-message list. It opens at
+	// its end so the newest prompt shows first.
+	jumpScroll mui.ScrollState
 
 	connectMu     sync.Mutex
 	connectGen    int
@@ -360,6 +365,7 @@ func (a *App) selectChat(chat *Chat) {
 		previous.ModelOpen = false
 		previous.ModeOpen = false
 		previous.MenuOpen = false
+		previous.JumpOpen = false
 	}
 	a.Active = index
 	chat.Unread = false
@@ -367,6 +373,7 @@ func (a *App) selectChat(chat *Chat) {
 	chat.ModelOpen = false
 	chat.ModeOpen = false
 	chat.MenuOpen = false
+	chat.JumpOpen = false
 	a.AgentIndex = a.agentIndex(chat.Agent.ID)
 	a.Workspace = chat.Workspace
 	a.ensureWorkspace(chat.Workspace)

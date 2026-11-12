@@ -69,6 +69,8 @@ func (a *App) composer(c *mui.Context) {
 					a.chooseImages()
 				}
 
+				a.jumpButton(c, chat)
+
 				if branch := chat.gitBranch(); branch != "" {
 					chip := chipBase(c)
 					chip.Children(func() {

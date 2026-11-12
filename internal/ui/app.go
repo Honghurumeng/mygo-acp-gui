@@ -499,6 +499,9 @@ func (a *App) View(c *mui.Context) {
 
 	a.gitDiffDialog(c)
 	a.gitDiscardDialog(c)
+	if chat != nil {
+		a.jumpDialog(c, chat)
+	}
 	a.permissionDialog(c)
 	a.settingsDialog(c)
 	a.diagnosticsDialog(c)
