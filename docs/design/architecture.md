@@ -18,7 +18,7 @@ MyGo 原生窗口 (Go + ui)
   ├─ ui/markdown.Stream / View      ← agent_message_chunk
   ├─ ui.List(FollowEnd)             ← 消息列表
   ├─ ui.Collapsible                 ← thought / tool_call
-  ├─ ui.Popover                     ← 模型/provider/thinking、mode、会话操作
+  ├─ ui.Popover / PopoverBase       ← 模型/provider/thinking、mode、会话操作
   └─ ACP client (Go)
         ↕ newline-delimited JSON-RPC 2.0 (stdin/stdout)
      agent 子进程（pi-acp、command-code）
@@ -141,7 +141,7 @@ pi 自己的工具在工作区内读写执行；客户端只负责展示和审�
 - 思考/工具：`ui.Collapsible`；工具卡片用 `ui.CollapsibleBase` 做成整卡可点击：默认折叠，标题（指令）单行省略，展开后显示完整指令与入参/输出，再次点击重新折叠。
 - 权限：`session/request_permission` 回调阻塞，CrychicUI `overlay.Modal` 展示工具名、入参和 agent 给出的 `options`；按钮直接回 `optionId`，关闭/取消回 `cancelled`。
 - 通用外观取自 CrychicUI（按钮、弹窗、空状态、代码块），业务渲染仍是本仓库的 `internal/ui`；版本与替换范围见 [components.md](components.md)。
-- 配置：`ui.Popover` 的模型面板按 agent → provider → model → thinking 选择；模型/思考来自 `configOptions`，mode 来自 `modes`，不硬编码。agent 只在会话开始前可选。
+- 配置：模型面板按 agent → provider → model → thinking 选择；模型/思考来自 `configOptions`，mode 来自 `modes`，不硬编码。agent 只在会话开始前可选。
 - 输入：`ui.TextAreaBase` 嵌在可拖动高度的 composer 卡片中；Enter 发送、Shift+Enter 换行；流式期间 Send 切换为 Stop；支持图片附件。
 - 多会话：左侧栏按 workspace 分组，先显示打开会话，再显示该目录的已保存会话；打开会话显示标题/流式/未读/权限提醒，超过 5 条折叠，可展开、重命名、删除。会话名前的内联图标标明 agent（pi 的方块 mark、Command Code 的 # 徽标，`internal/ui/agenticons.go`，随主题变色）；已保存会话用存档里的 `agentId` 画同一个图标，标题栏也用同一图标标当前会话。工作区头部 `⋯` 可移除该分组（软删除，只隐藏不删记录/会话），移除项通过 “Show removed (N)” 查看并从同一菜单恢复。侧栏 `New conversation` 新建独立进程；连接在首条消息或打开存档时自动发生。
 - 权限：全局模态但带 `Chat: …` 标签，后台请求排队；回答按所属 `Chat` 路由，侧栏 `!` 提醒未答请求。

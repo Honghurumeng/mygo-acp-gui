@@ -197,7 +197,19 @@ func (a *App) modelChip(c *mui.Context, chat *Chat) {
 			a.refreshAgentConfig(chat)
 		}
 	}
-	mui.Popover(c, chip, &chat.ModelOpen, func() {
+	mui.PopoverBase(c, chip, &chat.ModelOpen, func(panel mui.Element) {
+		t := c.Theme()
+		// Style the panel as Popover does, then line its right edge up with
+		// the chip's: a wider agent/provider/model list grows to the left,
+		// away from Send.
+		panel.AttachTo(chip, mui.AnchorBottomEnd, mui.AnchorTopEnd).
+			MinWidth(chip.Bounds().W).
+			Margin(t.Space(1), 0, 0, 0).
+			Padding(t.Space(1)).
+			Radius(t.Radius+2).
+			Background(t.Background).
+			Border(1, t.Border).
+			Shadow(0, 6, 20, 0, mui.RGBA(0, 0, 0, 0.18))
 		a.modelPanel(c, chat)
 	})
 }
@@ -210,7 +222,7 @@ func (a *App) modelPanel(c *mui.Context, chat *Chat) {
 	configLocked := locked
 
 	mui.Row(c).Height(252).Gap(1).Children(func() {
-		a.modelColumn(c, "Agent", 122, func(inner *mui.Context) {
+		a.modelColumn(c, "Agent", func(inner *mui.Context) {
 			if len(a.Agents) == 0 {
 				caption(inner, "No agents")
 				return
@@ -234,7 +246,7 @@ func (a *App) modelPanel(c *mui.Context, chat *Chat) {
 			}
 		})
 
-		a.modelColumn(c, "Provider", 112, func(inner *mui.Context) {
+		a.modelColumn(c, "Provider", func(inner *mui.Context) {
 			providers := modelProviders(option)
 			if chat.Session == nil && a.agentConfigBusy[chat.Agent.ID] {
 				caption(inner, "Refreshing providers…")
@@ -261,7 +273,7 @@ func (a *App) modelPanel(c *mui.Context, chat *Chat) {
 			}
 		})
 
-		a.modelColumn(c, "Model", 162, func(inner *mui.Context) {
+		a.modelColumn(c, "Model", func(inner *mui.Context) {
 			if option == nil {
 				label := "No model option"
 				if chat.Session == nil {
@@ -290,7 +302,7 @@ func (a *App) modelPanel(c *mui.Context, chat *Chat) {
 			}
 		})
 
-		a.modelColumn(c, "Thinking", 132, func(inner *mui.Context) {
+		a.modelColumn(c, "Thinking", func(inner *mui.Context) {
 			if thinking == nil || len(thinking.Options) == 0 {
 				label := "No thinking options"
 				if thinking == nil && chat.Session == nil {
@@ -323,8 +335,11 @@ func (a *App) modelPanel(c *mui.Context, chat *Chat) {
 	})
 }
 
-func (a *App) modelColumn(c *mui.Context, title string, width float32, build func(*mui.Context)) {
-	mui.Column(c).Width(width).FillHeight().Gap(2).Padding(4, 4, 6, 4).Children(func() {
+// modelColumn is one column of the model panel. Its width follows its
+// widest label, so the panel grows and shrinks with the agent's lists
+// instead of reserving fixed space for short names.
+func (a *App) modelColumn(c *mui.Context, title string, build func(*mui.Context)) {
+	mui.Column(c).FillHeight().Gap(2).Padding(4, 4, 6, 4).Children(func() {
 		sectionLabel(c, title).Padding(0, 4)
 		mui.Scroll(c).Grow(1).Gap(1).Children(func() { build(c) })
 	})
@@ -332,7 +347,7 @@ func (a *App) modelColumn(c *mui.Context, title string, width float32, build fun
 
 func (a *App) modelItem(c *mui.Context, label string, selected, disabled bool) mui.Element {
 	t := c.Theme()
-	item := mui.ButtonBase(c).FillWidth().Gap(4).Padding(3, 6).Radius(6).Disabled(disabled)
+	item := mui.ButtonBase(c).FillWidth().Gap(4).Padding(3, 6).Radius(6).Justify(mui.Start).Disabled(disabled)
 	switch {
 	case selected:
 		item.Background(t.SurfaceHover)
@@ -340,7 +355,9 @@ func (a *App) modelItem(c *mui.Context, label string, selected, disabled bool) m
 		item.Background(t.Surface)
 	}
 	item.Children(func() {
-		mui.Text(c, truncate(label, 28)).FontSize(10).SingleLine()
+		// The column is as wide as its content, so a long model name shows
+		// in full instead of being cut with an ellipsis.
+		mui.Text(c, label).FontSize(10).SingleLine()
 		if selected {
 			mui.Text(c, "✓").FontSize(9).TextColor(t.Accent)
 		}
