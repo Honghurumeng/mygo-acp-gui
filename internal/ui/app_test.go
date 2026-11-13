@@ -486,3 +486,39 @@ func TestSavedSessionsOpenWithHistory(t *testing.T) {
 			lastAssistantHas(app, "Answer from history")
 	})
 }
+
+// session/load replays user image blocks in ACP history. The image must
+// become a thumbnail on the replayed user row, not be dropped with the empty
+// text chunk.
+func TestSavedSessionsReplayImages(t *testing.T) {
+	app, tt := newFakeApp(t)
+	connect(t, app, tt)
+	waitSavedSessions(t, app, tt, 1)
+	tt.Frame()
+	if err := tt.Click("Open saved session: Fake history"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		if current(app).Info.SessionID != "fake-history" || current(app).replaying {
+			return false
+		}
+		for _, message := range current(app).Messages {
+			if message.Role != RoleUser {
+				continue
+			}
+			for _, attachment := range message.Attachments {
+				if attachment.Bitmap != nil {
+					return true
+				}
+			}
+		}
+		return false
+	})
+	if err := tt.Click("View message image"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if !app.ImageOpen || app.ImagePreview == nil {
+		t.Fatal("replayed history image did not open the preview")
+	}
+}

@@ -1,10 +1,10 @@
 # pi-acp fork 修改清单
 
-目标：fork `https://github.com/georgeharker/pi-acp`（vendored 0.4.0 的来源），让 pi 通过 ACP 发出上下文用量、单轮用量，正确暴露当前模型的推理强度，并在历史回放里保留 thinking。Go 客户端不改，仍然只运行 vendored bundle，不引入运行时 npm/npx。
+目标：fork `https://github.com/georgeharker/pi-acp`（vendored 0.4.0 的来源），让 pi 通过 ACP 发出上下文用量、单轮用量，正确暴露当前模型的推理强度，并在历史回放里保留 thinking 和图片。客户端仍然只运行 vendored bundle，不引入运行时 npm/npx。
 
 状态：已实施。本地源码在仓库根目录的 `pi-acp-main/`（被 `.gitignore` 忽略，不随主仓库提交），产物已重新打包到 `resources/agents/pi-acp/`。
 
-- bundle sha256：`98a68b601338fef7addc599cd778bed30c481fe1e82cbbac14274c946755702f`
+- bundle sha256：`f7c6acd2434afa0f4439137ad04cc60961a1dbbd12020e6638b4d17fd8934731`
 - 体积：459 KiB
 - 上游基线：`@geohar/pi-acp@0.4.0`
 
@@ -81,6 +81,18 @@ fork 改动：
 - 测试：`test/unit/pi-messages.test.ts`、`test/component/session-load-thinking.test.ts`。
 
 GUI 侧不用改：`internal/session/events.go` 已解析 `agent_thought_chunk`，`ui.replayMessage` 把同角色连续 chunk 并进同一条消息，thought 仍显示在「Thinking」折叠块里。真实会话 `session/load` 实测：5 个 thinking 块（390 字符）全部回放，文本字节与改动前一致（无重复）。
+
+### 历史回放里的图片
+
+上游 `loadSession` 的 user 消息只取文本（`normalizePiMessageText`），而 pi 把用户粘贴的截图持久化成 `{ type: 'image', data, mimeType }` 块。恢复会话后这些图片全部消失。
+
+fork 改动：
+
+- `src/acp/translate/pi-messages.ts`：新增 `normalizePiUserBlocks()`，把 user content 按原顺序拆成 text / image 块；`normalizePiMessageText()` 复用它的 text 部分。
+- `src/acp/agent.ts`（`loadSession`）：逐块发 `user_message_chunk`，图片块带 `mimeType` + base64 `data`，不再只发拼接后的文本。
+- 测试：`test/unit/pi-messages.test.ts`、`test/component/session-load-images.test.ts`。
+
+GUI 侧 `internal/session/events.go` 保留消息块的完整 `Content`，`internal/ui/attachments.go` 在 replay 时按 ACP image 块异步解码成缩略图，因此图片与文本顺序一致，且和 Command Code 的回放行为一致。
 
 ### ACP 状态文本
 

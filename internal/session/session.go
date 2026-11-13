@@ -354,6 +354,14 @@ func hasPromptContent(blocks []acp.ContentBlock) bool {
 			if block.Data != "" || block.URI != "" {
 				return true
 			}
+		case "resource_link":
+			if block.URI != "" {
+				return true
+			}
+		case "resource":
+			if block.Resource != nil && (block.Resource.Text != "" || block.Resource.URI != "") {
+				return true
+			}
 		}
 	}
 	return false

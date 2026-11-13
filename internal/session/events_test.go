@@ -58,3 +58,34 @@ func TestParseEventPiAcpMeta(t *testing.T) {
 		})
 	}
 }
+
+func TestParseEventKeepsImageContentBlocks(t *testing.T) {
+	update := `{"sessionUpdate":"user_message_chunk","content":{"type":"image","mimeType":"image/png","data":"aGVsbG8="}}`
+	ev := parseEvent(nil, json.RawMessage(`{"sessionId":"s","update":`+update+`}`))
+	if ev == nil {
+		t.Fatal("parseEvent returned nil")
+	}
+	if ev.Text != "" {
+		t.Errorf("text = %q", ev.Text)
+	}
+	if len(ev.Content) != 1 || ev.Content[0].Type != "image" || ev.Content[0].Data != "aGVsbG8=" {
+		t.Fatalf("content = %+v", ev.Content)
+	}
+}
+
+func TestParseEventKeepsTextAndImageOrder(t *testing.T) {
+	update := `{"sessionUpdate":"user_message_chunk","content":[` +
+		`{"type":"text","text":"look"},` +
+		`{"type":"image","mimeType":"image/png","data":"aGVsbG8="},` +
+		`{"type":"text","text":" please"}]}`
+	ev := parseEvent(nil, json.RawMessage(`{"sessionId":"s","update":`+update+`}`))
+	if ev == nil {
+		t.Fatal("parseEvent returned nil")
+	}
+	if ev.Text != "look please" {
+		t.Errorf("text = %q", ev.Text)
+	}
+	if len(ev.Content) != 3 || ev.Content[1].Type != "image" {
+		t.Fatalf("content = %+v", ev.Content)
+	}
+}

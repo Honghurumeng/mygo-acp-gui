@@ -42,6 +42,12 @@ type Options struct {
 	// and when the draft model panel needs a refresh. Nil uses
 	// session.ProbeConfig; tests can replace it.
 	ProbeConfig func(context.Context, agent.LaunchSpec) (session.Info, error)
+	// ReadClipboardImage returns the clipboard image as PNG, or nil. Nil
+	// uses mygo.Clipboard.ReadImage; tests inject a fixed image.
+	ReadClipboardImage func() []byte
+	// FileIndex lists workspace-relative files for @ mentions. Nil uses the
+	// built-in workspace walker; tests inject a small deterministic list.
+	FileIndex func(string) ([]string, error)
 }
 
 // MessageRole is how a chat row is drawn.
@@ -73,6 +79,9 @@ type Message struct {
 	// only while it is true. Tool cards start collapsed.
 	DetailOpen  bool
 	Attachments []Attachment
+	// FileRefs mirror @ mentions from the prompt, so the user's row lists
+	// the files the message refers to.
+	FileRefs []FileRef
 }
 
 // Attachment is an image attached to a prompt.
@@ -181,6 +190,10 @@ type App struct {
 	DiagOpen bool
 	DiagChat *Chat
 
+	// ImagePreview is the attachment shown enlarged by imagePreviewDialog.
+	ImagePreview *Attachment
+	ImageOpen    bool
+
 	Permission      *permissionPrompt
 	PermissionOpen  bool
 	permissionQueue []*permissionPrompt
@@ -205,9 +218,11 @@ type App struct {
 	discoverMu     sync.Mutex
 	discoverCancel context.CancelFunc
 
-	injectedAgents bool
-	resolveOpts    agent.ResolveOptions
-	probeConfig    func(context.Context, agent.LaunchSpec) (session.Info, error)
+	injectedAgents     bool
+	resolveOpts        agent.ResolveOptions
+	probeConfig        func(context.Context, agent.LaunchSpec) (session.Info, error)
+	readClipboardImage func() []byte
+	fileIndexer        func(string) ([]string, error)
 
 	// agentConfigAt and agentConfigBusy throttle config probes. Both are
 	// UI-thread state; background probes only post their result back.
@@ -276,6 +291,14 @@ func New(opts Options) *App {
 	}
 	if opts.ProbeConfig != nil {
 		a.probeConfig = opts.ProbeConfig
+	}
+	a.readClipboardImage = opts.ReadClipboardImage
+	if a.readClipboardImage == nil {
+		a.readClipboardImage = mygo.Clipboard.ReadImage
+	}
+	a.fileIndexer = opts.FileIndex
+	if a.fileIndexer == nil {
+		a.fileIndexer = scanWorkspaceFiles
 	}
 	a.MCPServers = []any{}
 	a.MCPText = "[]"
@@ -524,6 +547,7 @@ func (a *App) View(c *mui.Context) {
 	a.settingsDialog(c)
 	a.diagnosticsDialog(c)
 	a.renameDialog(c)
+	a.imagePreviewDialog(c)
 }
 
 // header is the conversation bar: sidebar toggle, title and the session
@@ -760,6 +784,7 @@ func (a *App) message(c *mui.Context, m *Message) {
 						Radius(14).
 						Background(t.Surface)
 				}
+				a.messageFiles(c, m.FileRefs)
 				a.messageAttachments(c, m.Attachments)
 			})
 		})

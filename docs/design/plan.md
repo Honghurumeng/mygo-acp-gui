@@ -114,7 +114,7 @@ scripts/vendor-pi-acp.sh             # 仅在升级 pi-acp 时运行
 - [x] ACP 会话：initialize、session/new、session/prompt、agent_message_chunk 流式 Markdown、思考、工具调用、权限、取消
 - [x] 计划面板、配置选择、已保存会话（list/load/close）
 - [x] 模型/effort/模式配置 + `session/set_config_option` / `set_mode`
-- [x] 图片附件、MCP servers JSON、输入 `/` 触发的命令面板
+- [x] 图片附件（文件选择 + 剪贴板粘贴）、MCP servers JSON、输入 `/` 触发的命令面板、`@` 文件引用（只发路径文本）
 - [x] 侧栏按 workspace 分组、已保存会话直接展示、折叠/展开、超过 5 条收起、重命名/删除/软删除恢复
 - [x] 会话行与标题栏的 agent 品牌图标（pi、Command Code，SVG 内嵌并跟随主题）
 - [x] 本地 `sessions.json` 会话存档：agent/session 关联、启动直接展示、show 软删除、showName 重命名、点击 load 重放历史
@@ -134,7 +134,8 @@ scripts/vendor-pi-acp.sh             # 仅在升级 pi-acp 时运行
 
 - [x] `session/load` / `close` 已保存会话列表（直接显示在侧栏 workspace 下）
 - [x] 本地会话存档与软删除/重命名（启动不依赖 `session/list`，点击 load 重放历史）
-- [x] 图片输入
+- [x] 图片输入（文件选择 + 剪贴板粘贴）
+- [x] `@` 文件引用面板（只发 `@路径` 文本，agent 自行读文件）
 - [x] 多会话并行（侧栏每个会话一个 agent 进程；后台流式、权限按会话路由、重命名/删除/切换）
 - [x] settings.json 持久化（MCP、上次 agent/工作区）
 - [ ] MCP 行编辑器（当前是校验过的 JSON）

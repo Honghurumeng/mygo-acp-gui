@@ -47,12 +47,33 @@ type Chat struct {
 
 	Commands    []acp.AvailableCommand
 	Attachments []Attachment
-	Plan        []session.PlanEntry
-	PlanOpen    bool
-	Usage       *acp.Usage
-	TurnUsage   *acp.PromptUsage
-	Title       string
-	ConfigBusy  string
+	// FileRefs are the files named through the composer's @ list. The
+	// composer shows no chips for them; they only label the sent user row
+	// and let send drop mentions the user edited away.
+	FileRefs   []FileRef
+	Plan       []session.PlanEntry
+	PlanOpen   bool
+	Usage      *acp.Usage
+	TurnUsage  *acp.PromptUsage
+	Title      string
+	ConfigBusy string
+
+	// MentionOpen shows the @ file list. MentionStart is the rune offset of
+	// the @, MentionQuery the text typed after it, and MentionIndex the
+	// keyboard-selected row. fileIndex is the cached workspace walk.
+	MentionOpen      bool
+	MentionStart     int
+	MentionQuery     string
+	MentionIndex     int
+	fileIndex        []string
+	fileIndexRoot    string
+	fileIndexLoading bool
+	fileIndexLoaded  bool
+	fileIndexErr     string
+	focusComposer    bool
+	// composerCaret is where the next composer build puts the caret after
+	// a mention completion; negative keeps the editor's selection.
+	composerCaret int
 
 	// ComposerHeight is the draggable height of the composer card.
 	ComposerHeight float32
@@ -230,6 +251,7 @@ type conversationState struct {
 	usage       *acp.Usage
 	turnUsage   *acp.PromptUsage
 	attachments []Attachment
+	files       []FileRef
 	lastStop    string
 }
 
@@ -245,6 +267,7 @@ func (c *Chat) snapshot() conversationState {
 		usage:       c.Usage,
 		turnUsage:   c.TurnUsage,
 		attachments: c.Attachments,
+		files:       c.FileRefs,
 		lastStop:    c.LastStop,
 	}
 }
@@ -260,6 +283,7 @@ func (c *Chat) restore(state conversationState) {
 	c.Usage = state.usage
 	c.TurnUsage = state.turnUsage
 	c.Attachments = state.attachments
+	c.FileRefs = state.files
 	c.LastStop = state.lastStop
 	c.replaying = false
 	c.Streaming = false
@@ -320,6 +344,7 @@ func (a *App) newChatTabIn(workspace string) *Chat {
 		MCPServers:     append([]any(nil), a.MCPServers...),
 		Workspace:      workspace,
 		ComposerHeight: defaultComposerHeight,
+		composerCaret:  -1,
 	}
 	if spec, ok := a.preferredAgent(); ok {
 		chat.Agent = spec
@@ -368,6 +393,7 @@ func (a *App) selectChat(chat *Chat) {
 		previous.ModeOpen = false
 		previous.MenuOpen = false
 		previous.JumpOpen = false
+		previous.MentionOpen = false
 	}
 	a.Active = index
 	chat.Unread = false
@@ -376,6 +402,7 @@ func (a *App) selectChat(chat *Chat) {
 	chat.ModeOpen = false
 	chat.MenuOpen = false
 	chat.JumpOpen = false
+	chat.MentionOpen = false
 	a.AgentIndex = a.agentIndex(chat.Agent.ID)
 	a.Workspace = chat.Workspace
 	a.ensureWorkspace(chat.Workspace)

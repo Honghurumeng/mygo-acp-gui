@@ -440,9 +440,11 @@ func (a *App) Connect() {
 			chat.Unread = false
 			pendingSend := chat.pendingSend
 			queuedAttachments := append([]Attachment(nil), chat.Attachments...)
+			queuedFiles := append([]FileRef(nil), chat.FileRefs...)
 			a.resetConversation(chat)
 			if pendingSend {
 				chat.Attachments = queuedAttachments
+				chat.FileRefs = queuedFiles
 			}
 			chat.pendingSend = pendingSend
 			chat.replaying = action == "load"
@@ -587,6 +589,10 @@ func (a *App) resetConversation(chat *Chat) {
 	chat.LastStop = ""
 	chat.Commands = nil
 	chat.Attachments = nil
+	chat.FileRefs = nil
+	chat.MentionOpen = false
+	chat.MentionQuery = ""
+	chat.MentionIndex = 0
 	chat.Plan = nil
 	chat.PlanOpen = false
 	chat.Usage = nil
@@ -608,6 +614,7 @@ func (a *App) send() bool {
 	}
 	text := strings.TrimSpace(chat.Input)
 	attachments := append([]Attachment(nil), chat.Attachments...)
+	files := fileRefsInText(chat.FileRefs, text)
 	if text == "" && len(attachments) == 0 {
 		return false
 	}
@@ -633,6 +640,8 @@ func (a *App) send() bool {
 	}
 	chat.Input = ""
 	chat.Attachments = nil
+	chat.FileRefs = nil
+	chat.MentionOpen = false
 	chat.ConnectError = ""
 	chat.TurnUsage = nil
 
@@ -642,6 +651,7 @@ func (a *App) send() bool {
 		Text:        text,
 		Done:        true,
 		Attachments: attachments,
+		FileRefs:    files,
 	})
 	assistant := a.addMessage(chat, &Message{
 		ID:   a.nextID(),
@@ -662,9 +672,10 @@ func (a *App) send() bool {
 			Type:     "image",
 			MimeType: attachment.MimeType,
 			Data:     attachment.Data,
-			Name:     attachment.Name,
 		})
 	}
+	// @ mentions already sit in the text as @workspace/path. The agent reads
+	// those files itself, so no resource or resource_link blocks are sent.
 
 	go func() {
 		res, err := s.PromptContent(context.Background(), blocks)
@@ -980,7 +991,8 @@ func (a *App) applyUpdate(chat *Chat, ev session.Event) {
 	}
 
 	if ev.Kind == session.UpdateMessageChunk || ev.Kind == session.UpdateUserChunk || ev.Kind == session.UpdateThoughtChunk {
-		if ev.Text == "" {
+		hasImages := hasImageContent(ev.Content)
+		if ev.Text == "" && !hasImages {
 			return
 		}
 		if chat.replaying {
@@ -993,6 +1005,7 @@ func (a *App) applyUpdate(chat *Chat, ev session.Event) {
 				msg.Thought += ev.Text
 			} else {
 				msg.Text += ev.Text
+				a.addMessageImages(chat, msg, ev.Content)
 			}
 			return
 		}
@@ -1004,8 +1017,11 @@ func (a *App) applyUpdate(chat *Chat, ev session.Event) {
 		turn = a.ensureTurn(chat, true)
 		turn.assistant.Done = !chat.Streaming
 		turn.assistant.Text += ev.Text
+		a.addMessageImages(chat, turn.assistant, ev.Content)
 	case session.UpdateUserChunk:
-		a.replayMessage(chat, RoleUser).Text += ev.Text
+		msg := a.replayMessage(chat, RoleUser)
+		msg.Text += ev.Text
+		a.addMessageImages(chat, msg, ev.Content)
 	case session.UpdateThoughtChunk:
 		turn = a.ensureTurn(chat, true)
 		turn.assistant.Thought += ev.Text

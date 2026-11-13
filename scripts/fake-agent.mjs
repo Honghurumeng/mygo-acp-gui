@@ -8,6 +8,7 @@
  *   /thought      先流一段 agent_thought_chunk
  *   /mcp          回复最近一次 session/new 收到的 MCP server 数
  *   /image        回复收到的图片内容块数量
+ *   /file         回复收到的 resource_link / resource 内容块数量
  *   /turnusage    不发 usage_update，只在 prompt 结果里返回 usage
  *   /tinyusage    发一个小于 1% 的 usage_update
  *   /notice       先发 startup / auto_retry 状态块，再正常回复
@@ -27,6 +28,8 @@ const MODES = [
   { id: 'default', name: 'Standard', description: 'Ask before tools.' },
   { id: 'plan', name: 'Plan', description: 'Plan only.' },
 ];
+
+const HISTORY_IMAGE = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 
 let currentModel = 'demo/small';
 let currentThinking = 'medium';
@@ -190,7 +193,7 @@ function requestPermission(turn) {
   });
 }
 
-function startTurn(turn, text, images = 0, mcpCount = 0) {
+function startTurn(turn, text, images = 0, mcpCount = 0, files = 0, embedded = 0) {
   const slow = text.includes('/slow');
   const permission = text.includes('/permission');
   const thought = text.includes('/thought');
@@ -253,7 +256,7 @@ function startTurn(turn, text, images = 0, mcpCount = 0) {
     return;
   }
 
-  const reply = `收到：${text}\n\n当前模型 \`${currentModel}\`，思考强度 \`${currentThinking}\`，模式 \`${currentMode}\`。\nimages=${images} mcp=${mcpCount}`;
+  const reply = `收到：${text}\n\n当前模型 \`${currentModel}\`，思考强度 \`${currentThinking}\`，模式 \`${currentMode}\`。\nimages=${images} files=${files} embedded=${embedded} mcp=${mcpCount}`;
   const chars = Array.from(reply);
   const chunkSize = slow ? 2 : Math.max(1, Math.ceil(chars.length / 8));
   let offset = 0;
@@ -367,6 +370,13 @@ rl.on('line', (line) => {
       sendUpdate({
         sessionId: lastSessionId,
         update: {
+          sessionUpdate: 'user_message_chunk',
+          content: { type: 'image', mimeType: 'image/png', data: HISTORY_IMAGE },
+        },
+      });
+      sendUpdate({
+        sessionId: lastSessionId,
+        update: {
           sessionUpdate: 'agent_thought_chunk',
           content: { type: 'text', text: 'Reasoning from history' },
         },
@@ -421,6 +431,8 @@ rl.on('line', (line) => {
       const blocks = params.prompt ?? [];
       const text = blocks.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
       const images = blocks.filter((b) => b.type === 'image').length;
+      const files = blocks.filter((b) => b.type === 'resource_link' || b.type === 'resource').length;
+      const embedded = blocks.filter((b) => b.type === 'resource').length;
       const turn = {
         id,
         sessionId: params.sessionId,
@@ -429,7 +441,7 @@ rl.on('line', (line) => {
         timer: null,
       };
       active = turn;
-      startTurn(turn, text, images, lastMCPServers.length);
+      startTurn(turn, text, images, lastMCPServers.length, files, embedded);
       return;
     }
 

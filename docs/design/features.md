@@ -71,7 +71,7 @@ pi-acp 的启动信息（pi 版本、Extensions、Skills 等）、重试、自�
 - 合并只补 `cwd/title/updatedAt` 和新记录，不改变 `show/showName`，所以已删除/已重命名的会话不会在同步后复活或改名。合并不会用 `[Image]` 这种纯图片兜底覆盖已有的更具体标题。
 - 从其他工作区打开时，把存档里的 `cwd` 传给 load、加入侧栏工作区列表；路径比较解析 symlink，避免同一目录出现两个分组。
 - 存档写入是原子的（同目录临时文件 + rename，0600）。文件缺失视为空；损坏 JSON、未来版本、缺少 agentId/sessionId 或重复记录只产生侧栏警告，其余记录照常展示，不阻塞启动。
-- 历史重放事件在 `Start` 阶段缓冲，UI 安装好 Session 后调用 `Activate` 按顺序消费，避免丢失。
+- 历史重放事件在 `Start` 阶段缓冲，UI 安装好 Session 后调用 `Activate` 按顺序消费，避免丢失。`user_message_chunk` 的 image 内容块按顺序解码成消息缩略图：pi 和 Command Code 的 `session/load` 都会回放用户图片，不再只保留文本。
 - 重放中的 `user_message_chunk`、`agent_message_chunk` 和 `agent_thought_chunk` 合并成连续的用户/助手行，结束后统一标记 Done。
 - `agent_thought_chunk`（实时 `thinking_delta` 和历史回放都走这个类型）累积到当前助手行的 `Thought`，渲染为回答上方的「Thinking」折叠块，默认收起；只有推理没有正文的空行不会画出来。
 
@@ -79,9 +79,20 @@ pi-acp 的启动信息（pi 版本、Extensions、Skills 等）、重试、自�
 
 - 文件对话框选择 png/jpg/jpeg/gif/webp/bmp，最多 4 张、每张 15 MB。
 - 读取后转 base64，`ContentBlock{type:"image", mimeType, data}` 与 text 一起发 `session/prompt`。
-- 预览由 `ui.DecodeBitmap` 生成，挂在草稿或用户消息上。
+- 预览由 `ui.DecodeBitmap` 生成；composer 附件行和用户消息只显示缩略图，不显示文件名或 MIME 类型。点击缩略图打开图片预览 modal（`Close`、点击外部或 Esc 关闭），按窗口可用空间和图片原始尺寸缩放，不放大超过原图。
 - composer 左侧 `＋` 打开图片选择；已连接且 `promptCapabilities.image` 为 false 时禁用，草稿阶段允许先选图。
+- 输入框支持直接粘贴剪贴板图片：`OnPaste` 只在剪贴板文本为空时读取 `mygo.Clipboard.ReadImage()`，把 PNG 字节转 base64 后作为 image 块；不写临时文件、不把路径塞进文本。文本剪贴板仍走编辑器原生的文本粘贴，不会同时生成附件。
+- 图片粘贴与 `＋` 共用数量、大小和 `promptCapabilities.image` 校验；剪贴板图片在后台解码，UI 线程只追加附件。
 - 不做内嵌终端、不代传本地路径；图片字节直接进 ACP。
+
+## @ 文件引用
+
+- 在输入框的空白词首输入 `@` 打开文件面板；查询按 basename 优先、路径其次、最后 fuzzy subsequence 排序，最多显示 50 条。`↑`/`↓` 选择，`Enter`/`Tab` 插入，`Esc` 关闭。
+- 条目布局和右侧 Git 面板一致：文件名在前，所在的 workspace 相对目录以更小号 muted 文字紧随其后，大小在最右；同名文件因此可凭目录区分。
+- 文件索引在后台扫描当前会话 workspace：跳过 `.git`/`node_modules`/`vendor`/`build` 等目录，最多 20000 个文件，跳过带空白或 `@` 的名字（`@token` 以空白分隔）；每个会话缓存一次，切 workspace 后重建。扫描期间面板显示 `Indexing workspace files…`，失败只显示在面板里，不阻塞聊天。
+- 选中后输入框插入 `@相对路径 `，光标移到插入内容之后，可以直接继续输入；@ 文件不是附件，composer 上方的附件行只显示粘贴/选择的图片，不显示 @ 文件（即使它是图片）。删掉文本里的 `@token` 就等于取消引用。
+- 发送时只把 `@相对路径 ` 文本放进 `session/prompt` 的 text 块，不发送 `resource` / `resource_link`，也不内嵌文件正文：agent 以自己的 cwd 为 workspace，会按路径自行读取；不需要也不声明 `fs`/`terminal` 客户端能力。
+- 用户消息下方仍显示文件 chip 作为可读提示（只保留文本里仍有对应 `@token` 的文件）；点选记录只在当前草稿/会话内存里，不写入 settings.json 或 sessions.json，历史重放以 agent 返回的 user/assistant 内容块为准（当前渲染文本和用户图片）。
 
 ## MCP servers
 
@@ -158,7 +169,7 @@ pi-acp 的启动信息（pi 版本、Extensions、Skills 等）、重试、自�
 
 ```bash
 go test ./... -race
-go test ./internal/ui -run 'TestSessionConfig|TestSaved|TestDeleteSaved|TestDeleteOpen|TestCloseChat|TestSendImage|TestMCP|TestPromptUsageFallback|TestMultipleChats|TestBackgroundChat|TestPermissionFrom|TestCloseTab|TestFirstMessage|TestWorkspaceConversation|TestRename|TestGit|TestGitPanel|TestComposerHeight|TestRemoveWorkspace|TestRemovedWorkspace|TestAgentIcon|TestAgentBadges' -v
+go test ./internal/ui -run 'TestSessionConfig|TestSaved|TestDeleteSaved|TestDeleteOpen|TestCloseChat|TestSendImage|TestPasteImage|TestPasteText|TestImagePreview|Test.*Mention|TestMCP|TestPromptUsageFallback|TestMultipleChats|TestBackgroundChat|TestPermissionFrom|TestCloseTab|TestFirstMessage|TestWorkspaceConversation|TestRename|TestGit|TestGitPanel|TestComposerHeight|TestRemoveWorkspace|TestRemovedWorkspace|TestAgentIcon|TestAgentBadges' -v
 go test ./internal/archive -v
 go test ./internal/git -v
 go test ./internal/settings -v

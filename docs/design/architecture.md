@@ -14,6 +14,7 @@ MyGo 原生窗口 (Go + ui)
   ├─ 顶部会话标题栏 + MCP/诊断操作
   ├─ 消息区 + 可拖动高度的 composer
   ├─ composer 底栏：附件、Jump、git 分支、mode、上下文环、agent/model/thinking、发送
+  ├─ @ 文件面板：workspace 索引 → 只把 @相对路径 文本写进 prompt（agent 自读）
   ├─ 右侧 Git 面板（可折叠）：提交、暂存/更改、分支图与 fetch/pull/push
   ├─ ui/markdown.Stream / View      ← agent_message_chunk
   ├─ ui.List(FollowEnd)             ← 消息列表
@@ -72,7 +73,7 @@ MyGo 原生窗口 (Go + ui)
   → internal/session.Probe（initialize，5 秒，逐 agent 并行）
   → 侧栏工作区/会话 + 工作区 ＋：每个会话各自 internal/session.Start
       session/new | session/load（DeferUpdates 缓冲历史）
-  → session/prompt（文本 + 图片）
+  → session/prompt（文本 + 图片；@ 文件以路径文本出现）
   → session/update → 所属 *Chat → Window.Update → markdown / tool / plan / usage
   → session/set_config_option / set_mode
   → 点击存档行 → 按记录里的 agent + sessionId 执行 session/load 重放历史；cwd 不同则新建进程

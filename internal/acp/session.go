@@ -2,15 +2,30 @@ package acp
 
 import "encoding/json"
 
-// ContentBlock is one piece of a prompt or a session update. Only text is
-// used by the app today; the other fields keep the protocol types honest.
+// ContentBlock is one piece of a prompt or a session update. ACP accepts
+// text, image, audio, resource_link and embedded resource blocks here; the
+// fields not used by a kind stay empty. Images carry base64 data, resource
+// links point at a file, and embedded resources carry its text inline.
 type ContentBlock struct {
-	Type     string `json:"type"`
-	Text     string `json:"text,omitempty"`
+	Type        string            `json:"type"`
+	Text        string            `json:"text,omitempty"`
+	MimeType    string            `json:"mimeType,omitempty"`
+	Data        string            `json:"data,omitempty"`
+	URI         string            `json:"uri,omitempty"`
+	Name        string            `json:"name,omitempty"`
+	Title       string            `json:"title,omitempty"`
+	Description string            `json:"description,omitempty"`
+	Size        int64             `json:"size,omitempty"`
+	Resource    *ResourceContents `json:"resource,omitempty"`
+}
+
+// ResourceContents is the contents of an embedded `resource` block. ACP
+// calls text contents text and binary contents blob; the GUI only embeds
+// UTF-8 text and uses resource links for everything else.
+type ResourceContents struct {
+	URI      string `json:"uri"`
 	MimeType string `json:"mimeType,omitempty"`
-	Data     string `json:"data,omitempty"`
-	URI      string `json:"uri,omitempty"`
-	Name     string `json:"name,omitempty"`
+	Text     string `json:"text"`
 }
 
 // NewSessionParams creates a session. Cwd must be an absolute path.

@@ -44,7 +44,11 @@ type Event struct {
 	// Notice marks adapter status text (retry, compaction, queue, extension
 	// notification) that must not be appended to the assistant message.
 	Notice *Notice
-	Update json.RawMessage
+	// Content holds the message chunk's blocks. Text is their concatenated
+	// text; images and resource blocks are kept so replay can render them
+	// instead of dropping everything but text.
+	Content []acp.ContentBlock
+	Update  json.RawMessage
 }
 
 // Notice is adapter-generated status text carried on an agent message chunk.
@@ -197,7 +201,8 @@ func parseEvent(s *Session, params json.RawMessage) *Event {
 	}
 	switch head.Kind {
 	case UpdateMessageChunk, UpdateUserChunk, UpdateThoughtChunk:
-		ev.Text = contentText(update)
+		ev.Content = contentBlocks(update)
+		ev.Text = blocksText(ev.Content)
 	case UpdateToolCall, UpdateToolCallDone:
 		var call ToolCall
 		if err := json.Unmarshal(update, &call); err == nil {
@@ -247,31 +252,45 @@ func parseEvent(s *Session, params json.RawMessage) *Event {
 	return ev
 }
 
-func contentText(raw json.RawMessage) string {
+func contentBlocks(raw json.RawMessage) []acp.ContentBlock {
 	var update struct {
 		Content json.RawMessage `json:"content"`
 	}
 	if err := json.Unmarshal(raw, &update); err != nil || len(update.Content) == 0 {
-		return ""
+		return nil
 	}
 	// A string is non-standard but harmless to accept.
 	var text string
 	if json.Unmarshal(update.Content, &text) == nil {
-		return text
-	}
-	var block acp.ContentBlock
-	if json.Unmarshal(update.Content, &block) == nil {
-		return block.Text
+		return []acp.ContentBlock{{Type: "text", Text: text}}
 	}
 	var blocks []acp.ContentBlock
 	if json.Unmarshal(update.Content, &blocks) == nil {
-		for _, block := range blocks {
-			if block.Type == "" || block.Type == "text" {
-				text += block.Text
+		for i := range blocks {
+			if blocks[i].Type == "" {
+				blocks[i].Type = "text"
 			}
 		}
+		return blocks
 	}
-	return text
+	var block acp.ContentBlock
+	if json.Unmarshal(update.Content, &block) == nil {
+		if block.Type == "" {
+			block.Type = "text"
+		}
+		return []acp.ContentBlock{block}
+	}
+	return nil
+}
+
+func blocksText(blocks []acp.ContentBlock) string {
+	var text strings.Builder
+	for _, block := range blocks {
+		if block.Type == "" || block.Type == "text" {
+			text.WriteString(block.Text)
+		}
+	}
+	return text.String()
 }
 
 func parseToolCall(raw json.RawMessage) ToolCall {

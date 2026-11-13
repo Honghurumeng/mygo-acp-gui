@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -274,5 +275,114 @@ func TestComposerHeightClamp(t *testing.T) {
 	}
 	if got := clampComposer(200); got != 200 {
 		t.Errorf("middle = %v", got)
+	}
+}
+
+// Opening the slash-command list above the composer must not rebuild the
+// textarea under a new element id: the composer is keyed so focus and the
+// next typed rune stay with it.
+func TestCommandPaletteKeepsComposerFocus(t *testing.T) {
+	app, tt := newFakeApp(t)
+	connect(t, app, tt)
+	tt.Frame()
+	if err := tt.Click("Message"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Type("/")
+	tt.Frame()
+	if !tt.Focused("Message") {
+		t.Fatalf("command palette took focus; texts: %q", tt.Texts())
+	}
+	tt.Type("p")
+	if got := current(app).Input; got != "/p" {
+		t.Fatalf("input after palette opened = %q", got)
+	}
+}
+
+// A text paste must still insert text when the clipboard also offers an
+// image representation; only image-only pasteboard content becomes an
+// attachment.
+func TestPasteTextIsNotAnImage(t *testing.T) {
+	app, tt := newFakeApp(t)
+	connect(t, app, tt)
+	app.readClipboardImage = func() []byte {
+		t.Error("clipboard image was read for a text paste")
+		return nil
+	}
+	tt.Frame()
+	if err := tt.Click("Message"); err != nil {
+		t.Fatal(err)
+	}
+	tt.SetClipboard("hello from clipboard")
+	tt.Key(mui.Cmd, mui.KeyV)
+	tt.Frame()
+	if got := current(app).Input; got != "hello from clipboard" {
+		t.Fatalf("input = %q", got)
+	}
+	if len(current(app).Attachments) != 0 {
+		t.Fatal("text paste became an image attachment")
+	}
+}
+
+// Images show as pictures, not filenames or MIME labels, and clicking one
+// opens the large preview from both the composer and the transcript.
+func TestImagePreviewFromComposerAndMessage(t *testing.T) {
+	app, tt := newFakeApp(t)
+	connect(t, app, tt)
+	const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+	png, err := base64.StdEncoding.DecodeString(pngBase64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bitmap, err := mui.DecodeBitmap(png)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat := current(app)
+	chat.Attachments = []Attachment{{
+		Name:     "pasted-image.png",
+		MimeType: "image/png",
+		Data:     pngBase64,
+		Bitmap:   bitmap,
+	}}
+	tt.Frame()
+	if tt.HasText("pasted-image.png") || tt.HasText("image/png") {
+		t.Fatalf("composer showed image metadata; texts: %q", tt.Texts())
+	}
+	if err := tt.Click("View attached image"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if !app.ImageOpen || app.ImagePreview == nil {
+		t.Fatal("composer image did not open the preview")
+	}
+	if !tt.HasText("Close") {
+		t.Fatalf("preview dialog missing; texts: %q", tt.Texts())
+	}
+	if err := tt.Click("Close"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if app.ImageOpen || app.ImagePreview != nil {
+		t.Fatal("preview did not close")
+	}
+
+	chat.Input = "look"
+	tt.Frame()
+	if err := tt.Click("Send"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		return !current(app).Streaming && lastAssistantHas(app, "images=1")
+	})
+	if tt.HasText("pasted-image.png") || tt.HasText("image/png") {
+		t.Fatalf("transcript showed image metadata; texts: %q", tt.Texts())
+	}
+	if err := tt.Click("View message image"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if !app.ImageOpen || app.ImagePreview == nil || app.ImagePreview.Name != "pasted-image.png" {
+		t.Fatal("message image did not open the preview")
 	}
 }

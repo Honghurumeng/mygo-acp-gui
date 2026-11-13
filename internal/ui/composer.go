@@ -23,10 +23,13 @@ func (a *App) composer(c *mui.Context) {
 		return
 	}
 	t := c.Theme()
+	c.Key("composer")
 	mui.Column(c).Padding(0, 16, 12, 16).Children(func() {
 		a.planPanel(c, chat)
+		a.mentionPalette(c, chat)
 		a.attachmentPicker(c, chat)
 
+		c.Key("composer-card")
 		card := mui.Column(c).Gap(6).Padding(4, 8, 8, 8).Radius(12).
 			Background(t.Surface).Border(1, t.Border).
 			Height(chat.composerHeight())
@@ -44,26 +47,81 @@ func (a *App) composer(c *mui.Context) {
 				chat.ComposerHeight = clampComposer(chat.ComposerHeight - dy)
 			}
 
-			mui.TextAreaBase(c, &chat.Input).
+			c.Key("composer-input")
+			input := mui.TextAreaBase(c, &chat.Input).
 				Placeholder("Message").
 				Label("Message").
 				Lines(1, 20).
 				Grow(1).
 				Padding(2, 2).
-				Disabled(!chat.canType()).
-				OnTextKey(func(k mui.TextKey) bool {
-					if k.Key == mui.KeyEnter && k.Mods == 0 {
-						chat.Input = k.Text()
-						if a.send() {
-							k.SetText("")
-						}
-						return true
-					}
+				Disabled(!chat.canType())
+			if chat.focusComposer {
+				input.Focus()
+				chat.focusComposer = false
+				if chat.composerCaret >= 0 {
+					input.SetTextSelection(chat.composerCaret, chat.composerCaret)
+					chat.composerCaret = -1
+				}
+			}
+			input.OnPaste(func(text string) bool {
+				// A screenshot arrives with no text. Text pastes keep the
+				// editor's normal behavior and never turn into attachments.
+				if strings.TrimSpace(text) != "" {
 					return false
-				})
+				}
+				return a.pasteClipboardImage(chat)
+			})
+			input.OnChange(func() {
+				_, caret := input.TextSelection()
+				a.syncMention(chat, caret)
+			})
+			input.OnTextKey(func(k mui.TextKey) bool {
+				if chat.MentionOpen {
+					switch k.Key {
+					case mui.KeyEscape:
+						chat.MentionOpen = false
+						return true
+					case mui.KeyUp, mui.KeyDown:
+						matches := chat.mentionMatches()
+						if len(matches) > 0 {
+							if k.Key == mui.KeyUp {
+								chat.MentionIndex--
+								if chat.MentionIndex < 0 {
+									chat.MentionIndex = len(matches) - 1
+								}
+							} else {
+								chat.MentionIndex = (chat.MentionIndex + 1) % len(matches)
+							}
+							return true
+						}
+					case mui.KeyTab:
+						if matches := chat.mentionMatches(); len(matches) > 0 && chat.MentionIndex < len(matches) {
+							a.acceptMention(chat, matches[chat.MentionIndex])
+							k.SetText(chat.Input)
+							return true
+						}
+					case mui.KeyEnter:
+						if k.Mods == 0 {
+							if matches := chat.mentionMatches(); len(matches) > 0 && chat.MentionIndex < len(matches) {
+								a.acceptMention(chat, matches[chat.MentionIndex])
+								k.SetText(chat.Input)
+								return true
+							}
+						}
+					}
+				}
+				if k.Key == mui.KeyEnter && k.Mods == 0 {
+					chat.Input = k.Text()
+					if a.send() {
+						k.SetText("")
+					}
+					return true
+				}
+				return false
+			})
 
 			mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
-				attach := quietButton(c, "＋").Label("Attach images").FontSize(14).Tooltip("Attach images")
+				attach := quietButton(c, "＋").Label("Attach images").FontSize(14).Tooltip("Attach or paste images")
 				attach.Disabled(!chat.canAttach())
 				if attach.Clicked() {
 					a.chooseImages()
