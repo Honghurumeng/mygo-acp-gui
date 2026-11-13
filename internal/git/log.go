@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // GraphLanes is how many lanes a commit graph may draw.
@@ -35,6 +36,24 @@ func CommitFiles(ctx context.Context, root, hash string) ([]CommitFile, error) {
 		return nil, err
 	}
 	return parseCommitFiles(out), nil
+}
+
+// CommitStat counts the paths and lines a commit changed against its first
+// parent, for the graph's details card. As CommitFiles, a merge shows its
+// difference from its first parent; binary files count as a path without
+// line changes.
+func CommitStat(ctx context.Context, root, hash string) (DiffStat, error) {
+	hash = strings.TrimSpace(hash)
+	if !isHash(hash) {
+		return DiffStat{}, fmt.Errorf("invalid commit hash %q", hash)
+	}
+	out, err := run(ctx, root, []string{"GIT_OPTIONAL_LOCKS=0"},
+		"show", "--no-color", "--numstat", "-z", "--format=",
+		"--find-renames", "--first-parent", hash)
+	if err != nil {
+		return DiffStat{}, err
+	}
+	return parseNumstatStat(out), nil
 }
 
 // parseCommitFiles reads NUL-separated name-status records: a status, then
@@ -77,6 +96,8 @@ type LogCommit struct {
 	Hash    string
 	Message string
 	Author  string
+	// Time is the committer's time, zero when git does not report it.
+	Time    time.Time
 	Parents []string
 	Refs    []string
 	// Lane is the column its line occupies, from 0 to GraphLanes-1.
@@ -88,7 +109,7 @@ type LogCommit struct {
 func readCommits(ctx context.Context, root string) ([]LogCommit, error) {
 	out, err := run(ctx, root, []string{"GIT_OPTIONAL_LOCKS=0"},
 		"log", "--topo-order", "--all", "-n", "80",
-		"--pretty=format:%H%x1f%P%x1f%an%x1f%s%x1f%D")
+		"--pretty=format:%H%x1f%P%x1f%an%x1f%s%x1f%D%x1f%cI")
 	if err != nil {
 		return nil, err
 	}
@@ -110,13 +131,17 @@ func parseCommits(out []byte) []LogCommit {
 		if message == "" {
 			message = "(no subject)"
 		}
-		commits = append(commits, LogCommit{
+		commit := LogCommit{
 			Hash:    fields[0],
 			Message: message,
 			Author:  strings.TrimSpace(fields[2]),
 			Parents: strings.Fields(fields[1]),
 			Refs:    parseRefs(fields[4]),
-		})
+		}
+		if len(fields) > 5 {
+			commit.Time, _ = time.Parse(time.RFC3339, strings.TrimSpace(fields[5]))
+		}
+		commits = append(commits, commit)
 	}
 	return commits
 }

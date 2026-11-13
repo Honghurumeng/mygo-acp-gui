@@ -4,11 +4,17 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 )
 
 // commitLine builds one line of the unit-separated log.
 func commitLine(hash, parents, author, subject, refs string) string {
 	return strings.Join([]string{hash, parents, author, subject, refs}, "\x1f")
+}
+
+// commitLineAt builds one line of the log with the committer's time.
+func commitLineAt(hash, parents, author, subject, refs, when string) string {
+	return strings.Join([]string{hash, parents, author, subject, refs, when}, "\x1f")
 }
 
 // fakeHash is a 40-character object id ending in n.
@@ -40,6 +46,28 @@ func TestParseCommitsSkipsNoiseAndFillsSubject(t *testing.T) {
 	}
 	if commits[1].Message != "(no subject)" {
 		t.Errorf("empty subject = %q", commits[1].Message)
+	}
+}
+
+func TestParseCommitsReadsCommitterTime(t *testing.T) {
+	when := "2026-11-10T12:34:56+08:00"
+	commits := parseCommits([]byte(commitLineAt(fakeHash("1"), "", "Ana", "first", "", when)))
+	if len(commits) != 1 {
+		t.Fatalf("commits = %+v", commits)
+	}
+	want, err := time.Parse(time.RFC3339, when)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !commits[0].Time.Equal(want) {
+		t.Errorf("time = %v, want %v", commits[0].Time, want)
+	}
+
+	// A log without the time field stays usable, as one from an older
+	// parser or a test fixture is.
+	commits = parseCommits([]byte(commitLine(fakeHash("2"), "", "Kai", "second", "")))
+	if len(commits) != 1 || !commits[0].Time.IsZero() {
+		t.Errorf("commit without time = %+v", commits)
 	}
 }
 
@@ -141,7 +169,7 @@ func TestReadCommitsOrdersMergesAndRefs(t *testing.T) {
 		t.Errorf("head refs = %q", commits[0].Refs)
 	}
 	for _, c := range commits {
-		if c.Hash == "" || c.Message == "" || c.Lane < 0 || c.Lane >= GraphLanes {
+		if c.Hash == "" || c.Message == "" || c.Time.IsZero() || c.Lane < 0 || c.Lane >= GraphLanes {
 			t.Fatalf("commit = %+v", c)
 		}
 	}
@@ -205,6 +233,33 @@ func TestCommitFilesListsChangesAgainstFirstParent(t *testing.T) {
 
 	if _, err := CommitFiles(ctx, dir, "not-a-hash"); err == nil {
 		t.Error("CommitFiles accepted a short hash")
+	}
+}
+
+func TestCommitStatCountsFilesAndLines(t *testing.T) {
+	ctx := context.Background()
+	dir := initRepo(t)
+	writeFile(t, dir, "a.txt", "one\n")
+	writeFile(t, dir, "b.txt", "gone\n")
+	runTestGit(t, dir, "add", ".")
+	runTestGit(t, dir, "commit", "-q", "-m", "base")
+
+	writeFile(t, dir, "a.txt", "two\nthree\n")
+	writeFile(t, dir, "c.txt", "new\nfile\n")
+	runTestGit(t, dir, "rm", "-q", "b.txt")
+	runTestGit(t, dir, "add", ".")
+	runTestGit(t, dir, "commit", "-q", "-m", "change")
+
+	stat, err := CommitStat(ctx, dir, headHash(t, dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stat.Files != 3 || stat.Added != 4 || stat.Removed != 2 {
+		t.Fatalf("stat = %+v; want 3 files, 4 added, 2 removed", stat)
+	}
+
+	if _, err := CommitStat(ctx, dir, "not-a-hash"); err == nil {
+		t.Error("CommitStat accepted a short hash")
 	}
 }
 

@@ -33,9 +33,18 @@
   Discard all 用危险色放在 Stage all 左侧，点击先弹确认框。
 - 列表内容右侧留 10 DIP 内边距：滚动条是覆盖在内容上的 overlay，不占布局宽度，留白保证 `＋`/`－`
   和 Stage all / Unstage all 不被滚动条盖住。
-- 图表用 `git log --topo-order --all -n 80 --pretty=format:%H%x1f%P%x1f%an%x1f%s%x1f%D`，解析成 `internal/git.LogCommit`（hash、parents、author、subject、refs），由 `internal/git` 计算 lane，界面由 `internal/ui/gitgraph.go` 自绘泳道、分支/标签芯片和提交行。
+- 图表用 `git log --topo-order --all -n 80 --pretty=format:%H%x1f%P%x1f%an%x1f%s%x1f%D%x1f%cI`，解析成 `internal/git.LogCommit`（hash、parents、author、subject、refs、committer time），由 `internal/git` 计算 lane，界面由 `internal/ui/gitgraph.go` 自绘泳道、分支/标签芯片和提交行。
   不用 CrychicUI `code.CommitGraph`：它的行高固定 36 DIP、行不可点，没法缩间距或插入文件列表。
 - 行高 22 DIP，整行可点（含左侧 lane 区域）；hover/展开时背景覆盖整行，lane 线用 `DrawOver` 画在行上层，不会遮住文字。
+- 提交行不再显示 7 位 hash，只保留 ref 芯片和 subject；完整 hash 放在 hover 详情卡里。
+- 指针在提交行停留 350 ms 后弹出详情卡（`ui.PopoverBase`）：显示完整 subject、Author、Date（本地时间）、全部 refs、
+  修改文件数与代码增删行数（同一行显示），以及完整 hash 和 `Copy` 按钮；点 `Copy` 把完整 hash 写入剪贴板并弹 toast。
+  卡片放在行的左侧（`AnchorStart`/`AnchorEnd`，离面板 8 DIP），不遮住 Git 图表，放不下时按 `AttachTo` 规则移位；
+  离开行和卡片 160 ms 后关闭，便于指针移入卡片。点行本身、按 Esc 或点卡片外会立即关闭，
+  并在指针离开该行前不再弹出；不再悬停的提交会随刷新自动清理。
+- 修改统计用 `git show --no-color --numstat -z --format= --find-renames --first-parent <hash>` 读取，与展开文件列表一样
+  只比较第一父提交；二进制文件计文件数但不计行数。读取在 goroutine 中异步进行，带 generation + workspace + hash 守卫；
+  卡片打开时显示 `Reading…`，失败显示 git 错误，不阻塞图表。
 - 点击提交行展开该提交相对第一父提交的文件列表，再点收起；同屏只展开一个。文件行显示状态字母 + 文件名 + 目录（同一行），
   `A` 绿、`D` 红、`M`/`T` 黄、`R`/`C` 用强调色。展开高度计入 lane 的 y 坐标，泳道在文件列表左侧继续。
 - 文件行可点，打开与 Staged/Changes 相同的全窗口 diff 遮罩，标题为 `Commit <7 位 hash> · <path>`；侧文本用
@@ -46,7 +55,7 @@
   generation + workspace + hash 三重守卫防止旧结果落到新行；刷新后发现该提交已不在 80 条历史里时自动收起。
 - 必须用 `--topo-order`：绘图要求父提交排在所有子提交之后，普通逆时间顺序不保证这一点。
 - lane 最多 8 条（`GraphLanes`）。算法维护“仍等待的父提交”列表：子树在父子的 lane 上继续，合并的第二个及以后的父提交占用空闲 lane；超过 8 条并发时共用最后一条，不报错、不 panic。
-- refs 来自 `%D`：去掉 `HEAD ->` / `origin/HEAD ->` 的目标前缀和 `tag:` 前缀，去重。面板只有 300 DIP，界面只保留第一个 ref（通常是当前分支）并截到 12 个字符；作者不显示，把宽度留给 subject。
+- refs 来自 `%D`：去掉 `HEAD ->` / `origin/HEAD ->` 的目标前缀和 `tag:` 前缀，去重。面板只有 300 DIP，提交行只保留第一个 ref（通常是当前分支）并截到 12 个字符；作者不在行内显示，把宽度留给 subject，详情卡里列出全部 refs。
 - 提交 subject 为空时显示 `(no subject)`（提交行必须有文字）；无法识别的日志行（例如混入的 warning）直接跳过。
 - merge 提交只按第一父提交展开和预览，不展示相对每个父的 combined diff；也不画 rebase/merge/revert 进行中的状态。
 - 没有提交时显示 “No commits yet.”；`Undo` 对首个提交也有效（`update-ref -d HEAD`），其余提交用 `reset --soft HEAD~1`。
@@ -98,4 +107,4 @@ go test ./internal/git -v
 go test ./internal/ui -run 'TestGitPanel' -v -count=1
 ```
 
-`internal/git` 测试覆盖状态/重命名解析、分支头解析、init、stage/unstage、commit、首提交撤销、discard all（已暂存/未暂存/未跟踪/首提交前、忽略文件保留）、嵌套工作区，以及 diff 两侧（未暂存/已暂存/未跟踪/新增/删除/重命名、二进制与超大文件、越界路径）、提交日志解析、refs 解析、commit 文件列表与提交 diff 两侧（首提交/单文件/重命名/删除）、merge 的 lane 分配与 8 lane 上限、父提交必须在子提交之后；UI 测试覆盖无仓库提示与 init、无 git 提示、窗口获得焦点后刷新、一轮对话结束后刷新、Stage all + Commit 全链路、Discard all 确认/取消与位置、diff 预览打开与二进制报错、提交图渲染与窄面板裁剪、点击提交展开/收起文件列表、从展开列表打开提交 diff。
+`internal/git` 测试覆盖状态/重命名解析、分支头解析、init、stage/unstage、commit、首提交撤销、discard all（已暂存/未暂存/未跟踪/首提交前、忽略文件保留）、嵌套工作区，以及 diff 两侧（未暂存/已暂存/未跟踪/新增/删除/重命名、二进制与超大文件、越界路径）、提交日志解析（含 committer time）、refs 解析、commit 文件列表与提交 diff 两侧（首提交/单文件/重命名/删除）、提交文件数与增删行数统计、merge 的 lane 分配与 8 lane 上限、父提交必须在子提交之后；UI 测试覆盖无仓库提示与 init、无 git 提示、窗口获得焦点后刷新、一轮对话结束后刷新、Stage all + Commit 全链路、Discard all 确认/取消与位置、diff 预览打开与二进制报错、提交图渲染与窄面板裁剪、点击提交展开/收起文件列表、从展开列表打开提交 diff、hover 详情卡（位于图表左侧、无短 hash/父提交、含文件与行数统计）与复制 hash。

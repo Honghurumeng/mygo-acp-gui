@@ -64,6 +64,25 @@ type gitPanelState struct {
 	CommitFilesErr  string
 	CommitFilesGen  int
 
+	// CommitHover is the graph row whose details card shows. Open turns on
+	// after a short rest, Leave is when an open card closes after the
+	// pointer left it, and Skip hides a card the user dismissed until the
+	// pointer leaves its row.
+	CommitHover      string
+	CommitHoverSince time.Time
+	CommitHoverOpen  bool
+	CommitHoverLeave time.Time
+	CommitHoverSkip  string
+
+	// CommitStat is the hovered commit's changed paths and lines, read when
+	// its details card opens. CommitStatGen guards a late read against
+	// another card, a workspace change, or a closed card.
+	CommitStatHash string
+	CommitStat     git.DiffStat
+	CommitStatBusy bool
+	CommitStatErr  string
+	CommitStatGen  int
+
 	Message       string
 	ChangesHeight float32
 	Gen           int
@@ -823,18 +842,70 @@ func (a *App) closeCommitFiles() {
 	a.Git.CommitFilesGen++
 }
 
-// pruneCommitFiles closes an expanded row whose commit left the bounded
-// history, as after undo or a fetch that rewrote refs.
-func (a *App) pruneCommitFiles() {
-	if a.Git.CommitOpen == "" {
+// ensureCommitStat reads the hovered commit's changed paths and lines once
+// its card opens, off the UI thread; another card or workspace wins over a
+// late read.
+func (a *App) ensureCommitStat(hash string) {
+	if a.Git.CommitStatHash == hash {
 		return
 	}
+	workspace, root := a.Git.Workspace, a.Git.RepoRoot
+	if a.closed.Load() || workspace == "" || root == "" || hash == "" {
+		return
+	}
+	a.Git.CommitStatGen++
+	gen := a.Git.CommitStatGen
+	a.Git.CommitStatHash = hash
+	a.Git.CommitStat = git.DiffStat{}
+	a.Git.CommitStatBusy = true
+	a.Git.CommitStatErr = ""
+	go func() {
+		ctx, cancel := context.WithTimeout(a.lifeCtx, gitStatusTimeout)
+		defer cancel()
+		stat, err := git.CommitStat(ctx, root, hash)
+		a.Post(func() {
+			if a.closed.Load() || a.Git.CommitStatGen != gen ||
+				a.Git.Workspace != workspace || a.Git.CommitHover != hash {
+				return
+			}
+			a.Git.CommitStatBusy = false
+			if err != nil {
+				a.Git.CommitStatErr = gitErrorText(err)
+				return
+			}
+			a.Git.CommitStat = stat
+		})
+	}()
+}
+
+// resetCommitStat drops the card's stat and invalidates a read still running.
+func (a *App) resetCommitStat() {
+	a.Git.CommitStatGen++
+	a.Git.CommitStatHash = ""
+	a.Git.CommitStat = git.DiffStat{}
+	a.Git.CommitStatBusy = false
+	a.Git.CommitStatErr = ""
+}
+
+// pruneCommitFiles closes an expanded row whose commit left the bounded
+// history, as after undo or a fetch that rewrote refs, and the details card
+// of a commit that is no longer shown.
+func (a *App) pruneCommitFiles() {
+	foundOpen, foundHover := false, false
 	for _, commit := range a.Git.Commits {
 		if commit.Hash == a.Git.CommitOpen {
-			return
+			foundOpen = true
+		}
+		if commit.Hash == a.Git.CommitHover {
+			foundHover = true
 		}
 	}
-	a.closeCommitFiles()
+	if a.Git.CommitOpen != "" && !foundOpen {
+		a.closeCommitFiles()
+	}
+	if a.Git.CommitHover != "" && !foundHover {
+		a.closeCommitHover()
+	}
 }
 
 // shortGraphText cuts by runes so names in any script stay whole.

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	mui "github.com/egoist/mygo/ui"
 	"github.com/reed/acp-gui/internal/agent"
@@ -277,7 +278,7 @@ func TestGitPanelDiscardsAllChangesAfterConfirm(t *testing.T) {
 	}
 }
 
-func TestGitGraphShowsOneShortRefAndHash(t *testing.T) {
+func TestGitGraphShowsOneShortRef(t *testing.T) {
 	commit := git.LogCommit{
 		Hash: "0123456789abcdef",
 		Refs: []string{"feature/a-very-long-name", "v1.0.0", "origin/main"},
@@ -350,6 +351,83 @@ func TestGitPanelExpandsCommitFiles(t *testing.T) {
 	}
 	if app.Git.CommitOpen != "" || app.Git.CommitFiles != nil {
 		t.Errorf("collapse left commit open = %q, files = %+v", app.Git.CommitOpen, app.Git.CommitFiles)
+	}
+}
+
+func TestGitPanelHoverShowsCommitDetailsAndCopiesHash(t *testing.T) {
+	workspace := initGitPanelRepo(t)
+	writeGitPanelFile(t, workspace, "hello.txt", "hello\nworld\n")
+	runGitPanelCommand(t, workspace, "add", ".")
+	runGitPanelCommand(t, workspace, "commit", "-q", "-m", "hover details")
+
+	app, tt := newGitPanelApp(t, workspace)
+	waitFor(t, app, tt, func() bool {
+		return app.Git.Checked && !app.Git.Loading && len(app.Git.Commits) == 1
+	})
+	tt.Frame()
+	commit := app.Git.Commits[0]
+	row, ok := tt.Find("hover details")
+	if !ok {
+		t.Fatalf("commit row missing; texts: %q", tt.Texts())
+	}
+	if tt.HasText(shortCommitHash(commit.Hash)) {
+		t.Errorf("the graph row still shows the short hash; texts: %q", tt.Texts())
+	}
+
+	// The card waits for a short rest, so passing over the graph does not
+	// cover it in popovers.
+	tt.Move(row.X+row.W/2, row.Y+row.H/2)
+	tt.Frame()
+	if tt.HasText(commit.Hash) {
+		t.Fatal("the details card showed before the pointer rested")
+	}
+	tt.Advance(gitGraphHoverDelay + time.Millisecond)
+	waitFor(t, app, tt, func() bool {
+		return app.Git.CommitStatHash == commit.Hash && !app.Git.CommitStatBusy
+	})
+	for _, want := range []string{commit.Hash, "Test User", commit.Time.Local().Format("2006-01-02 15:04"), "1 file", "+2"} {
+		if !tt.HasText(want) {
+			t.Errorf("details card is missing %q; texts: %q", want, tt.Texts())
+		}
+	}
+	files, filesOK := tt.Find("1 file")
+	added, addedOK := tt.Find("+2")
+	if !filesOK || !addedOK || files.Y != added.Y {
+		t.Errorf("the changed files and lines are not on one row: files at %v, lines at %v", files, added)
+	}
+	if tt.HasText("Parents") {
+		t.Errorf("details card still lists parents; texts: %q", tt.Texts())
+	}
+	if hash, ok := tt.Find(commit.Hash); !ok || hash.X+hash.W >= row.X {
+		t.Errorf("details card at %v is not left of the graph row at %v", hash, row)
+	}
+
+	if err := tt.Click("Copy commit hash"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if got := tt.Clipboard(); got != commit.Hash {
+		t.Errorf("clipboard = %q, want the full hash %q", got, commit.Hash)
+	}
+
+	// Clicking the row it describes dismisses the card and expands the
+	// commit as a plain click does.
+	if err := tt.Click("hover details"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if app.Git.CommitHover != "" || app.Git.CommitHoverOpen {
+		t.Errorf("card survived the row click: hover = %q, open = %v", app.Git.CommitHover, app.Git.CommitHoverOpen)
+	}
+	waitFor(t, app, tt, func() bool { return app.Git.CommitOpen == commit.Hash && !app.Git.CommitFilesBusy })
+
+	// Leaving the row and card closes it after the grace period.
+	tt.Move(5, 5)
+	tt.Frame()
+	tt.Advance(gitGraphHoverGrace + time.Millisecond)
+	tt.Frame()
+	if app.Git.CommitHover != "" || app.Git.CommitHoverOpen {
+		t.Errorf("card stayed: hover = %q, open = %v", app.Git.CommitHover, app.Git.CommitHoverOpen)
 	}
 }
 

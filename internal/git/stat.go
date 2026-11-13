@@ -58,19 +58,28 @@ func readStat(ctx context.Context, root string, files []File, hasCommits bool) (
 // path followed by the old and new names, so those two records are skipped.
 // Binary files report "-" and contribute no line counts.
 func parseNumstat(out []byte) (added, removed int) {
+	stat := parseNumstatStat(out)
+	return stat.Added, stat.Removed
+}
+
+// parseNumstatStat counts the paths and lines of numstat records, including
+// the empty path a rename writes before its old and new names.
+func parseNumstatStat(out []byte) DiffStat {
 	records := bytes.Split(out, []byte{0})
+	var stat DiffStat
 	for i := 0; i < len(records); i++ {
 		fields := bytes.SplitN(records[i], []byte{'\t'}, 3)
 		if len(fields) < 3 {
 			continue
 		}
-		added += numstatCount(fields[0])
-		removed += numstatCount(fields[1])
+		stat.Files++
+		stat.Added += numstatCount(fields[0])
+		stat.Removed += numstatCount(fields[1])
 		if len(fields[2]) == 0 {
 			i += 2
 		}
 	}
-	return added, removed
+	return stat
 }
 
 // numstatCount reads one numstat field; "-" marks a binary file.

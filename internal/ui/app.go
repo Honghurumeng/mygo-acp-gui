@@ -609,6 +609,7 @@ func (a *App) headerActions(c *mui.Context, chat *Chat) {
 		a.GitPanelOpen = !a.GitPanelOpen
 		if !a.GitPanelOpen {
 			a.Git.DiscardOpen = false
+			a.closeCommitHover()
 		}
 	}
 	if chat == nil {

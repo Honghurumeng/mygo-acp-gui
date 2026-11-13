@@ -16,6 +16,9 @@ func TestParseNumstat(t *testing.T) {
 	if added != 5 || removed != 5 {
 		t.Fatalf("added, removed = %d, %d; want 5, 5", added, removed)
 	}
+	if stat := parseNumstatStat(out); stat.Files != 4 || stat.Added != 5 || stat.Removed != 5 {
+		t.Fatalf("stat = %+v; want 4 files, 5 added, 5 removed", stat)
+	}
 	if added, removed := parseNumstat(nil); added != 0 || removed != 0 {
 		t.Errorf("empty out = %d, %d", added, removed)
 	}
