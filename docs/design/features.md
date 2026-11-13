@@ -39,16 +39,18 @@ pi-acp 的启动信息（pi 版本、Extensions、Skills 等）、重试、自�
 
 ## 配置与模式
 
-`Info` 解析 `configOptions`（model、effort 等）和 `modes`，并兼容只有 `models` 的旧 agent（合成为 `model` 配置项）。
+`Info` 解析 `configOptions`（model、effort 等）和 `modes`，并兼容只有 `models` 的旧 agent（合成为 `model` 配置项）。ACP 的权威来源是 `configOptions`：agent 在 `session/new` / `session/load` 返回完整列表，在 `session/set_config_option` 的响应和 `config_option_update` 通知里返回**整个新列表**；客户端必须整份替换，不能沿用切换前的档位。
+
+旧版 pi-acp 还把 thinking levels 塞进 `modes`（name 为 `Thinking: …`），同时提供 `thought_level` config option。这些不是权限/session mode，客户端在 `modes` 的每个 id 都命中 thinking 选项值时丢弃整个 `modes` 块及其 `currentModeId`，避免出现一份模型切换后不会刷新的重复“Session mode”菜单；Command Code 的 `default` / `plan` 等真实 mode 不受影响。
 
 - composer 的模型 chip 打开面板，四列为 agent / provider / model / thinking；provider 由模型值的 `/` 或 `:` 前缀分组，没有前缀时归入 `Models`。可用 provider 只来自 agent 返回的 model `configOptions`：ACP 没有单独的 provider 可用性接口，模型选项就是 agent 对「当前可用模型」的声明。面板每列按内容取宽、内容左对齐，整个面板与 chip 右对齐，列表变宽时向左展开。chip 左侧画当前 agent 的品牌图标（未知 agent 不画），图标放在 chip 内部且只有 11pt，不改变 22pt 的控件行高。
-- 草稿（还没有 session）也能选 provider / model / thinking：面板数据来自发现阶段的配置探测（`AgentConfigs`），选择存在 `Chat.PendingConfig`，Connect 拿到 session 后按 model 优先的顺序调 `session/set_config_option` 补上；断开连接时把当前值回填为草稿选择，重连不丢。
+- 草稿（还没有 session）也能选 provider / model / thinking：面板数据来自发现阶段的配置探测（`AgentConfigs`），选择存在 `Chat.PendingConfig`，Connect 拿到 session 后按 model 优先的顺序调 `session/set_config_option` 补上；断开连接时把当前值回填为草稿选择，重连不丢。ACP 没有“查询某个未连接模型有哪些 thinking 档位”的接口，所以发现阶段会一个进程把模型列表里缺的模型逐个 `set_config_option` 扫一遍，把每个模型的 `configOptions` 存进 `<data>/model-config.json`；草稿切到已扫过的 model 时直接用它渲染 thinking，未扫到（首次运行、超时或切换失败）才隐藏旧档位并提示先 Connect，同时清掉旧 model 的 thinking 草稿。
 - 草稿的 mode chip 也来自同一次配置探测（`AgentModes`），因此不用发第一条消息就能看到 agent 的 `default` / `plan` 等模式。草稿选择存在 `Chat.PendingMode`，Connect 后、首条 prompt 前调 `session/set_mode`；断开时把当前 mode 回填，重连不丢。切换 agent 时清掉旧 agent 的草稿 mode。
-- 启动时的配置缓存不是永久事实：草稿每次打开模型面板都会异步重读 agent 的 model 列表（正常 30 秒节流，缓存为空时 5 秒重试；失败保留旧列表，读取中没有 session 也保留），所以登录/改配置后不再出现的 provider 会在刷新后消失；连接成功、`config_option_update`、切换配置和断开时都用真实 session 的 `configOptions` 更新缓存。`PendingConfig` 里已被刷新掉的 model 在 Connect 时跳过，不会静默换用别的模型。
+- 启动时的配置缓存不是永久事实：草稿每次打开模型面板都会异步重读 agent 的 model 列表（正常 30 秒节流，缓存为空时 5 秒重试；失败保留旧列表，读取中没有 session 也保留），所以登录/改配置后不再出现的 provider 会在刷新后消失；连接成功、`config_option_update`、切换配置和断开时都用真实 session 的 `configOptions` 更新缓存，并写回 `model-config.json`。启动时把 `session/new` 的模型列表和该文件对照，只扫新模型；缓存完整时只做一次 `session/new`。`PendingConfig` 里已被刷新掉的 model 在 Connect 时跳过，不会静默换用别的模型。每模型缓存只按“模型值是否已存在”判断，不设 TTL：模型档位变化（例如升级 pi 后同一模型多出 `xhigh`）不会自动刷新，需要删掉该文件重扫。
 - agent 只在会话开始前可选；连接后锁定。切换 agent 后重新 Connect 才生效，同时清掉属于旧 agent 的草稿配置选择。
-- 选择 model / thinking 调用 `session/set_config_option` `{sessionId, configId, value}`；其他 select 型配置追加显示在 thinking 列。thinking 选项以 agent 当前返回的 configOptions 为准，pi fork 会按当前模型重算（如 `low/high/max`，含 `max`）。
-- 模式 chip 显示当前 mode；连接后点击调用 `session/set_mode` `{sessionId, modeId}`，草稿中点击只记录 `PendingMode`，由 Connect 在 `session/new` 之后统一应用。
-- 两者都更新 `Info`，并接收 agent 的 `config_option_update` / `current_mode_update` 通知。
+- 选择 model / thinking 调用 `session/set_config_option` `{sessionId, configId, value}`；其他 select 型配置追加显示在 thinking 列。thinking 选项以 agent 当前返回的 configOptions 为准，pi fork 会按当前模型重算（如 `low/high/max`，含 `max`）；响应或 `config_option_update` 里的 `thought_level` 会整组替换，已消失的档位立即从面板和 chip 中移除。
+- 模式 chip 显示当前 mode；连接后点击调用 `session/set_mode` `{sessionId, modeId}`，草稿中点击只记录 `PendingMode`，由 Connect 在 `session/new` 之后统一应用。mode 只来自真实的 `modes`（或未来的 mode config option）；pi-acp v1 的 thinking 兼容块会被过滤，不会渲染成 mode。
+- 两者都更新 `Info`，并接收 agent 的 `config_option_update` / `current_mode_update` 通知。pi-acp 的 `current_mode_update` 在承载 thinking level 时，如果该值属于 thinking 选项，就不写入 `CurrentModeID`；真正的 thinking 当前值以 `thought_level.currentValue` 为准。
 - 流式回合、连接中或即将切换会话时禁用，避免 agent 返回 `-32600`。
 - Command Code 的 `effort` 可能随模型变化；选项一律以 agent 返回为准，不硬编码。
 

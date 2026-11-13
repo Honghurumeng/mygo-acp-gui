@@ -454,6 +454,7 @@ func (s *Session) SetMode(ctx context.Context, modeID string) error {
 	}
 	s.infoMu.Lock()
 	s.info.CurrentModeID = modeID
+	dropLegacyThinkingModes(&s.info)
 	s.infoMu.Unlock()
 	return nil
 }
@@ -593,11 +594,46 @@ func applySessionState(info *Info, state acp.SessionState) {
 			Options:      options,
 		})
 	}
+	dropLegacyThinkingModes(info)
+}
+
+// dropLegacyThinkingModes removes pi-acp v1's nonstandard use of session
+// modes for reasoning levels. ACP modes are permission/session modes; when
+// every advertised mode is also a value of the thought_level config option,
+// that block is only a legacy alias for thinking and configOptions is the
+// authoritative list. Keeping it would add a stale duplicate "Session mode"
+// menu that is never refreshed when the model changes. pi also sends
+// current_mode_update for level changes, so a current mode without any real
+// modes is cleared as well.
+func dropLegacyThinkingModes(info *Info) {
+	thinking := acp.ThinkingOption(info.ConfigOptions)
+	if thinking == nil {
+		return
+	}
+	if len(info.Modes) == 0 {
+		info.CurrentModeID = ""
+		return
+	}
+	if len(thinking.Options) == 0 {
+		return
+	}
+	values := make(map[string]bool, len(thinking.Options))
+	for _, option := range thinking.Options {
+		values[option.Value] = true
+	}
+	for _, mode := range info.Modes {
+		if !values[mode.ID] {
+			return
+		}
+	}
+	info.Modes = nil
+	info.CurrentModeID = ""
 }
 
 func (s *Session) updateConfigOptions(options []acp.ConfigOption) {
 	s.infoMu.Lock()
 	s.info.ConfigOptions = cloneConfigOptions(options)
+	dropLegacyThinkingModes(&s.info)
 	s.infoMu.Unlock()
 }
 
@@ -758,10 +794,12 @@ func (s *Session) applyInfoEvent(ev Event) {
 	case UpdateConfigOption:
 		if len(ev.ConfigOptions) > 0 {
 			s.info.ConfigOptions = cloneConfigOptions(ev.ConfigOptions)
+			dropLegacyThinkingModes(&s.info)
 		}
 	case UpdateCurrentMode:
 		if ev.CurrentModeID != "" {
 			s.info.CurrentModeID = ev.CurrentModeID
+			dropLegacyThinkingModes(&s.info)
 		}
 	case UpdateSessionInfo:
 		if ev.Title != "" {

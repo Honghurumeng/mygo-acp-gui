@@ -51,15 +51,15 @@ pi 是特例：命令由解析后的 `node` + `resources/agents/pi-acp/pi-acp.bu
 
 当前实现：`agent.BuiltinLaunchResults` 解析 pi 和 command-code 的路径/版本；对每个成功的 spec 并行执行 `session.Probe`（仅 `initialize`，5 秒）。单个 agent 失败只记录状态，不隐藏另一个。状态行展示 `ready` / `not-installed` / `installed-not-acp` / `needs-auth` / `error`。
 
-状态定下之后再跑一轮**配置探测**（`session.ProbeConfig`）：用临时工作区做 `initialize` + 一次用完即弃的 `session/new`，把 `configOptions` 和 `modes` 分别缓存到内存的 `AgentConfigs[agentID]` / `AgentModes[agentID]`，让输入框在连接前就能选 provider / model / thinking / mode。这一轮单独 12 秒预算、异步执行，失败只丢缓存，既不延迟启动也不改变状态。
+状态定下之后再跑一轮**配置探测**（`session.ProbeConfigModels`）：用临时工作区做 `initialize` + 一次用完即弃的 `session/new`，把 `configOptions` 和 `modes` 分别缓存到内存的 `AgentConfigs[agentID]` / `AgentModes[agentID]`，让输入框在连接前就能选 provider / model / thinking / mode。`session/new` 一返回就先发布模型列表和当前模型的档位，同一个进程再继续扫其余模型。这一轮 30 秒总预算（`session/new` 12 秒、每次模型切换 5 秒）、异步执行，失败只丢缓存，既不延迟启动也不改变状态。
 
-ACP 没有独立的 provider 可用性查询；`session/new` 返回的 model `configOptions` 是 agent 对当前可用模型的声明（例如 pi-acp 只列出已配置凭据的 provider）。因此缓存会持续更新：草稿打开模型面板时异步重读（正常 30 秒节流，缓存为空时 5 秒重试；失败或无 session 时保留旧列表），连接成功后用真实 session 的选项和 modes 覆盖，`config_option_update` / `current_mode_update` / `set_config_option` / `set_mode` / 断开时也同步。刷新后不存在的 provider 或 mode 不再展示。
+`AgentConfigs` 只是“当前模型”的快照；每个模型自己的 thinking 档位单独存在 `<data>/model-config.json`（`internal/modelconfig`，agent → model → 那次切换后返回的完整 `configOptions`）。启动扫模型时先读这个文件，用 `session/new` 返回的模型列表和它对照：已在文件里的模型不再发 `set_config_option`，只对缺的模型逐个切换并读取，读到一条就落盘一条。缓存完整时启动只做 `session/new`；agent 发了新模型才多花几次切换。超时或切换失败的模型保持缺失，下次启动继续补。
 
-缓存只存在内存，不落盘；用面板刷新 + 真实会话更新代替持久化失效逻辑。
+ACP 没有独立的 provider 可用性查询；`session/new` 返回的 model `configOptions` 是 agent 对当前可用模型的声明（例如 pi-acp 只列出已配置凭据的 provider）。因此缓存会持续更新：草稿打开模型面板时异步重读（正常 30 秒节流，缓存为空时 5 秒重试；失败或无 session 时保留旧列表），连接成功后用真实 session 的选项和 modes 覆盖，`config_option_update` / `current_mode_update` / `set_config_option` / `set_mode` / 断开时也同步。刷新后不存在的 provider 或 mode 不再展示。pi-acp v1 把 thinking levels 放在 `modes` 的兼容块，如果全部命中 `thought_level` 选项值，读取时直接丢弃，避免草稿或已连接时出现 stale 的重复 mode。
+
+草稿切到另一个 model 时，优先用 `model-config.json` 里该模型的快照渲染 thinking 和其他随模型变化的选项；模型列表本身仍取最新一次 `session/new` 的结果（新模型可能刚出现）。只有快照缺失（首次启动还没扫到、或切换失败）时才隐藏旧档位并提示 `Connect to load levels`，同时清掉该 model 的 thinking 草稿；Connect 后由真实 session 的 `config_option_update` 给出新档位。已连接会话每次 `set_config_option` / `config_option_update` 也把结果写回这张表，所以手动切过一次的模型不必等下一次启动。
 
 路径覆盖：`ACP_GUI_NODE`、`ACP_GUI_PI`、`ACP_GUI_COMMAND_CODE` 必须是绝对路径；`ACP_GUI_SHELL` 可换登录 shell。优先级为环境变量 > `settings.json` 的 `paths` > 登录 shell 解析；无效覆盖保留 shell 结果并警告。
-
-不写探测缓存文件：只有两个 agent，启动探测成本可控；缓存会额外引入 mtime/TTL 失效逻辑，收益低。
 
 ## 探测（probe）
 

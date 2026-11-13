@@ -1,6 +1,9 @@
 package acp
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+)
 
 // ConfigOptionValue is one choice of a select config option.
 type ConfigOptionValue struct {
@@ -19,6 +22,40 @@ type ConfigOption struct {
 	Type         string              `json:"type,omitempty"`
 	CurrentValue string              `json:"currentValue"`
 	Options      []ConfigOptionValue `json:"options,omitempty"`
+}
+
+// ModelOption returns the config option that selects the model.
+func ModelOption(options []ConfigOption) *ConfigOption {
+	for i := range options {
+		option := &options[i]
+		if option.ID == "model" || option.Category == "model" {
+			return option
+		}
+	}
+	return nil
+}
+
+// ThinkingOption returns the config option that selects reasoning effort.
+// Agents use different ids and categories for it, so match both the common
+// ids and the semantic ones.
+func ThinkingOption(options []ConfigOption) *ConfigOption {
+	for _, id := range []string{"thought_level", "thinking", "reasoning", "effort"} {
+		for i := range options {
+			if options[i].ID == id {
+				return &options[i]
+			}
+		}
+	}
+	for i := range options {
+		option := &options[i]
+		category := strings.ToLower(option.Category)
+		id := strings.ToLower(option.ID)
+		if strings.Contains(category, "thought") || strings.Contains(category, "reason") ||
+			strings.Contains(id, "thought") || strings.Contains(id, "reason") || strings.Contains(id, "effort") {
+			return option
+		}
+	}
+	return nil
 }
 
 // Mode is one permission/session mode an agent offers.

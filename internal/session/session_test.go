@@ -240,3 +240,53 @@ func repoRoot(t *testing.T) string {
 	}
 	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
 }
+
+func TestLegacyThinkingModesAreDropped(t *testing.T) {
+	// pi-acp v1 still fills the legacy `modes` block with thinking levels.
+	// The thought_level config option is authoritative; showing the same
+	// values twice leaves a stale mode menu when the model changes.
+	pi := acp.SessionState{
+		ConfigOptions: []acp.ConfigOption{{
+			ID: "thought_level", Category: "thought_level", Type: "select", CurrentValue: "max",
+			Options: []acp.ConfigOptionValue{
+				{Value: "low"}, {Value: "high"}, {Value: "max"},
+			},
+		}},
+		Modes: &acp.ModeState{
+			CurrentModeID: "max",
+			AvailableModes: []acp.Mode{
+				{ID: "low", Name: "Thinking: low"},
+				{ID: "high", Name: "Thinking: high"},
+				{ID: "max", Name: "Thinking: max"},
+			},
+		},
+	}
+	var info Info
+	applySessionState(&info, pi)
+	if len(info.Modes) != 0 || info.CurrentModeID != "" {
+		t.Errorf("legacy thinking modes survived: modes=%+v current=%q", info.Modes, info.CurrentModeID)
+	}
+	if option := acp.ThinkingOption(info.ConfigOptions); option == nil || option.CurrentValue != "max" {
+		t.Errorf("thinking option lost: %+v", info.ConfigOptions)
+	}
+
+	// Real session modes (Command Code) are not thinking values and stay.
+	cc := acp.SessionState{
+		ConfigOptions: []acp.ConfigOption{{
+			ID: "effort", Category: "thought_level", Type: "select", CurrentValue: "max",
+			Options: []acp.ConfigOptionValue{{Value: "low"}, {Value: "high"}, {Value: "max"}},
+		}},
+		Modes: &acp.ModeState{
+			CurrentModeID: "plan",
+			AvailableModes: []acp.Mode{
+				{ID: "default", Name: "Default"},
+				{ID: "plan", Name: "Plan"},
+			},
+		},
+	}
+	info = Info{}
+	applySessionState(&info, cc)
+	if len(info.Modes) != 2 || info.CurrentModeID != "plan" {
+		t.Errorf("real modes were dropped: modes=%+v current=%q", info.Modes, info.CurrentModeID)
+	}
+}

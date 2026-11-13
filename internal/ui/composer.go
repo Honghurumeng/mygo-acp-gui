@@ -402,6 +402,11 @@ func (a *App) modelPanel(c *mui.Context, chat *Chat) {
 				label := "No thinking options"
 				if thinking == nil && chat.Session == nil {
 					label = "No options yet"
+				} else if thinking != nil && chat.Session == nil {
+					label = "Connect to load levels"
+					if a.agentConfigBusy[chat.Agent.ID] {
+						label = "Loading levels…"
+					}
 				}
 				caption(inner, label)
 			} else {
@@ -619,8 +624,10 @@ func acceptCommand(chat *Chat, command acp.AvailableCommand) {
 }
 
 // chatConfigOptions returns the config options to draw: the live session's
-// while connected, otherwise the discovery cache of the chat's agent. Draft
-// picks are applied on top so the panel shows what Connect will send.
+// while connected, otherwise the discovery cache of the chat's agent. A draft
+// model pick uses the per-model cache, because ACP reports thinking levels
+// only for the session's current model. Draft picks are applied on top so the
+// panel shows what Connect will send.
 func (a *App) chatConfigOptions(chat *Chat) []acp.ConfigOption {
 	if chat == nil {
 		return nil
@@ -632,13 +639,33 @@ func (a *App) chatConfigOptions(chat *Chat) []acp.ConfigOption {
 	if len(cached) == 0 {
 		return chat.Info.ConfigOptions
 	}
-	if len(chat.PendingConfig) == 0 {
+	model := acp.ModelOption(cached)
+	modelValue := ""
+	if model != nil {
+		modelValue = model.CurrentValue
+		if pending, ok := chat.PendingConfig[model.ID]; ok && configHasChoice(*model, pending) {
+			modelValue = pending
+		}
+	}
+	// The discovery cache belongs to one model. A draft pick for another
+	// model must not keep its thinking tiers: use the cached snapshot for the
+	// picked model when the startup sweep already read it, and hide the
+	// levels otherwise.
+	staleThinking := model != nil && modelValue != "" && modelValue != model.CurrentValue
+	if len(chat.PendingConfig) == 0 && !staleThinking {
 		return cached
 	}
-	out := make([]acp.ConfigOption, len(cached))
-	for i, option := range cached {
-		out[i] = option
-		if value, ok := chat.PendingConfig[option.ID]; ok && configHasChoice(option, value) {
+	out := copyConfigOptions(cached)
+	if staleThinking {
+		if snapshot := a.modelConfigOptions(chat.Agent.ID, modelValue); len(snapshot) > 0 {
+			out = configOptionsForModel(snapshot, cached, modelValue)
+		} else if thinking := acp.ThinkingOption(out); thinking != nil {
+			thinking.CurrentValue = ""
+			thinking.Options = nil
+		}
+	}
+	for i := range out {
+		if value, ok := chat.PendingConfig[out[i].ID]; ok && configHasChoice(out[i], value) {
 			out[i].CurrentValue = value
 		}
 	}
@@ -656,34 +683,12 @@ func configHasChoice(option acp.ConfigOption, value string) bool {
 
 // modelOptionOf is the config option that selects the model.
 func modelOptionOf(options []acp.ConfigOption) *acp.ConfigOption {
-	for i := range options {
-		option := &options[i]
-		if option.ID == "model" || option.Category == "model" {
-			return option
-		}
-	}
-	return nil
+	return acp.ModelOption(options)
 }
 
 // thinkingOptionOf is the config option that selects reasoning effort.
 func thinkingOptionOf(options []acp.ConfigOption) *acp.ConfigOption {
-	for _, id := range []string{"thought_level", "thinking", "reasoning", "effort"} {
-		for i := range options {
-			if options[i].ID == id {
-				return &options[i]
-			}
-		}
-	}
-	for i := range options {
-		option := &options[i]
-		category := strings.ToLower(option.Category)
-		id := strings.ToLower(option.ID)
-		if strings.Contains(category, "thought") || strings.Contains(category, "reason") ||
-			strings.Contains(id, "thought") || strings.Contains(id, "reason") || strings.Contains(id, "effort") {
-			return option
-		}
-	}
-	return nil
+	return acp.ThinkingOption(options)
 }
 
 func extraConfigOptionsOf(options []acp.ConfigOption) []acp.ConfigOption {

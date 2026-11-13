@@ -24,6 +24,12 @@ import readline from 'node:readline';
 
 const MODELS = ['demo/small', 'demo/large', 'demo/reasoning'];
 const THINKING = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
+// Different models expose different reasoning levels, like real agents.
+const MODEL_THINKING = {
+  'demo/small': ['low', 'medium', 'high'],
+  'demo/large': THINKING,
+  'demo/reasoning': ['low', 'high', 'xhigh'],
+};
 const MODES = [
   { id: 'default', name: 'Standard', description: 'Ask before tools.' },
   { id: 'plan', name: 'Plan', description: 'Plan only.' },
@@ -34,6 +40,11 @@ const HISTORY_IMAGE = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42
 let currentModel = 'demo/small';
 let currentThinking = 'medium';
 let currentMode = 'default';
+const thinkingLevels = () => MODEL_THINKING[currentModel] ?? THINKING;
+const clampThinking = () => {
+  const levels = thinkingLevels();
+  if (!levels.includes(currentThinking)) currentThinking = levels.includes('medium') ? 'medium' : levels[0];
+};
 let sessionCounter = 0;
 let lastSessionId = 'fake-session';
 let lastMCPServers = [];
@@ -63,7 +74,7 @@ const state = {
       category: 'thought_level',
       name: 'Thinking',
       currentValue: currentThinking,
-      options: THINKING.map((v) => ({ value: v, name: v, description: null })),
+      options: thinkingLevels().map((v) => ({ value: v, name: v, description: null })),
     },
   ],
 };
@@ -412,8 +423,10 @@ rl.on('line', (line) => {
       return;
 
     case 'session/set_config_option':
-      if (params.configId === 'model' && MODELS.includes(params.value)) currentModel = params.value;
-      else if (params.configId === 'thought_level' && THINKING.includes(params.value)) currentThinking = params.value;
+      if (params.configId === 'model' && MODELS.includes(params.value)) {
+        currentModel = params.value;
+        clampThinking();
+      } else if (params.configId === 'thought_level' && thinkingLevels().includes(params.value)) currentThinking = params.value;
       else {
         send({ jsonrpc: '2.0', id, error: { code: -32602, message: `Unknown config: ${params.configId}=${params.value}` } });
         return;

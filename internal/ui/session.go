@@ -143,9 +143,11 @@ func (a *App) discover(ctx context.Context) {
 	})
 }
 
-// probeAgentConfig starts one throwaway session per ready agent to cache its
-// config options and modes. It runs after the status check has already been
-// published, so it never delays startup and cannot change an agent's status.
+// probeAgentConfigs starts one throwaway session per ready agent to cache its
+// config options and modes. The model sweep rides on the same process: models
+// already in model-config.json are skipped, so a later startup only pays for
+// the new ones. It runs after the status check has already been published, so
+// it never delays startup and cannot change an agent's status.
 func (a *App) probeAgentConfigs() {
 	for _, spec := range a.Agents {
 		a.probeAgentConfig(spec, true)
@@ -153,7 +155,10 @@ func (a *App) probeAgentConfigs() {
 }
 
 const (
-	agentConfigProbeTimeout = 12 * time.Second
+	// The probe budget covers session/new plus the model sweep. Each phase
+	// has its own, shorter deadline inside session.ProbeConfigModels, so a
+	// single slow model cannot consume the whole budget.
+	agentConfigProbeTimeout = 30 * time.Second
 	// A draft panel re-reads the agent's model list when it opens, but not
 	// more often than this; each read spawns an agent + session/new.
 	agentConfigRefreshAfter = 30 * time.Second
@@ -171,7 +176,7 @@ const (
 // showing an empty panel. All map access is on the UI thread; the goroutine
 // only posts its result.
 func (a *App) probeAgentConfig(spec agent.LaunchSpec, force bool) {
-	if a.closed.Load() || spec.ID == "" || a.probeConfig == nil {
+	if a.closed.Load() || spec.ID == "" || (a.probeConfig == nil && a.probeModels == nil) {
 		return
 	}
 	if a.agentConfigBusy == nil {
@@ -193,12 +198,49 @@ func (a *App) probeAgentConfig(spec agent.LaunchSpec, force bool) {
 		}
 	}
 	a.agentConfigBusy[spec.ID] = true
+	started := time.Now()
 	ctx, cancel := context.WithTimeout(a.lifeCtx, agentConfigProbeTimeout)
+	// A connect can publish fresher options while this probe runs; its
+	// cacheAgentConfigs call stamps agentConfigAt, and the probe then leaves
+	// the newer snapshot alone instead of overwriting it.
+	stale := func() bool {
+		return a.agentConfigAt[spec.ID].After(started)
+	}
+	// Missing models are read in the same throwaway session. Each answer is
+	// posted as it arrives, so a sweep that runs out of budget still keeps
+	// the models it reached and the next startup continues from there.
+	probeModel := session.ModelProbe{
+		Known: a.knownModels(spec.ID),
+		// session/new already carries the model list and the current
+		// model's levels; publish that before walking the other models so
+		// the draft panel does not stay empty during the sweep.
+		Ready: func(info session.Info) {
+			options := copyConfigOptions(info.ConfigOptions)
+			modes := copyAgentModeState(info.Modes, info.CurrentModeID)
+			a.Post(func() {
+				if a.closed.Load() || stale() {
+					return
+				}
+				a.AgentConfigs[spec.ID] = options
+				a.AgentModes[spec.ID] = modes
+				a.rememberModelConfig(spec.ID, "", options)
+			})
+		},
+		Report: func(model string, options []acp.ConfigOption) {
+			options = copyConfigOptions(options)
+			a.Post(func() {
+				if a.closed.Load() {
+					return
+				}
+				a.rememberModelConfig(spec.ID, model, options)
+			})
+		},
+	}
 	a.cleanup.Add(1)
 	go func() {
 		defer a.cleanup.Done()
 		defer cancel()
-		info, err := a.probeConfig(ctx, spec)
+		info, err := a.readAgentConfig(ctx, spec, probeModel)
 		// ProbeConfig ignores a failed session/new; an empty SessionID means
 		// the agent did not actually return a session, so keep old options.
 		fresh := err == nil && info.SessionID != ""
@@ -209,16 +251,31 @@ func (a *App) probeAgentConfig(spec agent.LaunchSpec, force bool) {
 			if a.closed.Load() {
 				return
 			}
-			// Throttle failed attempts too, so a broken agent is not spawned
-			// every time the panel opens.
-			a.agentConfigAt[spec.ID] = time.Now()
 			if !fresh {
+				// Throttle failed attempts too, so a broken agent is not
+				// spawned every time the panel opens.
+				a.agentConfigAt[spec.ID] = time.Now()
 				return
 			}
+			if stale() {
+				return
+			}
+			a.agentConfigAt[spec.ID] = time.Now()
 			a.AgentConfigs[spec.ID] = options
 			a.AgentModes[spec.ID] = modes
+			a.rememberModelConfig(spec.ID, "", options)
 		})
 	}()
+}
+
+// readAgentConfig runs the config probe, with the model sweep when the app
+// supports it. Tests inject ProbeConfig without ProbeModels; that keeps their
+// single fake probe authoritative and avoids spawning a real agent.
+func (a *App) readAgentConfig(ctx context.Context, spec agent.LaunchSpec, probeModel session.ModelProbe) (session.Info, error) {
+	if a.probeModels != nil {
+		return a.probeModels(ctx, spec, probeModel)
+	}
+	return a.probeConfig(ctx, spec)
 }
 
 // refreshAgentConfig re-reads the provider/model and mode lists behind a
@@ -253,6 +310,9 @@ func (a *App) cacheAgentConfigs(agentID string, options []acp.ConfigOption) {
 	}
 	a.AgentConfigs[agentID] = copyConfigOptions(options)
 	a.agentConfigAt[agentID] = time.Now()
+	// The live session just told us the levels for its current model, which
+	// is also a cache entry for later drafts and for new-model comparisons.
+	a.rememberModelConfig(agentID, "", options)
 }
 
 // cacheAgentModes keeps the draft mode cache in step with a live session.
@@ -785,7 +845,24 @@ func (a *App) setConfigOption(id, value string) {
 		if chat.PendingConfig == nil {
 			chat.PendingConfig = make(map[string]string)
 		}
+		options := a.chatConfigOptions(chat)
+		thinkingID := ""
+		if model := modelOptionOf(options); model != nil && model.ID == id {
+			if thinking := thinkingOptionOf(options); thinking != nil {
+				thinkingID = thinking.ID
+			}
+		}
 		chat.PendingConfig[id] = value
+		if thinkingID != "" {
+			// Thinking levels belong to the selected model. Keep a draft pick
+			// only when the new model is known to offer it; an unswept model
+			// drops it instead of carrying a level the agent may reject.
+			picked := chat.PendingConfig[thinkingID]
+			thinking := thinkingOptionOf(a.chatConfigOptions(chat))
+			if picked != "" && (thinking == nil || !configHasChoice(*thinking, picked)) {
+				delete(chat.PendingConfig, thinkingID)
+			}
+		}
 		return
 	}
 	s := chat.Session
@@ -1033,15 +1110,23 @@ func (a *App) applyUpdate(chat *Chat, ev session.Event) {
 		return
 	case session.UpdateConfigOption:
 		if len(ev.ConfigOptions) > 0 {
-			chat.Info.ConfigOptions = ev.ConfigOptions
-			a.cacheAgentConfigs(chat.Agent.ID, ev.ConfigOptions)
+			// The session may have dropped a legacy thinking block from
+			// modes at the same time; take its normalized view.
+			info := ev.Session.Info()
+			chat.Info.ConfigOptions = info.ConfigOptions
+			chat.Info.Modes = info.Modes
+			chat.Info.CurrentModeID = info.CurrentModeID
+			a.cacheAgentConfigs(chat.Agent.ID, chat.Info.ConfigOptions)
+			a.cacheAgentModes(chat.Agent.ID, chat.Info.Modes, chat.Info.CurrentModeID)
 		}
 		chat.ConfigBusy = ""
 		return
 	case session.UpdateCurrentMode:
 		if ev.CurrentModeID != "" {
-			chat.Info.CurrentModeID = ev.CurrentModeID
-			a.cacheAgentModes(chat.Agent.ID, chat.Info.Modes, ev.CurrentModeID)
+			info := ev.Session.Info()
+			chat.Info.Modes = info.Modes
+			chat.Info.CurrentModeID = info.CurrentModeID
+			a.cacheAgentModes(chat.Agent.ID, chat.Info.Modes, chat.Info.CurrentModeID)
 		}
 		chat.ConfigBusy = ""
 		return

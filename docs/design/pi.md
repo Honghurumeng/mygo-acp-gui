@@ -122,6 +122,8 @@ pi-acp 的 model `configOption` 来自 pi RPC `get_available_models`；`thought_
 
 切换模型后，pi-acp 会重读模型、thinking levels 和当前 thinking level，返回新的 `configOptions`；同时用 `current_mode_update` 同步 thinking。旧 pi 没有 `get_available_thinking_levels` 时回退到 `state.model.thinkingLevelMap`，再回退到旧版固定列表。
 
+GUI 以 `thought_level` config option 为唯一 thinking 来源：`session/set_config_option` 的响应和 `config_option_update` 都整组替换 options/currentValue。因为 pi 只报告当前模型的档位，配置探测会在同一个临时会话里对模型列表逐个 `set_config_option`，把每个模型返回的 `configOptions` 存进 `<data>/model-config.json`（见 [discovery.md](discovery.md)）；下次启动只扫新模型，草稿因此能直接显示各模型的档位。pi-acp v1 为了兼容旧客户端，还会把同一组 thinking levels 放进 `modes` 并发送 `current_mode_update`；这不是权限/session mode。GUI 在读取 Info 时，如果 `modes` 的每个 id 都是 `thought_level` 的选项值，就丢弃该 `modes` 块和对应的 `currentModeId`，因此不会出现一个模型切换后不刷新、且与 thinking 列表重复的 “Session mode: Thinking: …” 菜单。`session/set_mode` 仍保留给 Command Code 这类有真实模式语义的 agent。
+
 ## 思考内容
 
 推理文本走 `agent_thought_chunk`：实时流由 `message_update.assistantMessageEvent.type === 'thinking_delta'` 映射，历史恢复（`session/load`）由 fork 的 `normalizePiAssistantBlocks()` 从持久化的 `{ type: 'thinking', thinking }` 块回放（上游只回放 text 块，会丢掉推理）。GUI 把它画成回答上方的「Thinking」折叠块，默认收起；两条路径用的是同一个 update 类型，所以恢复会话后的显示和刚跑完时一致。

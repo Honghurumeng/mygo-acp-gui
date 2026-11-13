@@ -23,6 +23,7 @@ import (
 	"github.com/reed/acp-gui/internal/agent"
 	"github.com/reed/acp-gui/internal/archive"
 	"github.com/reed/acp-gui/internal/logs"
+	"github.com/reed/acp-gui/internal/modelconfig"
 	"github.com/reed/acp-gui/internal/session"
 	"github.com/reed/acp-gui/internal/settings"
 )
@@ -42,6 +43,10 @@ type Options struct {
 	// and when the draft model panel needs a refresh. Nil uses
 	// session.ProbeConfig; tests can replace it.
 	ProbeConfig func(context.Context, agent.LaunchSpec) (session.Info, error)
+	// ProbeModels reads and caches config options for the models that are
+	// missing from the per-model cache. Nil uses session.ProbeConfigModels,
+	// or ProbeConfig when that is injected; tests can replace it.
+	ProbeModels func(context.Context, agent.LaunchSpec, session.ModelProbe) (session.Info, error)
 	// ReadClipboardImage returns the clipboard image as PNG, or nil. Nil
 	// uses mygo.Clipboard.ReadImage; tests inject a fixed image.
 	ReadClipboardImage func() []byte
@@ -151,10 +156,16 @@ type App struct {
 	// AgentModes caches the session modes returned by the same throwaway
 	// session/new, so the mode chip is visible in a draft instead of only
 	// after the first connect. Keyed by agent ID.
-	AgentModes   map[string]AgentModeState
-	Env          agent.Environment
-	Resolving    bool
-	ResolveError string
+	AgentModes map[string]AgentModeState
+	// AgentModelConfigs caches, per agent and model value, the config
+	// options the agent returned for that model. ACP only reports thinking
+	// levels for a session's current model, so this is what lets a draft
+	// show another model's levels without connecting. It is persisted in
+	// model-config.json, and a later startup sweeps only new models.
+	AgentModelConfigs map[string]map[string]modelconfig.Model
+	Env               agent.Environment
+	Resolving         bool
+	ResolveError      string
 
 	// Workspace is the draft workspace used when no chat exists. An open
 	// chat carries its own workspace.
@@ -252,6 +263,7 @@ type App struct {
 	discoveryStarted   bool
 	resolveOpts        agent.ResolveOptions
 	probeConfig        func(context.Context, agent.LaunchSpec) (session.Info, error)
+	probeModels        func(context.Context, agent.LaunchSpec, session.ModelProbe) (session.Info, error)
 	readClipboardImage func() []byte
 	fileIndexer        func(string) ([]string, error)
 
@@ -263,6 +275,9 @@ type App struct {
 	settings         *settings.Store
 	settingsPaths    settings.Paths
 	preferredAgentID string
+	// modelConfig persists AgentModelConfigs; nil when there is no data
+	// directory.
+	modelConfig *modelconfig.Store
 
 	logDir     string
 	logsMu     sync.Mutex
@@ -302,9 +317,11 @@ func New(opts Options) *App {
 		resolveOpts:        opts.Resolve,
 		injectedAgents:     opts.Agents != nil,
 		probeConfig:        session.ProbeConfig,
+		probeModels:        session.ProbeConfigModels,
 		Workspaces:         []string{},
 		AgentConfigs:       make(map[string][]acp.ConfigOption),
 		AgentModes:         make(map[string]AgentModeState),
+		AgentModelConfigs:  make(map[string]map[string]modelconfig.Model),
 		agentConfigAt:      make(map[string]time.Time),
 		agentConfigBusy:    make(map[string]bool),
 		WorkspaceCollapsed: make(map[string]bool),
@@ -323,6 +340,12 @@ func New(opts Options) *App {
 	}
 	if opts.ProbeConfig != nil {
 		a.probeConfig = opts.ProbeConfig
+		// An injected config probe is the whole probe: tests that replace it
+		// do not expect a second, real agent process for the model sweep.
+		a.probeModels = nil
+	}
+	if opts.ProbeModels != nil {
+		a.probeModels = opts.ProbeModels
 	}
 	a.readClipboardImage = opts.ReadClipboardImage
 	if a.readClipboardImage == nil {
@@ -336,6 +359,7 @@ func New(opts Options) *App {
 	a.MCPText = "[]"
 	a.loadSettings(opts.DataDir, strings.TrimSpace(opts.Workspace) == "")
 	a.loadSessionArchive(opts.DataDir)
+	a.loadModelConfigs(opts.DataDir)
 	a.ensureWorkspace(a.Workspace)
 	if opts.Agents != nil {
 		a.AgentIndex = a.agentIndex(a.preferredAgentID)
