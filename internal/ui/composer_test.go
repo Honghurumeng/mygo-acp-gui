@@ -319,6 +319,9 @@ func TestComposerControlsShareHeight(t *testing.T) {
 	if !ok {
 		t.Fatalf("Stop missing; texts: %q", tt.Texts())
 	}
+	if _, ok := tt.Find("Send"); ok {
+		t.Fatalf("Send still shown while streaming; texts: %q", tt.Texts())
+	}
 	if stop.H != want {
 		t.Errorf("Stop height = %v, want %v", stop.H, want)
 	}

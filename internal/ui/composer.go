@@ -507,13 +507,16 @@ func drawUsageRing(p *mui.Painter, r mui.Rect, percent int, track, fill mui.Colo
 }
 
 func (a *App) sendButton(c *mui.Context, chat *Chat) {
-	label := "Send"
-	disabled := !chat.canSend() || !chat.hasPrompt()
-	button := composerControl(primaryButton(c, label))
+	var (
+		button   mui.Element
+		disabled bool
+	)
 	if chat.Streaming {
-		label = "Stop"
-		button = composerControl(dangerButton(c, label))
+		button = composerControl(dangerButton(c, "Stop"))
 		disabled = chat.Cancelling
+	} else {
+		button = composerControl(primaryButton(c, "Send"))
+		disabled = !chat.canSend() || !chat.hasPrompt()
 	}
 	button.FontSize(10).Bold().Disabled(disabled)
 	if button.Clicked() {
