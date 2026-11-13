@@ -41,7 +41,7 @@ MyGo 原生窗口 (Go + ui)
   internal/archive/        sessions.json 本地会话存档（agent/session 关系、show/showName）
   internal/logs/           每个 agent 的滚动日志文件（已实现）
   internal/git/            Git 探测、status 解析、提交与远端操作（不经过 shell）
-  internal/ui/             多会话侧栏、聊天、流式 Markdown、权限队列、Git 面板、窗口更新（已实现）
+  internal/ui/             多会话侧栏、聊天、流式 Markdown、权限队列、系统通知、Git 面板、窗口更新（已实现）
   internal/ui/icons/       pi / Command Code 品牌图标（SVG，侧栏 + 标题栏）
   resources/
     agents/pi-acp/

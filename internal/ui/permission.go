@@ -66,6 +66,7 @@ func (a *App) enqueuePermission(p *permissionPrompt) {
 		p.Chat.Attention = true
 	}
 	a.showNextPermission()
+	a.notifyPermission(p)
 }
 
 // removePermission takes a prompt out of the queue after its request ended,

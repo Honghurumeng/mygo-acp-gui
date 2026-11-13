@@ -264,6 +264,9 @@ type App struct {
 	probeModels        func(context.Context, agent.LaunchSpec, session.ModelProbe) (session.Info, error)
 	readClipboardImage func() []byte
 	fileIndexer        func(string) ([]string, error)
+	// notify shows a desktop notification. Nil uses mygo (see notify.go);
+	// tests replace it to capture what the app would show.
+	notify func(desktopNotification)
 
 	// agentConfigAt and agentConfigBusy throttle config probes. Both are
 	// UI-thread state; background probes only post their result back.

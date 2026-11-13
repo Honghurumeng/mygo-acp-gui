@@ -88,6 +88,15 @@ func main() {
 		}
 	})
 
+	// Clicking a permission or finished-turn notification opens the window;
+	// once the app is active, its notifications have served their purpose.
+	app.OnNotificationClick(func(string) {
+		if gui != nil && !quitting {
+			openWindow()
+		}
+	})
+	app.OnDidBecomeActive(func() { mygo.ClearNotifications() })
+
 	// Quitting stops the agents: every session's process group is closed.
 	app.OnBeforeQuit(func(*mygo.QuitEvent) { quitting = true })
 	app.OnWillQuit(func(*mygo.QuitEvent) {

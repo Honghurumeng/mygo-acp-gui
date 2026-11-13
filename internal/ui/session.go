@@ -1344,6 +1344,7 @@ func (a *App) applyPromptResult(chat *Chat, turn *turnState, res acp.PromptResul
 	if chat != a.activeChat() {
 		chat.Unread = true
 	}
+	a.notifyTurnFinished(chat, elapsed, res.StopReason, err)
 }
 
 // finishTurnRuntime records the runtime of a live turn once and clears its

@@ -37,6 +37,16 @@
 
 pi-acp 的启动信息（pi 版本、Extensions、Skills 等）、重试、自动压缩和排队状态不是模型回答。fork 给这些 `agent_message_chunk` 打 `_meta.piAcp.startupInfo` 或 `_meta.piAcp.notice`；GUI 丢弃启动信息，把 notice 画成居中的系统行，同一次重试/压缩/排队的开始和结束更新同一行。扩展 `ctx.ui.notify` 也按系统提示显示。状态行会结束当前 assistant 行，状态之后的文本另起一行，不会把“Retrying…”和回答粘在一起。
 
+## 系统通知
+
+权限请求和一轮回答结束时会发系统通知（`internal/ui/notify.go`，`mygo.NewNotification`），只在用户看不到应用内提示时才发：窗口已关闭/失去焦点，或事件发生在非当前会话。当前会话 + 前台窗口里，权限弹窗、侧栏标记和 `Took` 行已经足够。
+
+- 权限：标题 `Permission needed`，副标题是会话名，正文优先用工具的 `rawInput.description`，其次 `title`；同一会话复用通知 ID，后来的请求替换前者。
+- 完成：标题 `Task complete`，失败为 `Task failed`；正文是最后一条 assistant 回答压成单行并截断，没有正文时显示 `Finished in …`。用户自己 Stop 的 `cancelled` 回合不发通知。
+- `Group` 按 agent + ACP session ID（草稿按 chat ID）分会话，完成和权限各自用稳定 ID，重复事件不会堆叠同一类通知。
+- 通知在后台 goroutine 调 `Show`，不阻塞 UI；macOS 需要打包应用（`mygo dev` / `mygo build`），Linux 走 D-Bus，Windows 是通知气球；`NotificationsSupported` 为 false 时静默跳过。点击通知会打开/聚焦窗口，应用变为 active 时 `ClearNotifications` 清掉已看过的通知。
+- 测试通过 `App.notify` 注入记录器，不启动桌面后端。
+
 ## 配置与模式
 
 `Info` 解析 `configOptions`（model、effort 等）和 `modes`，并兼容只有 `models` 的旧 agent（合成为 `model` 配置项）。ACP 的权威来源是 `configOptions`：agent 在 `session/new` / `session/load` 返回完整列表，在 `session/set_config_option` 的响应和 `config_option_update` 通知里返回**整个新列表**；客户端必须整份替换，不能沿用切换前的档位。
