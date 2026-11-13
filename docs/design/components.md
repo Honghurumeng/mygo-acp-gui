@@ -31,7 +31,9 @@ cryoverlay "github.com/ELY-Open-Source/CrychicUI/overlay"
 
 ## 已替换
 
-- 权限弹窗 `internal/ui/permission.go`：`cryoverlay.Modal` + `crycode.CodeBlock`（工具入参）+ 按 `option.kind` 选按钮
+- 权限弹窗 `internal/ui/permission.go`：MyGo `ui.DialogBase` + `crykit.Arrive`/`crykit.Shade` 复刻 CrychicUI 模态外观
+  （遮罩、宽度、圆角、阴影、入场动画），不用 `cryoverlay.Modal`：后者点遮罩或 Esc 会关闭并让请求回 `cancelled`，
+  而权限请求必须由弹窗内的按钮作答。内容用 `crycode.CodeBlock`（工具入参）+ 按 `option.kind` 选按钮
   （`allow*` → `primaryButton`，`reject*` → `dangerButton`，其余与 `Cancel` → `quietButton`）。
   ACP 的 option 列表原样保留，不压缩成 Allow/Deny 两键；按钮改用项目统一样式后不再有 `crybutton` 的音效。
 - 空状态 `internal/ui/app.go`：`crylayout.Centered` + `cryfeedback.EmptyState`；连接/探测中用 `cryfeedback.Busy` 转圈。
@@ -69,8 +71,7 @@ Git 历史不是 CrychicUI 的 `code.CommitGraph`，而是 `internal/ui/gitgraph
 需要更宽的点击区或字号时在返回值上叠加 `.Padding` / `.FontSize`，不要另起一套背景和边框。ButtonBase 的列表行
 （会话、存档、workspace 标题、git 文件行）不是按钮外观，保留各自的选中/hover 背景。
 
-权限弹窗里原本由 `crybutton` 播的点击音效随之去掉；CrychicUI 的其它组件（`crycode`、`cryfeedback`、`cryoverlay`）
-仍按需播音效。", 
+权限弹窗里原本由 `crybutton` 播的点击音效随之去掉；CrychicUI 的其它组件（`crycode`、`cryfeedback`）仍按需播音效。
 
 约定：
 
@@ -104,8 +105,11 @@ Git 历史改为 `internal/ui/gitgraph.go` 的自绘可展开列表。
   测试二进制默认静音，断言音效才用 `sound.Recent()`。
 - 可交互组件通过 `.Label()` 暴露标签，`tt.Click("Allow once")` 这类按标签点击仍然有效。
 - 事件返回值与 ACP 语义解耦：先拿到点击/变更，再调用 `finishPermission` 等现有函数。
-- `overlay.Modal` 关闭时会把 `*open` 置 false（关闭按钮、Esc、点遮罩都算）；权限弹窗据此回 `cancelled`，
-  已用 `answered` 标记避免与按钮结果重复处理。
+- `ui.DialogBase` 在点遮罩或 Esc 时会把 `*open` 置 false 并标记 `Dismissed()`；权限弹窗传入只存在于当前帧的
+  `open`，所以这些关闭动作被吞掉。只有 `finishPermission`（选项或 `Cancel`）会结束请求，不要改回
+  `cryoverlay.Modal` 或复用 `a.PermissionOpen` 指针。
+- `showNextPermission` 只取出属于当前会话的请求；其他会话的请求留在 `permissionQueue`，切走时把可见请求放回
+  队首并隐藏弹窗，切回时再显示。后台请求不能抢焦点或自动切换会话。
 - 组件对必填参数 panic（空 label、空 code、无效图标、非法索引）。列表数据要先补齐（如 `At` 非零），不要给组件塞空值。
 
 ## 升级检查

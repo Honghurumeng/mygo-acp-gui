@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	crycode "github.com/ELY-Open-Source/CrychicUI/code"
-	cryoverlay "github.com/ELY-Open-Source/CrychicUI/overlay"
+	crykit "github.com/ELY-Open-Source/CrychicUI/kit"
 	mui "github.com/egoist/mygo/ui"
 	"github.com/reed/acp-gui/internal/acp"
 	"github.com/reed/acp-gui/internal/session"
@@ -67,9 +67,7 @@ func (a *App) enqueuePermission(p *permissionPrompt) {
 	if p.Chat != nil {
 		p.Chat.Attention = true
 	}
-	if a.Permission == nil {
-		a.showNextPermission()
-	}
+	a.showNextPermission()
 }
 
 // removePermission takes a prompt out of the queue after its request ended,
@@ -84,22 +82,42 @@ func (a *App) removePermission(p *permissionPrompt) {
 		a.PermissionOpen = false
 	}
 	a.refreshAttention(p.Chat)
-	if a.Permission == nil {
-		a.showNextPermission()
-	}
+	a.showNextPermission()
 }
 
+// showNextPermission shows only a prompt owned by the active chat. Requests
+// from other chats stay queued, with their sidebar marker, until the user
+// selects that chat. Leaving a chat hides its dialog again without answering.
 func (a *App) showNextPermission() {
-	for len(a.permissionQueue) > 0 {
-		p := a.permissionQueue[0]
-		a.permissionQueue = a.permissionQueue[1:]
+	active := a.activeChat()
+	if active != nil && active.Closed {
+		active = nil
+	}
+	if a.Permission != nil {
+		if a.Permission.Chat == active {
+			return
+		}
+		// Keep the visible prompt pending; switching back reveals it again.
+		a.permissionQueue = append([]*permissionPrompt{a.Permission}, a.permissionQueue...)
+		a.Permission = nil
+		a.PermissionOpen = false
+	}
+	for i := 0; i < len(a.permissionQueue); {
+		p := a.permissionQueue[i]
 		if p.Chat == nil || p.Chat.Closed || p.Chat.Session != p.Request.Session {
+			a.permissionQueue = append(a.permissionQueue[:i], a.permissionQueue[i+1:]...)
 			p.respond(acp.CancelledPermission())
 			a.refreshAttention(p.Chat)
 			continue
 		}
+		if active == nil || p.Chat != active {
+			i++
+			continue
+		}
+		a.permissionQueue = append(a.permissionQueue[:i], a.permissionQueue[i+1:]...)
 		a.Permission = p
 		a.PermissionOpen = true
+		a.refreshAttention(p.Chat)
 		return
 	}
 	a.Permission = nil
@@ -149,9 +167,7 @@ func (a *App) cancelPermissionsFor(chat *Chat) {
 		p.respond(acp.CancelledPermission())
 	}
 	a.refreshAttention(chat)
-	if a.Permission == nil {
-		a.showNextPermission()
-	}
+	a.showNextPermission()
 }
 
 func (a *App) refreshAttention(chat *Chat) {
@@ -178,68 +194,77 @@ func (a *App) permissionDialog(c *mui.Context) {
 	p := a.Permission
 	req := p.Request
 
-	// answered keeps the dismissal branch below from cancelling a request the
-	// buttons already settled.
-	answered := false
-	cryoverlay.Modal(c, "Permission required", &a.PermissionOpen, cryoverlay.ModalOptions{}, func() {
-		mui.Column(c).FillWidth().Gap(10).Children(func() {
-			if p.Chat != nil {
-				mutedText(c, "Chat: "+p.Chat.name(), 11)
+	permissionModal(c, "Permission required", func() {
+		if p.Chat != nil {
+			mutedText(c, "Chat: "+p.Chat.name(), 11)
+		}
+		title := req.ToolCall.Title
+		description := toolDescription(req.ToolCall.RawInput)
+		if description != "" {
+			// The description says what the call does; the title often
+			// repeats the raw command, so it stays a muted subtitle.
+			mui.Text(c, description).FontSize(14)
+			if toolTitleAddsInfo(title, description) {
+				mutedText(c, title, 11)
 			}
-			title := req.ToolCall.Title
-			description := toolDescription(req.ToolCall.RawInput)
-			if description != "" {
-				// The description says what the call does; the title often
-				// repeats the raw command, so it stays a muted subtitle.
-				mui.Text(c, description).FontSize(14)
-				if toolTitleAddsInfo(title, description) {
-					mutedText(c, title, 11)
-				}
-			} else {
-				if title == "" {
-					title = "The agent wants to use a tool."
-				}
-				mui.Text(c, title).FontSize(14)
+		} else {
+			if title == "" {
+				title = "The agent wants to use a tool."
 			}
-			if req.ToolCall.Kind != "" || req.ToolCall.Status != "" {
-				mutedText(c, strings.TrimSpace(req.ToolCall.Kind+" · "+req.ToolCall.Status), 11)
-			}
-			if detail := compactJSON(req.ToolCall.RawInput); detail != "" {
-				crycode.CodeBlock(c, "json", detail, crycode.CodeBlockOptions{Title: "Input"})
-			}
-			mutedText(c, "Choose what the agent may do.", 12)
+			mui.Text(c, title).FontSize(14)
+		}
+		if req.ToolCall.Kind != "" || req.ToolCall.Status != "" {
+			mutedText(c, strings.TrimSpace(req.ToolCall.Kind+" · "+req.ToolCall.Status), 11)
+		}
+		if detail := compactJSON(req.ToolCall.RawInput); detail != "" {
+			crycode.CodeBlock(c, "json", detail, crycode.CodeBlockOptions{Title: "Input"})
+		}
+		mutedText(c, "Choose what the agent may do.", 12)
 
-			mui.Row(c).Gap(8).Wrap().Justify(mui.End).Children(func() {
-				for _, option := range req.Options {
-					label := option.Name
-					if label == "" {
-						label = option.OptionID
-					}
-					var button mui.Element
-					switch {
-					case strings.Contains(option.Kind, "allow"):
-						button = primaryButton(c, label)
-					case strings.Contains(option.Kind, "reject"):
-						button = dangerButton(c, label)
-					default:
-						button = quietButton(c, label)
-					}
-					if button.Clicked() {
-						answered = true
-						a.finishPermission(p, acp.SelectedPermission(option.OptionID))
-						return
-					}
+		mui.Row(c).Gap(8).Wrap().Justify(mui.End).Children(func() {
+			for _, option := range req.Options {
+				label := option.Name
+				if label == "" {
+					label = option.OptionID
 				}
-				if quietButton(c, "Cancel").Clicked() {
-					answered = true
-					a.finishPermission(p, acp.CancelledPermission())
+				var button mui.Element
+				switch {
+				case strings.Contains(option.Kind, "allow"):
+					button = primaryButton(c, label)
+				case strings.Contains(option.Kind, "reject"):
+					button = dangerButton(c, label)
+				default:
+					button = quietButton(c, label)
 				}
-			})
+				if button.Clicked() {
+					a.finishPermission(p, acp.SelectedPermission(option.OptionID))
+					return
+				}
+			}
+			if quietButton(c, "Cancel").Clicked() {
+				a.finishPermission(p, acp.CancelledPermission())
+			}
 		})
 	})
-	if !answered && !a.PermissionOpen {
-		a.finishPermission(p, acp.CancelledPermission())
-	}
+}
+
+// permissionModal shows content over a dim until one of its buttons settles
+// the request. MyGo's DialogBase marks itself dismissed on a backdrop click
+// or Escape; open is local to one frame here, so those presses are swallowed
+// instead of rejecting the ACP request.
+func permissionModal(c *mui.Context, title string, content func()) {
+	t := c.Theme()
+	open := true
+	mui.DialogBase(c, &open, func(backdrop, panel mui.Element) {
+		crykit.Arrive(backdrop.Background(crykit.Shade(0.4)), mui.Pose{Fade: 1}, 0)
+		panel.FillWidth().MaxWidth(t.Space(110)).Padding(t.Space(5)).Radius(t.Radius*1.5).
+			Background(t.Background).Shadow(0, 12, 32, 0, crykit.Shade(0.24))
+		crykit.Arrive(panel, mui.Pose{Scale: 0.95, Fade: 1}, 0)
+		mui.Column(c).FillWidth().Gap(t.Space(3)).Children(func() {
+			mui.Text(c, title).Bold().FontSize(t.Rem(1.1))
+			content()
+		})
+	})
 }
 
 // toolDescription returns the agent's short explanation of a tool call.

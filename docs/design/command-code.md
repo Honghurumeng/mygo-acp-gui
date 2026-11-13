@@ -68,7 +68,7 @@ Command Code 是用户自备的 CLI，应用只定位已有安装，不安装、
 ]
 ```
 
-应用阻塞等待用户选择，返回 `{"outcome":{"outcome":"selected","optionId":"..."}}`；关闭弹窗回 `{"outcome":{"outcome":"cancelled"}}`。响应必须带原请求的 `id`，不能发成 notification。
+应用阻塞等待用户选择，返回 `{"outcome":{"outcome":"selected","optionId":"..."}}`；只有弹窗里的选项或 `Cancel` 会作答，取消回 `{"outcome":{"outcome":"cancelled"}}`。点弹窗外部或按 Esc 不会关闭弹窗，避免误拒绝中断任务；后台会话的请求只排队并在侧栏提示，用户切到该会话时才显示。响应必须带原请求的 `id`，不能发成 notification。
 
 `toolCall.rawInput.description`（如 `shell_command` 的 5–10 词说明）作为弹窗主标题；`title`（`Shell: <command>`）降为次行，完整入参仍在 JSON 块中。
 

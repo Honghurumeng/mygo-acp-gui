@@ -105,9 +105,8 @@ func TestChatWithFakeAgent(t *testing.T) {
 	}
 }
 
-// Closing the permission dialog without choosing an option answers the agent
-// with cancelled rather than leaving the request blocked.
-func TestPermissionDialogDismissalCancels(t *testing.T) {
+// Cancel is the explicit way to reject: it answers the agent with cancelled.
+func TestPermissionCancelSettlesRequest(t *testing.T) {
 	app, tt := newFakeApp(t)
 	current(app).Input = "/permission"
 	tt.Frame()
@@ -116,11 +115,41 @@ func TestPermissionDialogDismissalCancels(t *testing.T) {
 	}
 	waitFor(t, app, tt, func() bool { return app.Permission != nil && app.PermissionOpen })
 	tt.Frame()
-	if err := tt.Click("Close"); err != nil {
+	if err := tt.Click("Cancel"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, app, tt, func() bool {
 		return app.Permission == nil && !current(app).Streaming && current(app).LastStop == "cancelled"
+	})
+}
+
+// A click on the dimmed backdrop or Escape must not answer the request;
+// only the dialog's own buttons do.
+func TestPermissionDialogIgnoresOutsideDismissal(t *testing.T) {
+	app, tt := newFakeApp(t)
+	current(app).Input = "/permission"
+	tt.Frame()
+	if err := tt.Click("Send"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool { return app.Permission != nil && app.PermissionOpen })
+
+	tt.ClickAt(5, 5)
+	tt.Frame()
+	tt.Key(0, mui.KeyEscape)
+	tt.Frame()
+	if app.Permission == nil || !app.PermissionOpen {
+		t.Fatalf("outside dismissal settled the request: %+v", app.Permission)
+	}
+	if current(app).LastStop == "cancelled" {
+		t.Fatal("outside dismissal cancelled the turn")
+	}
+
+	if err := tt.Click("Allow once"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		return app.Permission == nil && !current(app).Streaming && lastAssistantHas(app, "permission granted")
 	})
 }
 

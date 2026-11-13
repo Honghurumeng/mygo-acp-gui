@@ -360,6 +360,7 @@ func (a *App) newChatTabIn(workspace string) *Chat {
 	a.Workspace = chat.Workspace
 	a.ensureWorkspace(chat.Workspace)
 	a.WorkspaceCollapsed[chat.Workspace] = false
+	a.showNextPermission()
 	return chat
 }
 
@@ -385,6 +386,7 @@ func (a *App) selectChat(chat *Chat) {
 	if index == a.Active {
 		chat.Unread = false
 		chat.gitWorkspace = ""
+		a.showNextPermission()
 		return
 	}
 	previous := a.activeChat()
@@ -408,6 +410,7 @@ func (a *App) selectChat(chat *Chat) {
 	a.ensureWorkspace(chat.Workspace)
 	a.WorkspaceCollapsed[chat.Workspace] = false
 	a.persistSettings()
+	a.showNextPermission()
 }
 
 func (a *App) agentIndex(id string) int {
@@ -451,6 +454,7 @@ func (a *App) removeChat(chat *Chat) {
 		a.Workspace = current.Workspace
 	}
 	a.persistSettings()
+	a.showNextPermission()
 
 	if s := chat.Session; s != nil {
 		chat.Session = nil

@@ -139,10 +139,28 @@ func TestPermissionFromBackgroundChat(t *testing.T) {
 	sendTo(t, app, tt, first, "/permission")
 	waitFor(t, app, tt, func() bool { return app.Permission != nil && app.Permission.Chat == first })
 
+	// Leaving the chat hides its dialog without answering. The request stays
+	// queued and the tab keeps the permission marker.
 	app.selectChat(second)
 	tt.Frame()
 	if app.activeChat() != second {
 		t.Fatal("could not switch away from the requesting chat")
+	}
+	if app.Permission != nil || app.PermissionOpen {
+		t.Fatal("background permission stayed visible after switching away")
+	}
+	if !first.Attention {
+		t.Error("background chat is not marked as waiting for permission")
+	}
+	if tt.HasText("Permission required") {
+		t.Error("permission dialog is drawn for another chat")
+	}
+
+	// Switching back shows the same, still unanswered request.
+	app.selectChat(first)
+	tt.Frame()
+	if app.Permission == nil || app.Permission.Chat != first {
+		t.Fatal("returning to the chat did not reveal its permission")
 	}
 	if err := tt.Click("Allow once"); err != nil {
 		t.Fatal(err)
@@ -155,6 +173,44 @@ func TestPermissionFromBackgroundChat(t *testing.T) {
 	}
 	if first.Attention {
 		t.Error("attention marker was not cleared after answering")
+	}
+}
+
+// A request that arrives while another chat is on screen stays queued; it
+// must not switch tabs or draw a dialog over the current conversation.
+func TestPermissionFromBackgroundChatDoesNotStealFocus(t *testing.T) {
+	app, tt := newFakeApp(t)
+	first := connectTab(t, app, tt)
+	second := newTab(t, app, tt)
+	second = connectTab(t, app, tt)
+
+	sendTo(t, app, tt, first, "/permission")
+	app.selectChat(second)
+	waitFor(t, app, tt, func() bool { return first.Attention })
+	if app.activeChat() != second {
+		t.Fatalf("permission switched to %q", app.activeChat().name())
+	}
+	if app.Permission != nil || app.PermissionOpen {
+		t.Fatal("background permission popped up without opening its chat")
+	}
+	tt.Frame()
+	if tt.HasText("Permission required") || tt.HasText("Allow once") {
+		t.Error("permission dialog is drawn over another chat")
+	}
+
+	app.selectChat(first)
+	tt.Frame()
+	if app.Permission == nil || app.Permission.Chat != first {
+		t.Fatal("opening the requesting chat did not show its permission")
+	}
+	if err := tt.Click("Allow once"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		return app.Permission == nil && !first.Streaming && chatAssistantHas(first, "permission granted")
+	})
+	if chatAssistantHas(second, "permission granted") {
+		t.Fatal("permission answer leaked into another chat")
 	}
 }
 
@@ -250,21 +306,35 @@ func TestPermissionQueueKeepsChatsSeparate(t *testing.T) {
 	sendTo(t, app, tt, first, "/permission")
 	waitFor(t, app, tt, func() bool { return app.Permission != nil && app.Permission.Chat == first })
 
-	// The second chat asks while the first dialog is open. The request
-	// queues behind it, and the tab is marked.
+	// Switching away parks the first prompt. The second chat's own request
+	// shows immediately because that chat is now on screen.
 	app.selectChat(second)
+	tt.Frame()
+	if app.Permission != nil || !first.Attention {
+		t.Fatalf("first prompt was not parked: permission=%v attention=%v", app.Permission, first.Attention)
+	}
 	second.Input = "/permission"
 	if !app.send() {
 		t.Fatal("could not start the second prompt")
 	}
-	waitFor(t, app, tt, func() bool { return len(app.permissionQueue) == 1 && second.Attention })
+	waitFor(t, app, tt, func() bool { return app.Permission != nil && app.Permission.Chat == second })
 
 	tt.Frame()
 	if err := tt.Click("Allow once"); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, app, tt, func() bool { return app.Permission != nil && app.Permission.Chat == second })
+	waitFor(t, app, tt, func() bool {
+		return app.Permission == nil && !second.Streaming && chatAssistantHas(second, "permission granted")
+	})
+	if chatAssistantHas(first, "permission granted") {
+		t.Fatal("second answer settled the first chat")
+	}
+
+	app.selectChat(first)
 	tt.Frame()
+	if app.Permission == nil || app.Permission.Chat != first {
+		t.Fatal("first prompt did not return")
+	}
 	if err := tt.Click("Allow once"); err != nil {
 		t.Fatal(err)
 	}
