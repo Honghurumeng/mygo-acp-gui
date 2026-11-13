@@ -31,7 +31,7 @@ MyGo 原生窗口 (Go + ui)
 
 ```
 仓库根/
-  main.go                  MyGo 应用入口、窗口与退出清理
+  main.go                  MyGo 应用入口、窗口重建与退出清理
   main_test.go             UI 冒烟测试
   mygo.json                App 元数据与打包配置
   internal/acp/            JSON-RPC、请求/通知、权限、行分帧（已实现）
@@ -81,7 +81,8 @@ MyGo 原生窗口 (Go + ui)
   → 首次连接成功 → session/list 合并进存档（保留 show/showName）
   → Stop → session/cancel
   → 删除会话 → 存档 show=false（软删除）+ Session.Close → kill(-pgid)
-  → 关闭窗口 / 退出 → 关闭所有会话的进程组
+  → 关闭窗口 → 只销毁窗口：App 留在后台，会话与 agent 进程继续运行
+  → 退出（⌘Q / Quit）→ 关闭所有会话的进程组
 ```
 
 - 解析并探测 pi、command-code；单个 agent 缺失不会隐藏另一个，侧栏状态展示 `ready` / `not-installed` / `installed-not-acp` / `needs-auth` / `error`。内置 agent 表固定为 pi、command-code，不做 registry 发现。
@@ -132,7 +133,10 @@ pi 自己的工具在工作区内读写执行；客户端只负责展示和审�
 - Unix：`Setpgid: true`，退出时 `kill(-pid, SIGTERM)`，宽限 1.5 秒后 `SIGKILL`。
 - Windows：新进程组 + `taskkill /PID <pid> /T /F`。
 - 先关 stdin 请求优雅退出；agent 意外退出时也对残留进程组发 SIGTERM。
-- 应用退出 / 窗口关闭必须清理所有 agent 进程；`Session.Close` 幂等，`App.Shutdown` 取消所有会话的连接并关闭 sessions 中登记的全部进程组。
+- 应用退出时必须清理所有 agent 进程；`Session.Close` 幂等，`App.Shutdown` 取消所有会话的连接并关闭 sessions 中登记的全部进程组。
+- 关闭窗口不是退出：窗口销毁后 `App` 继续在后台运行（macOS 保留 Dock 图标），`App.Detach` 只解除窗口，`Post` 仍通过已关闭窗口的 `Window.Update` 在主线程落地（不重绘），所以后台会话继续流式、权限继续排队，状态不丢。
+- 重新打开窗口：macOS 点 Dock 图标触发 `OnActivate(hasVisibleWindows=false)`，`main.go` 用同一个 `App` 新建窗口并 `App.Attach`，先补上关闭期间排队的更新，再画第一帧。
+- 非 macOS 平台没有 Dock 图标可恢复窗口，关闭最后一个窗口时仍走 `App.Quit()`，避免留下无界面的进程。
 - stderr 单独收集，保留末尾 64 KiB；初始化/会话失败时附在错误里（截断展示）。
 
 ## MyGo UI

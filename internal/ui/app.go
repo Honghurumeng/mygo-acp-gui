@@ -222,11 +222,17 @@ type App struct {
 
 	MD markdown.Options
 
-	chatsMu      sync.Mutex
-	nextChat     int
-	win          *mygo.Window
-	postMu       sync.Mutex
-	pending      []func()
+	chatsMu  sync.Mutex
+	nextChat int
+	// win is the open window, nil while the app runs in the background.
+	win     *mygo.Window
+	postMu  sync.Mutex
+	pending []func()
+	// updateWin is the last window, kept after it closed: MyGo runs
+	// Window.Update closures on the UI thread without drawing a closed
+	// window, so background updates keep landing while no window is open.
+	// It is nil until the first window exists (tests).
+	updateWin    *mygo.Window
 	closed       atomic.Bool
 	shutdownOnce sync.Once
 	cleanup      sync.WaitGroup
@@ -240,7 +246,10 @@ type App struct {
 	discoverMu     sync.Mutex
 	discoverCancel context.CancelFunc
 
-	injectedAgents     bool
+	injectedAgents bool
+	// discoveryStarted keeps a reopened window from probing the agents
+	// again; discovery runs once per app, not once per window.
+	discoveryStarted   bool
 	resolveOpts        agent.ResolveOptions
 	probeConfig        func(context.Context, agent.LaunchSpec) (session.Info, error)
 	readClipboardImage func() []byte
@@ -413,15 +422,36 @@ func firstNonEmpty(values ...string) string {
 }
 
 // Attach gives the app its window and starts discovery once. Call it on the
-// main thread after the window exists.
+// main thread after the window exists. Updates posted while no window was
+// open apply before the new window draws its first frame.
 func (a *App) Attach(win *mygo.Window) {
 	a.postMu.Lock()
 	a.win = win
+	a.updateWin = win
+	// Probe the agents once: a reopened window keeps the discovery results.
+	discover := !a.injectedAgents && !a.discoveryStarted
+	a.discoveryStarted = true
+	pending := a.pending
+	a.pending = nil
 	a.postMu.Unlock()
+	for _, fn := range pending {
+		fn()
+	}
 	win.OnFocus(a.refreshGitOnFocus)
-	if !a.injectedAgents {
+	if discover {
 		a.startDiscovery()
 	}
+}
+
+// Detach forgets win after it closed, so dialogs no longer reach a destroyed
+// window. Updates keep posting through it (see updateWin): the app and its
+// agents run on in the background until the app quits.
+func (a *App) Detach(win *mygo.Window) {
+	a.postMu.Lock()
+	if a.win == win {
+		a.win = nil
+	}
+	a.postMu.Unlock()
 }
 
 func (a *App) window() *mygo.Window {
@@ -430,14 +460,20 @@ func (a *App) window() *mygo.Window {
 	return a.win
 }
 
-// Post runs fn on the UI thread and redraws. With no window (tests), fn is
-// queued for Flush.
+// Post runs fn on the UI thread and redraws, or only runs it while the app
+// has no window. Before the first window exists (tests), fn is queued for
+// Flush.
 func (a *App) Post(fn func()) {
 	if fn == nil || a.closed.Load() {
 		return
 	}
 	a.postMu.Lock()
 	win := a.win
+	if win == nil {
+		// No window: land the update through the closed one without a
+		// redraw, or queue it until the first window exists (tests).
+		win = a.updateWin
+	}
 	if win == nil {
 		a.pending = append(a.pending, fn)
 		a.postMu.Unlock()
@@ -459,7 +495,7 @@ func (a *App) Flush() {
 }
 
 // Shutdown stops a pending connect and closes every agent process group.
-// It is safe to call from OnClose and OnWillQuit.
+// It is safe to call from OnWillQuit; closing a window does not call it.
 func (a *App) Shutdown() {
 	a.shutdownOnce.Do(func() {
 		a.persistSettings()
