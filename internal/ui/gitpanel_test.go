@@ -431,6 +431,27 @@ func TestGitPanelHoverShowsCommitDetailsAndCopiesHash(t *testing.T) {
 	}
 }
 
+// TestGitDetailLabelsFitTheirColumn keeps the card's label column as wide as
+// its widest label at every Git font size: a fixed 38 DIP split "Changes"
+// onto two lines once the font grew.
+func TestGitDetailLabelsFitTheirColumn(t *testing.T) {
+	app := New(Options{Agents: []agent.LaunchSpec{}})
+	t.Cleanup(app.Shutdown)
+	for _, scale := range []int{minFontScale, 100, maxFontScale} {
+		app.Fonts.Git = scale
+		var column, label float32
+		tt := mui.NewTester(func(c *mui.Context) {
+			column = app.gitDetailLabelColumn(c)
+			label, _ = c.MeasureText(0, mui.Span{Text: "Changes", Size: app.gitFont(8)})
+			mui.Text(c, "x")
+		}, 200, 100)
+		tt.Frame()
+		if column <= label {
+			t.Errorf("label column %v at %d%% is not wider than the Changes label %v", column, scale, label)
+		}
+	}
+}
+
 func newGitPanelApp(t *testing.T, workspace string) (*App, *mui.Tester) {
 	t.Helper()
 	app := New(Options{Version: "test", Workspace: workspace, Agents: []agent.LaunchSpec{}})

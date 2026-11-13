@@ -86,10 +86,6 @@ func (a *App) composerBodyFont(c *mui.Context) float32 {
 	return a.composerFont(c.Theme().FontSize)
 }
 
-func (a *App) gitBodyFont(c *mui.Context) float32 {
-	return a.gitFont(c.Theme().FontSize)
-}
-
 // Captions and section labels exist in a fixed size inside widgets.go.
 // These area variants apply the same scaling to their built-in size.
 func (a *App) workspaceCaption(c *mui.Context, text string) mui.Element {

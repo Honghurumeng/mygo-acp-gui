@@ -291,10 +291,20 @@ func (a *App) gitGraphDetails(c *mui.Context, panel, anchor mui.Element, commit 
 	})
 }
 
+// gitDetailLabelColumn is the details card's label column, measured from
+// the widest label with the card's label font: a larger Git font widens the
+// column with the text instead of wrapping "Changes" onto two lines.
+func (a *App) gitDetailLabelColumn(c *mui.Context) float32 {
+	width, _ := c.MeasureText(0, mui.Span{Text: "Changes", Size: a.gitFont(8)})
+	return width + 4
+}
+
 // gitDetailLine is one label and value of the commit details card.
 func (a *App) gitDetailLine(c *mui.Context, label, value string) {
+	labelWidth := a.gitDetailLabelColumn(c)
 	mui.Row(c).FillWidth().Gap(6).AlignItems(mui.Start).Children(func() {
-		mui.Text(c, label).FontSize(a.gitFont(8)).TextColor(c.Theme().TextMuted).Width(38).Shrink(0)
+		mui.Text(c, label).FontSize(a.gitFont(8)).TextColor(c.Theme().TextMuted).
+			Width(labelWidth).Shrink(0).SingleLine()
 		mui.Text(c, value).FontSize(a.gitFont(9)).Grow(1).MinWidth(0).MaxLines(2)
 	})
 }
@@ -303,12 +313,14 @@ func (a *App) gitDetailLine(c *mui.Context, label, value string) {
 // lines on one row, colored as the header's counts are.
 func (a *App) gitCommitStats(c *mui.Context, label string, stat git.DiffStat) {
 	t := c.Theme()
+	labelWidth := a.gitDetailLabelColumn(c)
 	files := strconv.Itoa(stat.Files) + " files"
 	if stat.Files == 1 {
 		files = "1 file"
 	}
 	mui.Row(c).FillWidth().Gap(6).AlignItems(mui.Center).Children(func() {
-		mui.Text(c, label).FontSize(a.gitFont(8)).TextColor(t.TextMuted).Width(38).Shrink(0)
+		mui.Text(c, label).FontSize(a.gitFont(8)).TextColor(t.TextMuted).
+			Width(labelWidth).Shrink(0).SingleLine()
 		mui.Text(c, files).FontSize(a.gitFont(9))
 		mutedText(c, "·", a.gitFont(9))
 		if stat.Added == 0 && stat.Removed == 0 {

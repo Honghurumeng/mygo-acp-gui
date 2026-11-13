@@ -535,7 +535,9 @@ func (a *App) gitCommitBox(c *mui.Context) {
 			Placeholder("Commit message").
 			Lines(2, 4).
 			Padding(5, 7).
-			FontSize(a.gitBodyFont(c)).
+			// The same size as the Staged/Changes rows: the Git panel's one
+			// font setting governs its whole body, not just the list.
+			FontSize(a.gitFont(10)).
 			Radius(t.Radius).
 			Border(1, t.Border).
 			Background(t.Background).

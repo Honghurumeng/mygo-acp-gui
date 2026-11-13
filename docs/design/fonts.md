@@ -39,8 +39,10 @@ a.gitFont(size)       // Git 面板
 ```
 
 - 每个函数把内置字号乘以该区域的百分比，标题、正文、caption 一起按比例变化，保持原有层级。
-- 正文（Markdown、输入框、提交信息）从 `c.Theme().FontSize` 起算，再乘区域百分比；
+- 正文（Markdown、对话输入框）从 `c.Theme().FontSize` 起算，再乘区域百分比；
   这样 MyGo 的系统字号缩放不会被覆盖。
+- Git 面板例外：commit message 输入框与 Staged/Changes 行同为内置 10 DIP 基准，只乘 Git 百分比，
+  一个设置管住整个面板的正文。
 - Markdown 只设置 `a.MD.Theme = &markdown.Theme{FontSize: ...}`，颜色和间距仍由当前主题的
   `markdown.DefaultTheme` 解析；标题和代码块按 em 跟随正文字号。
 - 区域内的 `mutedText` / `caption` / `sectionLabel` 用 `workspaceFont`、`chatFont`、
@@ -48,6 +50,8 @@ a.gitFont(size)       // Git 面板
   等区域版本，避免漏掉固定 9px 的小字。
 - composer 的动作行高度 `composerControlHeight` 随输入框百分比缩放，避免 150% 时按钮文字
   被 22 DIP 的固定高度裁掉；Git 图和侧栏行高不变，最大字号仍在现有行高内。
+- 提交详情卡的标签列不用固定宽度：每帧用当前 Git 字号量出最宽的标签（`Changes`）再加 4 DIP，
+  标签本身 `SingleLine`；字号变大时列宽跟着变，`Changes` 不会折成两行。
 
 ## 区域范围
 
