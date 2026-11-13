@@ -11,7 +11,7 @@
 - 标题行右侧显示未提交统计：`N files` 加绿色 `+新增`、红色 `−删除`，零变化或读取中不显示。
   数字由 `git diff --numstat -z HEAD` 得到（首个提交前用空树 hash），未跟踪文件按整文件新增行数计入；
   二进制或超过 512 KB 的未跟踪文件只计文件数。统计是装饰性的，失败只清空数字，不阻塞面板。
-- 变更行可点：点文件名打开全窗口 diff 预览（见下节），右侧 `＋`/`－` 仍只做暂存/取消暂存。
+- 变更行可点：点文件名在 Git 面板左侧弹出 diff 卡片（见下节），右侧 `＋`/`－` 仍只做暂存/取消暂存。
 - 变更区域和图表区域用 `ui.SplitVertical` 分隔，可拖动调整高度，二者总高度不变。
 - 状态区在 workspace 切换时立即清空并异步重读，避免显示上一个仓库的内容。
 
@@ -47,7 +47,7 @@
   卡片打开时显示 `Reading…`，失败显示 git 错误，不阻塞图表。
 - 点击提交行展开该提交相对第一父提交的文件列表，再点收起；同屏只展开一个。文件行显示状态字母 + 文件名 + 目录（同一行），
   `A` 绿、`D` 红、`M`/`T` 黄、`R`/`C` 用强调色。展开高度计入 lane 的 y 坐标，泳道在文件列表左侧继续。
-- 文件行可点，打开与 Staged/Changes 相同的全窗口 diff 遮罩，标题为 `Commit <7 位 hash> · <path>`；侧文本用
+- 文件行可点，打开与 Staged/Changes 相同的 diff 卡片，标题为 `Commit <7 位 hash> · <path>`；侧文本用
   `git show <hash>^:<oldPath>` 与 `git show <hash>:<path>` 读取（新增 old 为空、删除 new 为空，重命名用 `OrigPath`
   作旧侧），二进制/超大文件与普通预览一样报错。读取沿用 `PreviewGen` + workspace + hash + path 守卫。
 - 展开数据用 `git show --no-color --name-status -z --format= --find-renames --first-parent <hash>`：NUL 分隔，
@@ -87,9 +87,17 @@
 
 ## Diff 预览
 
-- 点“Staged”/“Changes”里的文件名，或展开提交后的文件行，打开全窗口遮罩（CrychicUI `overlay.FullscreenModal`）；
-  标题写明 `Diff · <path>`、`Staged diff · <path>` 或 `Commit <7 位 hash> · <path>`；X/Esc 关闭。
-- 内容用 CrychicUI `code.DiffView`（MyGo `editor.DiffState`）：默认 Split，可切 Unified，带行号、行内高亮和 +/− 统计。
+- 点“Staged”/“Changes”里的文件名，或展开提交后的文件行，在 Git 面板左侧弹出浮动卡片（`ui.PopoverBase`）：
+  右缘贴面板左缘（`AttachTo(anchor, AnchorStart, AnchorEnd)` + `MarginEnd(10)`，anchor 是 `gitPanel` 返回的整列），
+  垂直居中，高 86% 窗口，圆角、边框和阴影，像放大的 Git 图表详情卡；对话布局不变，面板不被遮挡。
+  标题写明 `Diff · <path>`、`Staged diff · <path>` 或 `Commit <7 位 hash> · <path>`，右侧只有 `✕`（无障碍名 Close）。
+- 宽度响应式：`gitDiffCardWidth(windowW)` = `clamp((windowW - 300) * 0.62, 480, 900)`（300 是 Git 面板宽），
+  窗口变宽时卡片跟着变宽，仍留下部分对话可见。
+- 布局响应式：卡片宽 `≥ gitDiffSplitWidth`（700）时用 Split 左右对比，否则用 Unified 上下对比；
+  切换布局保留同一个 `editor.DiffState`（滚动位置和状态不丢），两栏都开启 `Wrap`，横向不滚动。
+- 点卡片外、按 Esc 或 `✕` 关闭（前两者是 `PopoverBase` 的 `Dismissed`）；隐藏 Git 面板或切换 workspace 时也会关闭。
+- 内容直接用 MyGo `editor.DiffView`（`editor.DiffState`）：带行号、行内高亮和 +/− 统计。
+  字号 11 DIP（比编辑器默认 13 小）、行高 1.4，并开启 `Wrap`：超宽的行自动换行，不需要左右滚动；纵向滚动照常。
 - 两侧文本的来源（`internal/git.Diff`）：
   - 已暂存：old = `git show HEAD:<path>`，new = `git show :<path>`；新增（`A`）的 old 为空，删除（`D`）的 new 为空。
   - 未暂存：old = `git show :<path>`，new = 工作区文件；未跟踪（`??`）的 old 为空，工作区已删除（`D`）的 new 为空。
@@ -97,7 +105,7 @@
   - 提交（`internal/git.CommitDiff`）：old = `git show <hash>^:<oldPath>`，new = `git show <hash>:<path>`；新增的 old 为空，删除的 new 为空。
 - 限制：单侧上限 512 KiB；含 NUL 字节按二进制处理。两种情况都显示错误而不是乱码，不截断展示。
 - 预览状态在 `gitPanelState`（`Preview*`），带 generation + workspace + path（提交预览再加 hash）校验；切换 workspace
-  或关闭面板时丢弃，后台读完成也不会覆盖更新的一次。
+  时丢弃，后台读完成也不会覆盖更新的一次。
 - 只读：预览不暂存、不修改文件，所有操作仍走原来的 stage/unstage/commit。
 
 ## 测试
@@ -107,4 +115,5 @@ go test ./internal/git -v
 go test ./internal/ui -run 'TestGitPanel' -v -count=1
 ```
 
-`internal/git` 测试覆盖状态/重命名解析、分支头解析、init、stage/unstage、commit、首提交撤销、discard all（已暂存/未暂存/未跟踪/首提交前、忽略文件保留）、嵌套工作区，以及 diff 两侧（未暂存/已暂存/未跟踪/新增/删除/重命名、二进制与超大文件、越界路径）、提交日志解析（含 committer time）、refs 解析、commit 文件列表与提交 diff 两侧（首提交/单文件/重命名/删除）、提交文件数与增删行数统计、merge 的 lane 分配与 8 lane 上限、父提交必须在子提交之后；UI 测试覆盖无仓库提示与 init、无 git 提示、窗口获得焦点后刷新、一轮对话结束后刷新、Stage all + Commit 全链路、Discard all 确认/取消与位置、diff 预览打开与二进制报错、提交图渲染与窄面板裁剪、点击提交展开/收起文件列表、从展开列表打开提交 diff、hover 详情卡（位于图表左侧、无短 hash/父提交、含文件与行数统计）与复制 hash。
+`internal/git` 测试覆盖状态/重命名解析、分支头解析、init、stage/unstage、commit、首提交撤销、discard all（已暂存/未暂存/未跟踪/首提交前、忽略文件保留）、嵌套工作区，以及 diff 两侧（未暂存/已暂存/未跟踪/新增/删除/重命名、二进制与超大文件、越界路径）、提交日志解析（含 committer time）、refs 解析、commit 文件列表与提交 diff 两侧（首提交/单文件/重命名/删除）、提交文件数与增删行数统计、merge 的 lane 分配与 8 lane 上限、父提交必须在子提交之后；UI 测试覆盖无仓库提示与 init、无 git 提示、窗口获得焦点后刷新、一轮对话结束后刷新、Stage all + Commit 全链路、Discard all 确认/取消与位置、diff 卡片打开（位于 Git 面板左侧、面板仍可见、点外部关闭）、响应式布局（窄卡片
+Unified/宽卡片 Split、点阈值宽度）与二进制报错、提交图渲染与窄面板裁剪、点击提交展开/收起文件列表、从展开列表打开提交 diff、hover 详情卡（位于图表左侧、无短 hash/父提交、含文件与行数统计）与复制 hash。

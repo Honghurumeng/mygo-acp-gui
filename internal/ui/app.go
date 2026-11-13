@@ -523,34 +523,14 @@ func (a *App) View(c *mui.Context) {
 		if a.SidebarOpen {
 			a.sidebar(c)
 		}
-		mui.Column(c).Grow(1).FillHeight().Background(c.Theme().Background).Children(func() {
-			a.header(c)
-			a.banner(c)
-			if chat == nil {
-				mui.Column(c).Grow(1).Children(func() { a.emptyState(c) })
-				return
-			}
-			mui.Box(c).Grow(1).Children(func() {
-				mui.List(c, &chat.list, len(chat.Messages), func(i int) {
-					a.message(c, chat.Messages[i])
-				}).Fill().Padding(16, 20).Gap(16).Justify(mui.End).Children(func() {
-					if len(chat.Messages) == 0 {
-						a.emptyState(c)
-					}
-				})
-				a.jumpToLatestButton(c, chat)
-			})
-			if a.commandOpen(chat) {
-				a.commandPalette(c, chat)
-			}
-			a.composer(c)
-		})
+		a.conversation(c, chat)
 		if a.GitPanelOpen {
-			a.gitPanel(c)
+			// The diff floats over the conversation with its right edge on
+			// the panel's left edge, so the panel stays visible and usable.
+			a.gitDiffPopover(c, a.gitPanel(c))
 		}
 	})
 
-	a.gitDiffDialog(c)
 	a.gitDiscardDialog(c)
 	if chat != nil {
 		a.jumpDialog(c, chat)
@@ -560,6 +540,32 @@ func (a *App) View(c *mui.Context) {
 	a.diagnosticsDialog(c)
 	a.renameDialog(c)
 	a.imagePreviewDialog(c)
+}
+
+// conversation is the middle column: its bar, messages and composer.
+func (a *App) conversation(c *mui.Context, chat *Chat) {
+	mui.Column(c).Grow(1).FillHeight().Background(c.Theme().Background).Children(func() {
+		a.header(c)
+		a.banner(c)
+		if chat == nil {
+			mui.Column(c).Grow(1).Children(func() { a.emptyState(c) })
+			return
+		}
+		mui.Box(c).Grow(1).Children(func() {
+			mui.List(c, &chat.list, len(chat.Messages), func(i int) {
+				a.message(c, chat.Messages[i])
+			}).Fill().Padding(16, 20).Gap(16).Justify(mui.End).Children(func() {
+				if len(chat.Messages) == 0 {
+					a.emptyState(c)
+				}
+			})
+			a.jumpToLatestButton(c, chat)
+		})
+		if a.commandOpen(chat) {
+			a.commandPalette(c, chat)
+		}
+		a.composer(c)
+	})
 }
 
 // header is the conversation bar: sidebar toggle, title and the session
@@ -622,6 +628,7 @@ func (a *App) headerActions(c *mui.Context, chat *Chat) {
 		if !a.GitPanelOpen {
 			a.Git.DiscardOpen = false
 			a.closeCommitHover()
+			a.closeGitPreview()
 		}
 	}
 	if chat == nil {

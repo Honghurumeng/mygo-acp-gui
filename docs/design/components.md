@@ -36,8 +36,9 @@ cryoverlay "github.com/ELY-Open-Source/CrychicUI/overlay"
   ACP 的 option 列表原样保留，不压缩成 Allow/Deny 两键；按钮改用项目统一样式后不再有 `crybutton` 的音效。
 - 空状态 `internal/ui/app.go`：`crylayout.Centered` + `cryfeedback.EmptyState`；连接/探测中用 `cryfeedback.Busy` 转圈。
   图标必须是 Lucide 里存在的名字，否则 `icon.Must` 会 panic。
-- Git diff 预览 `internal/ui/gitpanel.go`：`cryoverlay.FullscreenModal` + `crycode.DiffView`，加载/错误/无变化用
-  `cryfeedback.Busy` / `Alert` / `EmptyState`；高度用 `crykit.Settle` 跟随遮罩实际高度（`DiffView` 只收固定高度）。
+- Git diff 卡片 `internal/ui/gitpanel.go`：`ui.PopoverBase` 定位在 Git 面板左侧，内容直接用 MyGo `editor.DiffView`
+  （不再用 `crycode.DiffView`，因为它只收固定高度、不能设字号和换行），加载/错误/无变化用
+  `cryfeedback.Busy` / `Alert` / `EmptyState`。
 ## 自有组件层
 
 CrychicUI 只覆盖通用外观；界面里反复出现的「小样式」放在 `internal/ui/widgets.go`，一处定义、处处调用（MyGo
@@ -95,8 +96,9 @@ Git 历史改为 `internal/ui/gitgraph.go` 的自绘可展开列表。
 
 ## 交互约定
 
-- `code.DiffView` 收的是两份完整文本（`editor.NewBuffer`），不是 patch；由 `internal/git.Diff` 负责取 old/new，
-  组件只画。切换文件时重建 `editor.DiffState`，同一份文本不重建。
+- diff 卡片直接用 `editor.DiffView`（`editor.DiffState`）：它收两份完整文本（`editor.NewBuffer`），不是 patch；由
+  `internal/git.Diff` 负责取 old/new，组件只画。切换文件时重建 `editor.DiffState`，同一份文本不重建。
+  `DiffState` 支持 `Wrap`、`Font`、`LineHeight`；卡片宽时 `DiffSplit`，窄时 `DiffUnified`，`Wrap` 始终开启。
 
 - 组件自己播音效（`sound` 包合成，默认开启）。不需要时 `sound.SetEnabled(false)`，或 `sound.SetVolume`。
   测试二进制默认静音，断言音效才用 `sound.Recent()`。

@@ -488,10 +488,25 @@ func TestGitPanelPreviewsDiff(t *testing.T) {
 		t.Error("unstaged change opened as staged")
 	}
 	tt.Frame()
-	for _, want := range []string{"Diff · hello.txt", "Split", "Unified"} {
-		if !tt.HasText(want) {
-			t.Errorf("overlay is missing %q; texts: %q", want, tt.Texts())
-		}
+	if !tt.HasText("Diff · hello.txt") {
+		t.Errorf("diff card title is missing; texts: %q", tt.Texts())
+	}
+	// The card floats over the conversation with its right edge on the Git
+	// panel's left edge: its close button stays left of the panel's list.
+	closeRect, ok := tt.Find("Close")
+	if !ok {
+		t.Fatalf("diff card has no Close button; texts: %q", tt.Texts())
+	}
+	panelRect, ok := tt.Find("No staged changes")
+	if !ok {
+		t.Fatalf("Git panel list is missing; texts: %q", tt.Texts())
+	}
+	if closeRect.X+closeRect.W > panelRect.X {
+		t.Errorf("diff card covers the Git panel: card right edge %.0f, panel left edge %.0f",
+			closeRect.X+closeRect.W, panelRect.X)
+	}
+	if _, ok := tt.Find("Diff of hello.txt"); !ok {
+		t.Errorf("Git panel file row is hidden while the diff card is open; texts: %q", tt.Texts())
 	}
 
 	if err := tt.Click("Close"); err != nil {
@@ -519,6 +534,10 @@ func TestGitPanelPreviewsDiff(t *testing.T) {
 	if !tt.HasText("Staged diff · hello.txt") {
 		t.Errorf("staged title missing; texts: %q", tt.Texts())
 	}
+
+	// Pressing outside the card closes it, as an overlay's backdrop did.
+	tt.ClickAt(600, 736)
+	waitFor(t, app, tt, func() bool { return !app.Git.PreviewOpen && app.Git.PreviewPath == "" })
 }
 
 func TestGitPanelDiffRejectsBinary(t *testing.T) {
@@ -540,7 +559,7 @@ func TestGitPanelDiffRejectsBinary(t *testing.T) {
 	}
 	tt.Frame()
 	if !tt.HasText("Cannot show this diff") {
-		t.Errorf("binary error is missing from the overlay; texts: %q", tt.Texts())
+		t.Errorf("binary error is missing from the card; texts: %q", tt.Texts())
 	}
 }
 
@@ -593,5 +612,27 @@ func writeGitPanelFile(t *testing.T, dir, name, text string) {
 	}
 	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestGitDiffCardLayoutRespondsToWidth(t *testing.T) {
+	cases := []struct {
+		window float32
+		width  float32
+		split  bool
+	}{
+		{900, 480, false},
+		{1240, 582.8, false},
+		{1600, 806, true},
+		{1920, 900, true},
+	}
+	for _, c := range cases {
+		got := gitDiffCardWidth(c.window)
+		if diff := got - c.width; diff > 0.5 || diff < -0.5 {
+			t.Errorf("card width for a %v DIP window = %v, want %v", c.window, got, c.width)
+		}
+		if split := gitDiffSplit(got); split != c.split {
+			t.Errorf("card %v DIPs wide splits = %v, want %v", got, split, c.split)
+		}
 	}
 }

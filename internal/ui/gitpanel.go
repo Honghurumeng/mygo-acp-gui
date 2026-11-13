@@ -10,11 +10,8 @@ import (
 	"strings"
 	"time"
 
-	crycode "github.com/ELY-Open-Source/CrychicUI/code"
 	cryfeedback "github.com/ELY-Open-Source/CrychicUI/feedback"
-	crykit "github.com/ELY-Open-Source/CrychicUI/kit"
 	crylayout "github.com/ELY-Open-Source/CrychicUI/layout"
-	cryoverlay "github.com/ELY-Open-Source/CrychicUI/overlay"
 	mui "github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 	"github.com/reed/acp-gui/internal/git"
@@ -90,8 +87,8 @@ type gitPanelState struct {
 	// DiscardOpen asks before throwing away every change in the repository.
 	DiscardOpen bool
 
-	// Preview is the diff overlay for one changed file; PreviewGen guards
-	// a late read against a newer file or workspace.
+	// Preview is the diff card floating left of one changed file;
+	// PreviewGen guards a late read against a newer file or workspace.
 	PreviewOpen   bool
 	PreviewPath   string
 	PreviewCommit string
@@ -353,16 +350,18 @@ func gitErrorText(err error) string {
 	return strings.TrimSpace(err.Error())
 }
 
-func (a *App) gitPanel(c *mui.Context) {
+// gitPanel builds the right column and returns it as the diff card's anchor.
+func (a *App) gitPanel(c *mui.Context) mui.Element {
 	a.ensureGitPanel()
 	t := c.Theme()
-	mui.Column(c).Width(gitPanelWidth).FillHeight().
+	panel := mui.Column(c).Width(gitPanelWidth).FillHeight().
 		Background(t.Surface).
-		BorderWidth(1, 0, 0, 0).BorderColor(t.Border).
-		Children(func() {
-			a.gitPanelHeader(c)
-			a.gitPanelBody(c)
-		})
+		BorderWidth(1, 0, 0, 0).BorderColor(t.Border)
+	panel.Children(func() {
+		a.gitPanelHeader(c)
+		a.gitPanelBody(c)
+	})
+	return panel
 }
 
 func (a *App) gitPanelHeader(c *mui.Context) {
@@ -995,30 +994,76 @@ type gitDiffView struct {
 	state    *editor.DiffState
 }
 
-// gitDiffDialog shows the previewed file in a window-wide overlay.
-func (a *App) gitDiffDialog(c *mui.Context) {
+// gitPreviewTitle names the file and the side the card compares.
+func (a *App) gitPreviewTitle() string {
+	switch {
+	case a.Git.PreviewCommit != "":
+		return "Commit " + shortCommitHash(a.Git.PreviewCommit) + " · " + a.Git.PreviewPath
+	case a.Git.PreviewStaged:
+		return "Staged diff · " + a.Git.PreviewPath
+	}
+	return "Diff · " + a.Git.PreviewPath
+}
+
+// gitDiffPopover floats the previewed file beside the Git panel: the card's
+// right edge sits on the panel's left edge, as the commit details card does
+// beside a graph row, but larger. Pressing outside or Escape closes it.
+func (a *App) gitDiffPopover(c *mui.Context, anchor mui.Element) {
 	if !a.Git.PreviewOpen {
 		return
 	}
 	if a.Git.Workspace != a.activeGitWorkspace() {
+		// Layout reads the state before the panel does; keep this frame valid.
 		a.closeGitPreview()
 		return
 	}
-	title := "Diff · " + a.Git.PreviewPath
-	switch {
-	case a.Git.PreviewCommit != "":
-		title = "Commit " + shortCommitHash(a.Git.PreviewCommit) + " · " + a.Git.PreviewPath
-	case a.Git.PreviewStaged:
-		title = "Staged diff · " + a.Git.PreviewPath
+	mui.PopoverBase(c, anchor, &a.Git.PreviewOpen, func(panel mui.Element) {
+		a.gitDiffCard(c, panel, anchor)
+	})
+	if !a.Git.PreviewOpen {
+		a.closeGitPreview()
 	}
-	cryoverlay.FullscreenModal(c, title, &a.Git.PreviewOpen, cryoverlay.FullscreenModalOptions{}, func() {
+}
+
+// The diff card widens with the window; a wide card compares the sides
+// left and right, a narrow one stacks them. The thresholds keep either
+// side wide enough to read wrapped lines.
+const (
+	gitDiffCardMinWidth = 480
+	gitDiffCardMaxWidth = 900
+	gitDiffSplitWidth   = 700
+)
+
+// gitDiffCardWidth is the card's width in DIPs for a window windowW wide: a
+// share of the room left of the Git panel, within bounds.
+func gitDiffCardWidth(windowW float32) float32 {
+	room := max(windowW-gitPanelWidth, 0)
+	return min(max(room*0.62, gitDiffCardMinWidth), gitDiffCardMaxWidth)
+}
+
+// gitDiffSplit reports whether the card is wide enough for side by side.
+func gitDiffSplit(width float32) bool { return width >= gitDiffSplitWidth }
+
+// gitDiffCard styles the floating card and builds its header and body.
+func (a *App) gitDiffCard(c *mui.Context, panel, anchor mui.Element) {
+	t := c.Theme()
+	windowW, _ := c.Size()
+	width := gitDiffCardWidth(windowW)
+	panel.Width(width).HeightPercent(86).Radius(10).Clip().
+		Background(t.Background).Border(1, t.Border).
+		Shadow(0, 12, 32, 0, mui.RGBA(0, 0, 0, 0.24)).
+		AttachTo(anchor, mui.AnchorStart, mui.AnchorEnd).
+		MarginEnd(10).AttachEdgeMargin(12)
+	view := mui.Local(panel, "view", func() gitDiffView { return gitDiffView{} })
+	panel.Children(func() {
+		a.gitDiffHeader(c)
 		switch {
 		case a.Git.PreviewBusy:
 			crylayout.Centered(c, func() {
 				cryfeedback.Busy(c, true, "Loading diff…", "Loaded")
 			})
 		case a.Git.PreviewErr != "":
-			mui.Column(c).Grow(1).Center().Padding(0, 40).Children(func() {
+			mui.Column(c).Grow(1).Padding(12, 12).Children(func() {
 				cryfeedback.Alert(c, cryfeedback.ToneDanger, "Cannot show this diff", a.Git.PreviewErr)
 			})
 		case a.Git.PreviewOld == a.Git.PreviewNew:
@@ -1026,30 +1071,47 @@ func (a *App) gitDiffDialog(c *mui.Context) {
 				cryfeedback.EmptyState(c, "git-compare", "No changes to show", "Both sides of this file are identical.", "")
 			})
 		default:
-			a.gitDiffBody(c)
+			a.gitDiffBody(c, view, gitDiffSplit(width))
 		}
 	})
-	if !a.Git.PreviewOpen {
-		a.closeGitPreview()
-	}
 }
 
-// gitDiffBody sizes the viewer to the room the overlay gives it.
-func (a *App) gitDiffBody(c *mui.Context) {
-	box := mui.Column(c).Grow(1).FillWidth().Clip()
-	height := mui.Local(box, "height", func() float32 { return 0 })
-	split := mui.Local(box, "split", func() bool { return true })
-	view := mui.Local(box, "view", func() gitDiffView { return gitDiffView{} })
+// gitDiffHeader titles the card beside the file it compares and holds Close.
+func (a *App) gitDiffHeader(c *mui.Context) {
+	t := c.Theme()
+	mui.Row(c).Height(48).Gap(6).Padding(0, 12).AlignItems(mui.Center).
+		BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
+		mui.Text(c, a.gitPreviewTitle()).FontSize(11).Bold().SingleLine().
+			MinWidth(0).Grow(1).Tooltip(a.Git.PreviewPath)
+		if quietButton(c, "✕").Label("Close").FontSize(9).Tooltip("Close the diff").Clicked() {
+			a.closeGitPreview()
+		}
+	})
+}
+
+// gitDiffBody builds the diff with a smaller font and wrapped lines: the
+// sides share the card when it is wide, and one stacked view shows the
+// changes when it is narrow. Neither scrolls sideways.
+func (a *App) gitDiffBody(c *mui.Context, view *gitDiffView, split bool) {
+	layout := editor.DiffUnified
+	if split {
+		layout = editor.DiffSplit
+	}
 	if view.old != a.Git.PreviewOld || view.new != a.Git.PreviewNew {
 		view.old, view.new = a.Git.PreviewOld, a.Git.PreviewNew
-		view.state = &editor.DiffState{Old: editor.NewBuffer(view.old), New: editor.NewBuffer(view.new)}
+		view.state = &editor.DiffState{
+			Old:        editor.NewBuffer(view.old),
+			New:        editor.NewBuffer(view.new),
+			Layout:     layout,
+			Wrap:       true,
+			Font:       mui.Font{Size: 11},
+			LineHeight: 1.4,
+		}
 	}
-	used := *height
-	box.Children(func() {
-		crycode.DiffView(c, view.state, split, crycode.DiffViewOptions{Name: a.Git.PreviewPath, Height: used})
-	})
-	crykit.Settle(c, box, []float32{used}, func() []float32 { return []float32{box.Bounds().H} })
-	*height = box.Bounds().H
+	// A resize may cross the threshold: the viewer keeps its scroll and
+	// state across the layout switch.
+	view.state.Layout = layout
+	editor.DiffView(c, view.state).Grow(1).FillWidth()
 }
 
 func (a *App) gitToolButton(c *mui.Context, label, tip string, disabled bool, fn func()) {
