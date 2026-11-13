@@ -92,7 +92,7 @@ func TestSettingsSavedOnConnectAndMCPApply(t *testing.T) {
 	if err := tt.Click("Apply"); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, app, tt, func() bool { return !app.SettingsOpen && len(app.MCPServers) == 1 })
+	waitFor(t, app, tt, func() bool { return !app.MCPOpen && len(app.MCPServers) == 1 })
 
 	file = loadPersistedSettings(t, dataDir)
 	if len(file.MCPServers) != 1 {

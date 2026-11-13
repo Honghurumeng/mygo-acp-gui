@@ -37,6 +37,9 @@ var copyIconSVG []byte
 //go:embed icons/check.svg
 var checkIconSVG []byte
 
+//go:embed icons/settings.svg
+var settingsIconSVG []byte
+
 var (
 	messageSquareIcon  = mui.MustParseSVG(messageSquareIconSVG)
 	messagesSquareIcon = mui.MustParseSVG(messagesSquareIconSVG)
@@ -47,4 +50,5 @@ var (
 	codeIcon           = mui.MustParseSVG(codeIconSVG)
 	copyIcon           = mui.MustParseSVG(copyIconSVG)
 	checkIcon          = mui.MustParseSVG(checkIconSVG)
+	settingsIcon       = mui.MustParseSVG(settingsIconSVG)
 )

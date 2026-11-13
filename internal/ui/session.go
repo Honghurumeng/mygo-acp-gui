@@ -56,6 +56,7 @@ func (a *App) discover(ctx context.Context) {
 		statuses[i] = AgentStatus{
 			ID:          result.ID,
 			Name:        result.Name,
+			Version:     result.Spec.Version,
 			InstallHint: result.InstallHint,
 			Status:      AgentProbing,
 		}
@@ -69,13 +70,10 @@ func (a *App) discover(ctx context.Context) {
 			defer wg.Done()
 			probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
-			info, err := session.Probe(probeCtx, result.Spec)
+			_, err := session.Probe(probeCtx, result.Spec)
 			switch {
 			case err == nil:
 				statuses[i].Status = AgentReady
-				if info.AgentInfo != nil {
-					statuses[i].Detail = strings.TrimSpace(info.AgentInfo.Name + " " + info.AgentInfo.Version)
-				}
 			case errors.Is(err, context.DeadlineExceeded):
 				statuses[i].Status = AgentError
 				statuses[i].Detail = "initialize probe timed out after 5s"

@@ -49,7 +49,7 @@ pi 是特例：命令由解析后的 `node` + `resources/agents/pi-acp/pi-acp.bu
 4. 结果写入内存状态；启动异步执行，不阻塞窗口。
 5. “重新检测”重跑以上流程。
 
-当前实现：`agent.BuiltinLaunchResults` 解析 pi 和 command-code 的路径/版本；对每个成功的 spec 并行执行 `session.Probe`（仅 `initialize`，5 秒）。单个 agent 失败只记录状态，不隐藏另一个。状态行展示 `ready` / `not-installed` / `installed-not-acp` / `needs-auth` / `error`。
+当前实现：`agent.BuiltinLaunchResults` 解析 pi 和 command-code 的路径/版本；对每个成功的 spec 并行执行 `session.Probe`（仅 `initialize`，5 秒）。单个 agent 失败只记录状态，不隐藏另一个。侧栏状态行显示 agent 名称、CLI 版本和 `ready` / `not-installed` / `installed-not-acp` / `needs-auth` / `error`；pi 用 `pi --version`，不显示 vendored pi-acp 的 `VERSION`（`initialize.agentInfo.version` 是适配器版本）。状态行右侧的齿轮打开设置面板。
 
 状态定下之后再跑一轮**配置探测**（`session.ProbeConfigModels`）：用临时工作区做 `initialize` + 一次用完即弃的 `session/new`，把 `configOptions` 和 `modes` 分别缓存到内存的 `AgentConfigs[agentID]` / `AgentModes[agentID]`，让输入框在连接前就能选 provider / model / thinking / mode。`session/new` 一返回就先发布模型列表和当前模型的档位，同一个进程再继续扫其余模型。这一轮 30 秒总预算（`session/new` 12 秒、每次模型切换 5 秒）、异步执行，失败只丢缓存，既不延迟启动也不改变状态。
 

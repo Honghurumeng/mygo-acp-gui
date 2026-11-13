@@ -46,6 +46,13 @@ pi-acp 的启动信息（pi 版本、Extensions、Skills 等）、重试、自�
 - `Group` 按 agent + ACP session ID（草稿按 chat ID）分会话，完成和权限各自用稳定 ID，重复事件不会堆叠同一类通知。
 - 通知在后台 goroutine 调 `Show`，不阻塞 UI；macOS 需要打包应用（`mygo dev` / `mygo build`），Linux 走 D-Bus，Windows 是通知气球；`NotificationsSupported` 为 false 时静默跳过。点击通知会打开/聚焦窗口，应用变为 active 时 `ClearNotifications` 清掉已看过的通知。
 - 测试通过 `App.notify` 注入记录器，不启动桌面后端。
+- 设置面板的开关持久化为 `notifications`，默认开启；关闭后 `canNotify` 直接返回 false，权限和完成通知都不再发送。
+
+## 设置面板
+
+- 侧栏左下角 agent 状态（名称、CLI 版本、ready 等状态）右侧的齿轮按钮打开设置面板；也可以从代码调用 `openSettings`。面板左侧是分类列表，右侧是选中分类的内容，当前只有 `Notifications`，后续分类在同一 `SettingsSection` 切换。
+- 开关改动立即生效并写入 `settings.json`；测试按钮发送一条标题为 `ACP GUI` 的桌面通知，不依赖窗口焦点，用于检查系统通知权限。通知关闭时测试按钮禁用，并提示先开启。
+- MCP 编辑仍走顶部 `MCP…` 的独立模态，因为它修改的是当前会话的服务器列表，不放进通用设置分类。
 
 ## 配置与模式
 
@@ -129,8 +136,8 @@ pi-acp 的启动信息（pi 版本、Extensions、Skills 等）、重试、自�
 ## 设置持久化
 
 - `internal/settings` 读写 `PathUserData/settings.json`；`ui.Options.DataDir` 为空时完全不落盘（测试、便携运行）。
-- 保存内容：最后使用的 agent、工作区、侧栏工作区列表（`workspaces`）、软删除记录（`removedWorkspaces`）、折叠状态（`collapsedWorkspaces`）、MCP 默认列表，以及 `paths` 里的显式工具覆盖。
-- 保存时机：切换会话、选择 agent/目录、添加/移除/恢复工作区、折叠/展开工作区、Connect 校验成功、MCP Apply、退出。
+- 保存内容：最后使用的 agent、工作区、侧栏工作区列表（`workspaces`）、软删除记录（`removedWorkspaces`）、折叠状态（`collapsedWorkspaces`）、MCP 默认列表、系统通知开关（`notifications`，默认 true），以及 `paths` 里的显式工具覆盖。
+- 保存时机：切换会话、选择 agent/目录、添加/移除/恢复工作区、折叠/展开工作区、切换系统通知、Connect 校验成功、MCP Apply、退出。
 - 启动恢复：工作区、侧栏工作区列表（含软删除分组）、折叠状态、MCP 列表、上次 agent；显式传入的 `ui.Options.Workspace` 优先（测试用）。上次工作区已被软删除时，草稿改用第一个可见工作区（没有则用 home）。启动时创建的草稿不会展开已折叠的工作区。
 - `paths` 只保存配置里的覆盖值；`ACP_GUI_*` 环境变量优先，且不会被写回文件。
 - 容错：文件缺失用默认值；损坏 JSON、MCP 不是数组、相对路径、未来版本只显示侧栏/标题栏警告，其余字段照常生效。

@@ -456,7 +456,7 @@ func TestMCPDialogAndPrompt(t *testing.T) {
 	if err := tt.Click("Apply"); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, app, tt, func() bool { return !app.SettingsOpen && len(app.MCPServers) == 1 })
+	waitFor(t, app, tt, func() bool { return !app.MCPOpen && len(app.MCPServers) == 1 })
 
 	app.Connect()
 	waitFor(t, app, tt, func() bool { return current(app).Connected })

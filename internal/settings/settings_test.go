@@ -20,6 +20,9 @@ func TestLoadMissingFileReturnsDefaults(t *testing.T) {
 	if file.LastAgent != "" || file.LastWorkspace != "" || file.MCPServers != nil {
 		t.Errorf("missing file returned data: %+v", file)
 	}
+	if !file.Notifications {
+		t.Error("notifications should default to on")
+	}
 }
 
 func TestSaveLoadRoundTrip(t *testing.T) {
@@ -36,7 +39,8 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		MCPServers: []any{
 			map[string]any{"name": "demo", "command": "true"},
 		},
-		Paths: Paths{Shell: "/bin/zsh", Node: "/usr/local/bin/node"},
+		Paths:         Paths{Shell: "/bin/zsh", Node: "/usr/local/bin/node"},
+		Notifications: true,
 	}
 	if err := store.Save(want); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -81,6 +85,36 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if got.Paths != want.Paths {
 		t.Errorf("paths = %+v, want %+v", got.Paths, want.Paths)
+	}
+	if !got.Notifications {
+		t.Error("notifications were not restored")
+	}
+}
+
+func TestNotificationsDefaultOnAndPersistOff(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	store := Open(path)
+	if err := os.WriteFile(path, []byte(`{"version": 1, "lastAgent": "pi"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !file.Notifications {
+		t.Fatal("a file without notifications should default to on")
+	}
+
+	file.Notifications = false
+	if err := store.Save(file); err != nil {
+		t.Fatal(err)
+	}
+	file, err = store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if file.Notifications {
+		t.Fatal("an explicit off setting was not persisted")
 	}
 }
 

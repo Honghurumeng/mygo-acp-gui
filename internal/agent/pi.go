@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 // PiID is the stable id of the vendored pi-acp agent.
@@ -51,19 +50,14 @@ func PiLaunchSpec(resourcesDir string, env Environment) (LaunchSpec, error) {
 		Source:   SourceVendored,
 		NodePath: env.NodePath,
 		PiPath:   env.PiPath,
-		Version:  readTrimmed(filepath.Join(resourcesDir, "agents", "pi-acp", "VERSION")),
+		// The UI names this agent "pi", so it shows the pi CLI version.
+		// The vendored pi-acp VERSION is packaging metadata, not the version
+		// of the agent the user installed.
+		Version: env.PiVersion,
 	}
 	if err := spec.Validate(); err != nil {
 		return LaunchSpec{}, err
 	}
 	spec.LoginHint = spec.CommandLine() + " --terminal-login"
 	return spec, nil
-}
-
-func readTrimmed(path string) string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(data))
 }

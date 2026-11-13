@@ -107,6 +107,7 @@ type Attachment struct {
 type AgentStatus struct {
 	ID          string
 	Name        string
+	Version     string
 	Status      string
 	Detail      string
 	InstallHint string
@@ -194,10 +195,20 @@ type App struct {
 	RenameSessionID string
 	RenameText      string
 
-	MCPText      string
-	MCPServers   []any
-	MCPError     string
-	SettingsOpen bool
+	MCPText    string
+	MCPServers []any
+	MCPError   string
+	MCPOpen    bool
+
+	// SettingsOpen shows the settings panel. SettingsSection is the selected
+	// category in its left column.
+	SettingsOpen    bool
+	SettingsSection string
+	// NotificationsEnabled gates desktop notifications. It defaults to on and
+	// is persisted in settings.json.
+	NotificationsEnabled bool
+	// NotificationTestNotice is the result of the test button, shown under it.
+	NotificationTestNotice string
 
 	SavedLoading  bool
 	SavedError    string
@@ -329,12 +340,14 @@ func New(opts Options) *App {
 		WorkspaceExpanded:  make(map[string]bool),
 		RemovedWorkspaces:  make(map[string]bool),
 		savedSynced:        make(map[string]bool),
+
+		NotificationsEnabled: true,
 	}
 	if opts.Agents != nil {
 		a.Agents = append([]agent.LaunchSpec(nil), opts.Agents...)
 		a.Resolving = false
 		for _, spec := range a.Agents {
-			a.AgentStatuses = append(a.AgentStatuses, AgentStatus{ID: spec.ID, Name: spec.Name, Status: AgentReady})
+			a.AgentStatuses = append(a.AgentStatuses, AgentStatus{ID: spec.ID, Name: spec.Name, Version: spec.Version, Status: AgentReady})
 		}
 	} else {
 		a.Resolving = true
@@ -404,6 +417,7 @@ func (a *App) loadSettings(dataDir string, workspaceDefault bool) {
 	}
 	a.settingsPaths = file.Paths
 	a.preferredAgentID = file.LastAgent
+	a.NotificationsEnabled = file.Notifications
 	for _, workspace := range file.Workspaces {
 		a.ensureWorkspace(workspace)
 	}
@@ -609,6 +623,7 @@ func (a *App) View(c *mui.Context) {
 	}
 	a.permissionDialog(c)
 	a.settingsDialog(c)
+	a.mcpDialog(c)
 	a.diagnosticsDialog(c)
 	a.renameDialog(c)
 	a.imagePreviewDialog(c)
@@ -757,15 +772,22 @@ func (a *App) statusLine() string {
 	case chat != nil && chat.Connecting:
 		return "Connecting to " + chat.agentName() + "…"
 	case chat != nil && chat.Session != nil:
-		name := "agent"
-		version := ""
+		name := chat.agentName()
+		version := strings.TrimSpace(chat.Agent.Version)
 		if chat.Info.AgentInfo != nil {
-			if chat.Info.AgentInfo.Title != "" {
-				name = chat.Info.AgentInfo.Title
-			} else if chat.Info.AgentInfo.Name != "" {
-				name = chat.Info.AgentInfo.Name
+			if chat.Agent.ID != agent.PiID && chat.Agent.ID != agent.CommandCodeID {
+				// Custom agents report their own display name. Builtins use
+				// their CLI name and version instead: pi-acp's agentInfo version
+				// is the adapter version, not the installed pi version.
+				if chat.Info.AgentInfo.Title != "" {
+					name = chat.Info.AgentInfo.Title
+				} else if chat.Info.AgentInfo.Name != "" {
+					name = chat.Info.AgentInfo.Name
+				}
+				version = chat.Info.AgentInfo.Version
+			} else if version == "" && chat.Agent.ID != agent.PiID {
+				version = chat.Info.AgentInfo.Version
 			}
-			version = chat.Info.AgentInfo.Version
 		}
 		status := "Connected to " + name
 		if version != "" {

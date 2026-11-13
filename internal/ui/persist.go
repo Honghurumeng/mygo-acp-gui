@@ -14,7 +14,11 @@ func (a *App) persistSettings() {
 	if a.settings == nil {
 		return
 	}
-	file := settings.File{Version: settings.CurrentVersion, Paths: a.settingsPaths}
+	file := settings.File{
+		Version:       settings.CurrentVersion,
+		Paths:         a.settingsPaths,
+		Notifications: a.NotificationsEnabled,
+	}
 	file.Workspaces = a.savedWorkspaces()
 	file.RemovedWorkspaces = a.removedWorkspaceList()
 	file.CollapsedWorkspaces = a.collapsedWorkspaceList()

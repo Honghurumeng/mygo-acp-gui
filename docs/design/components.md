@@ -24,6 +24,7 @@
 | `circleXIcon` | Lucide `circle-x` | danger alert |
 | `codeIcon` | Lucide `code` | code block 标题栏 |
 | `copyIcon` / `checkIcon` | Lucide `copy`、`check` | code block 复制/已复制 |
+| `settingsIcon` | Lucide `settings` | 侧栏左下角设置按钮 |
 
 - SVG 用 `stroke="currentColor"`，由 `mui.Icon(...).TextColor(...)` 跟随主题，深浅色不用分支。
 - 新增图标时同时改 `icons/LICENSE`（Lucide ISC；部分图标来自 Feather，MIT）。

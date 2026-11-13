@@ -41,6 +41,10 @@ type File struct {
 	CollapsedWorkspaces []string `json:"collapsedWorkspaces,omitempty"`
 	MCPServers          []any    `json:"mcpServers,omitempty"`
 	Paths               Paths    `json:"paths,omitempty"`
+	// Notifications enables desktop notifications. It defaults to true so
+	// older files without the field keep the previous behavior; the field is
+	// written even when false so turning notifications off survives a restart.
+	Notifications bool `json:"notifications"`
 }
 
 // Store reads and writes one settings file. A nil Store or an empty path is
@@ -66,13 +70,17 @@ func (s *Store) Path() string {
 // Load reads the file. A missing file is not an error: it returns defaults
 // at the current version. Other problems are returned together with whatever
 // fields could be decoded, so the caller can warn and continue.
+func defaults() File {
+	return File{Version: CurrentVersion, Notifications: true}
+}
+
 func (s *Store) Load() (File, error) {
 	if s == nil || s.path == "" {
-		return File{Version: CurrentVersion}, nil
+		return defaults(), nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	file := File{Version: CurrentVersion}
+	file := defaults()
 	data, err := os.ReadFile(s.path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -147,10 +155,13 @@ type rawFile struct {
 	CollapsedWorkspaces json.RawMessage `json:"collapsedWorkspaces"`
 	MCPServers          json.RawMessage `json:"mcpServers"`
 	Paths               Paths           `json:"paths"`
+	// A pointer distinguishes an older file without the setting (default
+	// on) from an explicit false.
+	Notifications *bool `json:"notifications"`
 }
 
 func decode(data []byte) (File, error) {
-	file := File{Version: CurrentVersion}
+	file := defaults()
 	var raw rawFile
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return file, fmt.Errorf("settings: invalid JSON: %w", err)
@@ -178,6 +189,9 @@ func decode(data []byte) (File, error) {
 		}
 	}
 	file.Paths = sanitizePaths(raw.Paths, &problems)
+	if raw.Notifications != nil {
+		file.Notifications = *raw.Notifications
+	}
 	return file, errors.Join(problems...)
 }
 

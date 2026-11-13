@@ -27,7 +27,7 @@ type desktopNotification struct {
 // window is closed or unfocused, or because another chat is on screen. The
 // permission dialog and the sidebar's finished-turn marker cover the rest.
 func (a *App) canNotify(chat *Chat) bool {
-	if a == nil || chat == nil || chat.Closed || a.closed.Load() || chat.replaying {
+	if a == nil || !a.NotificationsEnabled || chat == nil || chat.Closed || a.closed.Load() || chat.replaying {
 		return false
 	}
 	if chat != a.activeChat() {
@@ -64,6 +64,27 @@ func (a *App) notifyDesktop(n desktopNotification) {
 			Group:    n.Group,
 		}).Show()
 	}()
+}
+
+// sendTestNotification shows a notification from the settings panel, so the
+// user can check the system permission without waiting for a real event.
+func (a *App) sendTestNotification() {
+	if !a.NotificationsEnabled {
+		a.NotificationTestNotice = "Turn on system notifications first."
+		return
+	}
+	if a.notify == nil && !mygo.NotificationsSupported() {
+		a.NotificationTestNotice = "System notifications are not supported on this system."
+		return
+	}
+	a.NotificationTestNotice = "Test notification sent. If no banner appears, check the system notification settings for ACP GUI."
+	a.notifyDesktop(desktopNotification{
+		ID:       "acp-gui:test",
+		Title:    "ACP GUI",
+		Subtitle: "Test notification",
+		Body:     "System notifications are working.",
+		Group:    "acp-gui:test",
+	})
 }
 
 // notifyPermission asks for attention when a permission request arrives for

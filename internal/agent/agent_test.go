@@ -74,8 +74,8 @@ func TestPiLaunchSpec(t *testing.T) {
 	if len(spec.Args) != 1 || spec.Args[0] != bundle {
 		t.Errorf("args = %q, want the bundle", spec.Args)
 	}
-	if spec.Version != "0.4.0" {
-		t.Errorf("version = %q", spec.Version)
+	if spec.Version != "1.5.2" {
+		t.Errorf("version = %q, want the pi CLI version", spec.Version)
 	}
 	path := envValue(spec.Env, "PATH")
 	for _, dir := range []string{bin, filepath.Dir(node), filepath.Dir(pi)} {

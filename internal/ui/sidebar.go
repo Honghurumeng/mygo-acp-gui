@@ -363,41 +363,76 @@ func (a *App) renameDialog(c *mui.Context) {
 }
 
 func (a *App) sidebarStatus(c *mui.Context) {
-	if len(a.AgentStatuses) == 0 && a.SettingsWarning == "" {
-		return
-	}
 	t := c.Theme()
 	mui.Column(c).Gap(3).Padding(8, 12).BorderWidth(1, 0, 0, 0).BorderColor(t.Border).Children(func() {
-		for _, status := range a.AgentStatuses {
-			color := t.TextMuted
-			switch status.Status {
-			case AgentReady:
-				color = t.Success
-			case AgentProbing, AgentNeedsAuth:
-				color = t.Warning
-			case AgentMissing, AgentNotACP, AgentError:
-				color = t.Danger
-			}
-			row := mui.Row(c).Gap(5).AlignItems(mui.Center)
-			row.Children(func() {
-				dot := mui.Box(c).Size(5, 5).Radius(3).Background(color)
-				_ = dot
-				mutedText(c, status.Name, 9).Grow(1).SingleLine()
-				mui.Text(c, status.Status).FontSize(9).TextColor(color).SingleLine()
+		mui.Row(c).Gap(8).AlignItems(mui.Start).Children(func() {
+			mui.Column(c).Grow(1).Gap(3).Children(func() {
+				for _, status := range a.AgentStatuses {
+					color := t.TextMuted
+					switch status.Status {
+					case AgentReady:
+						color = t.Success
+					case AgentProbing, AgentNeedsAuth:
+						color = t.Warning
+					case AgentMissing, AgentNotACP, AgentError:
+						color = t.Danger
+					}
+					row := mui.Row(c).Gap(5).AlignItems(mui.Center)
+					row.Children(func() {
+						dot := mui.Box(c).Size(5, 5).Radius(3).Background(color)
+						_ = dot
+						label := status.Name
+						if version := agentVersionLabel(status.Version); version != "" {
+							label += " " + version
+						}
+						mutedText(c, label, 9).Grow(1).SingleLine()
+						mui.Text(c, status.Status).FontSize(9).TextColor(color).SingleLine()
+					})
+					detail := strings.TrimSpace(status.Detail)
+					if detail != "" {
+						row.Tooltip(status.Name + ": " + detail)
+					}
+				}
+				if !a.Resolving && !a.anyLiveChat() && !a.injectedAgents {
+					if quietButton(c, "Refresh agents").FontSize(9).Clicked() {
+						a.retryDiscovery()
+					}
+				}
+				if a.SettingsWarning != "" {
+					mui.Text(c, "Settings: "+truncate(a.SettingsWarning, 80)).
+						FontSize(9).TextColor(t.Warning).Tooltip(a.SettingsWarning)
+				}
 			})
-			detail := strings.TrimSpace(status.Detail)
-			if detail != "" {
-				row.Tooltip(status.Name + ": " + detail)
+
+			settings := buttonBase(c, "Settings").Padding(5, 7).Radius(8).Shrink(0)
+			switch {
+			case settings.Pressed():
+				settings.Background(t.SurfacePressed)
+			case settings.Hovered():
+				settings.Background(t.SurfaceHover)
+			default:
+				settings.Background(t.Background)
 			}
-		}
-		if !a.Resolving && !a.anyLiveChat() && !a.injectedAgents {
-			if quietButton(c, "Refresh agents").FontSize(9).Clicked() {
-				a.retryDiscovery()
+			settings.Label("Settings").Tooltip("Settings")
+			settings.Children(func() {
+				mui.Icon(c, settingsIcon).Size(14, 14).TextColor(t.TextMuted)
+			})
+			if settings.Clicked() {
+				a.openSettings()
 			}
-		}
-		if a.SettingsWarning != "" {
-			mui.Text(c, "Settings: "+truncate(a.SettingsWarning, 80)).
-				FontSize(9).TextColor(t.Warning).Tooltip(a.SettingsWarning)
-		}
+		})
 	})
+}
+
+// agentVersionLabel prefixes a CLI version for the sidebar without doubling
+// an existing leading v.
+func agentVersionLabel(version string) string {
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return ""
+	}
+	if strings.HasPrefix(version, "v") || strings.HasPrefix(version, "V") {
+		return version
+	}
+	return "v" + version
 }

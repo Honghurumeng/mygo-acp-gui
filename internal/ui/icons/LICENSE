@@ -3,7 +3,8 @@ The SVGs in this directory
 - pi.svg: the Pi mark, from https://pi.dev/logo-auto.svg.
 - command-code.svg: the Command Code mark, from the commandcode-vscode extension.
 - message-square.svg, messages-square.svg, unplug.svg, sparkles.svg,
-  git-compare.svg, circle-x.svg, code.svg, copy.svg, check.svg: Lucide icons,
+  git-compare.svg, circle-x.svg, code.svg, copy.svg, check.svg, settings.svg:
+  Lucide icons,
   unmodified except that the class attribute and license comment are dropped.
   Source: https://lucide.dev
 

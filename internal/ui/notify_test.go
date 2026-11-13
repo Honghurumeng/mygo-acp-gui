@@ -74,6 +74,26 @@ func TestFinishedTurnSendsDesktopNotification(t *testing.T) {
 	}
 }
 
+func TestNotificationsCanBeDisabled(t *testing.T) {
+	app, tt := newFakeApp(t)
+	notes := recordNotifications(app)
+	app.NotificationsEnabled = false
+	connect(t, app, tt)
+
+	current(app).Input = "hello"
+	tt.Frame()
+	if err := tt.Click("Send"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		return !current(app).Streaming && lastAssistantHas(app, "收到：hello")
+	})
+
+	if len(*notes) != 0 {
+		t.Errorf("disabled notifications fired: %+v", *notes)
+	}
+}
+
 // Cancelling is the user's own action, so it needs no desktop notification.
 func TestCancelledTurnStaysSilent(t *testing.T) {
 	app, tt := newFakeApp(t)

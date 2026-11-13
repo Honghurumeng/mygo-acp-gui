@@ -96,6 +96,8 @@ pi-acp 在 `initialize` 里用 `readNearestPackageJson(import.meta.url)` 向上�
 
 因此脚本生成一个最小的 `resources/agents/pi-acp/package.json`（`name: @geohar/pi-acp`，`version` 与 VERSION 一致）。它不参与 npm 安装，**不要删**。
 
+UI 中这个 agent 叫 `pi`，侧栏状态和已连接状态栏显示的是 `pi --version` 解析到的 CLI 版本，不是 `VERSION` 或 `initialize.agentInfo.version`（后者是 pi-acp 适配器版本）。因此升级 pi-acp bundle 不会让界面误报成新的 pi 版本。
+
 ## 运行时要求
 
 - **Node.js 22+**（构建目标 node22；启动前校验 `node --version`）。
