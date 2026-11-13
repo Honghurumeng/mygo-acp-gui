@@ -1,11 +1,11 @@
 # pi-acp fork 修改清单
 
-目标：fork `https://github.com/georgeharker/pi-acp`（vendored 0.4.0 的来源），让 pi 通过 ACP 发出上下文用量、单轮用量，正确暴露当前模型的推理强度，并在历史回放里保留 thinking 和图片。客户端仍然只运行 vendored bundle，不引入运行时 npm/npx。
+目标：fork `https://github.com/georgeharker/pi-acp`（vendored 0.4.0 的来源），让 pi 通过 ACP 发出上下文用量、单轮用量，正确暴露当前模型的推理强度，在历史回放里保留 thinking 和图片，并让工具调用标题带上具体目标。客户端仍然只运行 vendored bundle，不引入运行时 npm/npx。
 
 状态：已实施。本地源码在仓库根目录的 `pi-acp-main/`（被 `.gitignore` 忽略，不随主仓库提交），产物已重新打包到 `resources/agents/pi-acp/`。
 
-- bundle sha256：`f7c6acd2434afa0f4439137ad04cc60961a1dbbd12020e6638b4d17fd8934731`
-- 体积：459 KiB
+- bundle sha256：`61f648af1c1a4365904ce076ac78c4bb582db566d106ac59a2a93990c25bb8ee`
+- 体积：460 KiB
 - 上游基线：`@geohar/pi-acp@0.4.0`
 
 ## 1. fork 源码
@@ -29,9 +29,28 @@ fork 改动：
 - 新增 `src/acp/fallback-title.ts`：去掉开头的附件路径（要求绝对路径、至少两个斜杠，避免误伤 `/name` 和 URL），保留后面的正文；只有路径时返回 `[Image]`；标题按 80 个 Unicode code point 截断。
 - `src/acp/pi-sessions.ts` 的 `pickFallbackTitleFromHead()` 改用 `fallbackTitleFromContent()`，同时识别 content 里的 `image` 块。
 - `src/acp/session.ts` 新增 `announceFallbackTitle()`：仅新建会话（`newSession`）启用；首次 `session/prompt` 前用 `get_state.sessionName` 判断是否已有显式名字，没有就合成一条 `session_info_update`（标题来自 ACP prompt 文本，不含 pi 注入的图片路径）。恢复的会话不合成，避免用「继续」覆盖原有的首条消息标题。`get_state` 失败时下次 prompt 重试；已有显式名字时绝不覆盖。
+- `announceFallbackTitle()` 在 `prompt()` 里 fire-and-forget，不再 `await`：查 `get_state` 会让 `prompt()` 在 `startTurn()` 前让出事件循环，紧跟其后的 cancel / agent 退出会看到空的 `pendingTurn`，turn 永远不结算（组件测试里表现为 cancel、排队、proc-exit 一组用例失败）。标题是元数据，晚一个微任务发不影响 UI。
 - 测试：`test/unit/fallback-title.test.ts`、`test/unit/session-title-update.test.ts`。
 
 GUI 侧收到 `session_info_update.title` 后会走 `applyUpdate → setArchivedTitle` 直接写 `sessions.json`；启动读存档时也会清洗旧版本留下的路径标题（见 `internal/ui/title.go`）。
+
+### 工具调用标题
+
+ACP 客户端折叠工具卡片时只显示 `title`，`rawInput` 要展开才看得到。上游只把 bash 的 title 设为命令（`bashCommand(args)`），其他工具统一发 `title: toolName`，于是 read/write/edit/grep 的卡片只有“read”“edit”，看不出动了哪个文件；GUI 的详情面板又优先显示输出，参数在完成后会被顶掉。
+
+fork 改动（`src/acp/translate/pi-tools.ts`、`src/acp/session.ts`）：
+
+- 新增 `toToolCallTitle(toolName, args)`：
+  - `read` / `write` / `edit` → `read <path>`（兼容 `file_path`）；
+  - `grep` → `grep <pattern>`，带 `path` 时 `grep "<pattern>" in <path>`（pattern 含空白时加引号）；
+  - `find` → `find <pattern>` / `find <pattern> in <path>`；
+  - `ls` → `ls <path>`，缺省 `ls .`；
+  - 其他工具（MCP、扩展自定义）返回 `undefined`，沿用工具名。
+- 参数未流完时返回 `undefined`，首次 `tool_call` 仍用工具名；`toolcall_delta` / `tool_execution_start` 的既有工具调用更新会补发 title，把卡片标题升级成带目标的版本（之前只在首次 `tool_call` 设 title，之后不再更新）。
+- `loadSession` 回放同样带目标：pi 把参数存在 assistant 的 `toolCall` 块上，`toolResult` 里没有；回放前按 `toolCallId` 建参数索引，历史卡片用 `bashCommand(args)` / `toToolCallTitle(toolName, args)`，并把 `rawInput` 设为原始参数（之前是 `null`，非 bash 标题只有工具名）。
+- 测试：`test/unit/tool-call-titles.test.ts`（纯函数映射 + 流式参数补齐 title 的会话级验证）、`test/component/session-load-toolresult.test.ts`（历史回放 title/rawInput）。
+
+真实 pi 实测：实时 `read` 标题为 `read /Users/.../AGENTS.md`，`session/load` 回放的历史 `read` 也是同一标题且带 `rawInput`；bash 实时和回放都直接显示命令。
 
 ### 上下文用量
 

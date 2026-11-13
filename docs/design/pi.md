@@ -27,9 +27,9 @@ resources/agents/pi-acp/
 | esbuild（仅构建期） | `0.28.2` | — |
 
 `pi-acp.bundle.mjs` 的 sha256：
-`f7c6acd2434afa0f4439137ad04cc60961a1dbbd12020e6638b4d17fd8934731`
+`61f648af1c1a4365904ce076ac78c4bb582db566d106ac59a2a93990c25bb8ee`
 
-当前 bundle 来自本地 fork（`pi-acp-main`，上游 0.4.0 + usage/推理强度/thinking/图片回放/会话标题补丁），不是 npm 上的原版 0.4.0；差异和重打步骤见 [pi-fork.md](pi-fork.md)。
+当前 bundle 来自本地 fork（`pi-acp-main`，上游 0.4.0 + usage/推理强度/thinking/图片回放/会话标题/工具标题补丁），不是 npm 上的原版 0.4.0；差异和重打步骤见 [pi-fork.md](pi-fork.md)。
 
 应用启动时直接执行这个文件：
 
