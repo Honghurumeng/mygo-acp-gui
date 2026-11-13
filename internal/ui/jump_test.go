@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	mui "github.com/egoist/mygo/ui"
 	"github.com/reed/acp-gui/internal/agent"
@@ -51,6 +52,27 @@ func TestJumpEntryPreviewStaysOnRuneBoundary(t *testing.T) {
 	}
 }
 
+func TestJumpTimeLabel(t *testing.T) {
+	now := time.Date(2026, 5, 20, 12, 0, 0, 0, time.Local)
+	cases := []struct {
+		name   string
+		sentAt time.Time
+		want   string
+	}{
+		{"today", time.Date(2026, 5, 20, 9, 41, 0, 0, time.Local), "09:41"},
+		{"same year", time.Date(2026, 1, 2, 9, 41, 0, 0, time.Local), "Jan 2 09:41"},
+		{"older year", time.Date(2020, 11, 11, 9, 41, 0, 0, time.Local), "Nov 11, 2020 09:41"},
+	}
+	for _, tc := range cases {
+		if got := formatJumpTime(tc.sentAt, now); got != tc.want {
+			t.Errorf("%s: label = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+	if got := jumpEntryTime(&Message{}); got != "—" {
+		t.Errorf("unknown time = %q, want a dash", got)
+	}
+}
+
 func TestJumpListMaxHeight(t *testing.T) {
 	cases := []struct {
 		window, want float32
@@ -86,12 +108,17 @@ func TestJumpDialogOpensScrolledToNewest(t *testing.T) {
 	// A preview long enough to be cut makes the dialog's label distinct
 	// from the full text in the transcript behind it.
 	chat.Messages[len(chat.Messages)-1].Text = "newest " + strings.Repeat("n", 200)
+	sentAt := time.Date(2020, 11, 11, 9, 41, 0, 0, time.Local)
+	chat.Messages[len(chat.Messages)-1].SentAt = sentAt
 	tt := mui.NewTester(app.View, 1060, 760)
 	tt.Frame()
 	if err := tt.Click("Jump"); err != nil {
 		t.Fatal(err)
 	}
 	tt.Frame()
+	if want := formatJumpTime(sentAt, time.Now()); !tt.HasText(want) {
+		t.Errorf("send time %q missing from jump dialog; texts: %q", want, tt.Texts())
+	}
 	if chat.jumpScroll.MaxY <= 0 {
 		t.Fatalf("history does not overflow its scroll area: MaxY=%v", chat.jumpScroll.MaxY)
 	}

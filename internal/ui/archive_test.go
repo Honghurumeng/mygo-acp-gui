@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	mui "github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
@@ -334,6 +335,169 @@ func TestLoadArchiveCleansAttachmentPathTitles(t *testing.T) {
 	}
 	if loaded.Sessions[0].Title != "看看这个项目" || loaded.Sessions[1].Title != imageSessionTitle {
 		t.Errorf("cleaned titles were not persisted: %+v", loaded.Sessions)
+	}
+}
+
+func TestSentPromptTimePersistsInArchive(t *testing.T) {
+	app, tt := newFakeApp(t)
+	chat := connectTab(t, app, tt)
+	sendTo(t, app, tt, chat, "timed question")
+	waitFor(t, app, tt, func() bool {
+		return !chat.Streaming && chatAssistantHas(chat, "收到：timed question")
+	})
+
+	index := app.archiveIndex("fake", chat.Info.SessionID)
+	if index < 0 {
+		t.Fatalf("session was not archived: %+v", app.Archived)
+	}
+	var user *Message
+	for _, message := range chat.Messages {
+		if message.Role == RoleUser && message.Text == "timed question" {
+			user = message
+			break
+		}
+	}
+	if user == nil || user.SentAt.IsZero() {
+		t.Fatalf("sent prompt has no time: %+v", user)
+	}
+	turns := app.Archived[index].UserTurns
+	if len(turns) != 1 || turns[0].Number != 1 {
+		t.Fatalf("user turns = %+v, want one turn", turns)
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, turns[0].SentAt)
+	if err != nil {
+		t.Fatalf("sent time %q: %v", turns[0].SentAt, err)
+	}
+	if !parsed.Equal(user.SentAt) {
+		t.Errorf("archived time = %v, message time = %v", parsed, user.SentAt)
+	}
+
+	loaded, err := archive.Open(app.archive.Path()).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var persisted *archive.Session
+	for i := range loaded.Sessions {
+		if loaded.Sessions[i].AgentID == "fake" && loaded.Sessions[i].SessionID == chat.Info.SessionID {
+			persisted = &loaded.Sessions[i]
+			break
+		}
+	}
+	if persisted == nil || len(persisted.UserTurns) != 1 ||
+		persisted.UserTurns[0].SentAt != turns[0].SentAt {
+		t.Fatalf("persisted user turns = %+v", loaded.Sessions)
+	}
+}
+
+func TestTurnRuntimePersistsAndDisplays(t *testing.T) {
+	app, tt := newFakeApp(t)
+	chat := connectTab(t, app, tt)
+	sendTo(t, app, tt, chat, "timed runtime")
+	waitFor(t, app, tt, func() bool {
+		return !chat.Streaming && chatAssistantHas(chat, "收到：timed runtime")
+	})
+
+	var summary *Message
+	for _, message := range chat.Messages {
+		if message.Role == RoleTurn {
+			summary = message
+		}
+	}
+	if summary == nil || summary.Elapsed <= 0 {
+		t.Fatalf("turn summary = %+v, want a positive runtime", summary)
+	}
+	if want := "Took " + formatElapsed(summary.Elapsed); !tt.HasText(want) {
+		t.Errorf("runtime %q not rendered; texts: %q", want, tt.Texts())
+	}
+
+	index := app.archiveIndex("fake", chat.Info.SessionID)
+	if index < 0 {
+		t.Fatalf("session was not archived: %+v", app.Archived)
+	}
+	turns := app.Archived[index].UserTurns
+	if len(turns) != 1 || turns[0].DurationMs <= 0 {
+		t.Fatalf("user turns = %+v, want one persisted runtime", turns)
+	}
+	if got, want := time.Duration(turns[0].DurationMs)*time.Millisecond, summary.Elapsed.Truncate(time.Millisecond); got != want {
+		t.Errorf("archived runtime = %v, message runtime = %v", got, want)
+	}
+
+	loaded, err := archive.Open(app.archive.Path()).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var persisted *archive.Session
+	for i := range loaded.Sessions {
+		if loaded.Sessions[i].AgentID == "fake" && loaded.Sessions[i].SessionID == chat.Info.SessionID {
+			persisted = &loaded.Sessions[i]
+			break
+		}
+	}
+	if persisted == nil || len(persisted.UserTurns) != 1 ||
+		persisted.UserTurns[0].DurationMs != turns[0].DurationMs {
+		t.Fatalf("persisted user turns = %+v", loaded.Sessions)
+	}
+}
+
+func TestReplayUsesPersistedUserTurnTimeAndRuntime(t *testing.T) {
+	app, tt := newFakeApp(t)
+	waitSavedSessions(t, app, tt, 1)
+	stamp := "2020-11-11T09:41:00Z"
+	index := app.archiveIndex("fake", "fake-history")
+	if index < 0 {
+		t.Fatal("fake history is missing from the archive")
+	}
+	app.Archived[index].UserTurns = []archive.UserTurn{{Number: 1, SentAt: stamp, DurationMs: 83000}}
+	app.saveArchive()
+
+	tt.Frame()
+	if err := tt.Click("Open saved session: Fake history"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		chat := app.activeChat()
+		return chat != nil && chat.Connected && chat.Info.SessionID == "fake-history" &&
+			!chat.replaying && lastAssistantHas(app, "Answer from history")
+	})
+	chat := app.activeChat()
+	var user *Message
+	for _, message := range chat.Messages {
+		if message.Role == RoleUser && strings.Contains(message.Text, "Question from history") {
+			user = message
+			break
+		}
+	}
+	if user == nil || user.SentAt.IsZero() {
+		t.Fatalf("replayed prompt has no time: %+v", user)
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, stamp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !user.SentAt.Equal(parsed) {
+		t.Errorf("replayed time = %v, want %v", user.SentAt, parsed)
+	}
+
+	var summary *Message
+	for _, message := range chat.Messages {
+		if message.Role == RoleTurn {
+			summary = message
+		}
+	}
+	if summary == nil || summary.Elapsed != 83*time.Second {
+		t.Fatalf("replayed runtime = %+v, want 1m 23s", summary)
+	}
+	if want := "Took 1m 23s"; !tt.HasText(want) {
+		t.Errorf("runtime %q missing after replay; texts: %q", want, tt.Texts())
+	}
+
+	tt.Frame()
+	if err := tt.Click("Jump"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if want := formatJumpTime(parsed, time.Now()); !tt.HasText(want) {
+		t.Errorf("send time %q missing from jump dialog; texts: %q", want, tt.Texts())
 	}
 }
 

@@ -59,6 +59,8 @@ const (
 	RoleTool
 	RoleSystem
 	RoleError
+	// RoleTurn is the muted runtime caption that closes a completed turn.
+	RoleTurn
 )
 
 // Message is one row in the chat list.
@@ -82,6 +84,12 @@ type Message struct {
 	// FileRefs mirror @ mentions from the prompt, so the user's row lists
 	// the files the message refers to.
 	FileRefs []FileRef
+	// SentAt is when a user prompt was sent. Replayed history has no
+	// timestamps, so it stays zero unless the local archive recorded one.
+	SentAt time.Time
+	// Elapsed is the runtime shown in a RoleTurn summary row. It is kept as
+	// a duration rather than text so the label can be formatted at draw time.
+	Elapsed time.Duration
 }
 
 // Attachment is an image attached to a prompt.
@@ -114,6 +122,10 @@ const (
 type turnState struct {
 	assistant *Message
 	tools     map[string]*Message
+	// number is the user-turn ordinal this prompt belongs to, and startedAt
+	// is when it was sent. Both stay zero for replayed history.
+	number    int
+	startedAt time.Time
 }
 
 // App is the root UI state.
@@ -822,6 +834,13 @@ func (a *App) message(c *mui.Context, m *Message) {
 			color = t.Danger
 		}
 		mui.Text(c, m.Text).TextColor(color).TextAlign(mui.Center)
+	case RoleTurn:
+		if m.Elapsed > 0 {
+			mui.Row(c).Children(func() {
+				mui.Spacer(c)
+				mutedText(c, "Took "+formatElapsed(m.Elapsed), 9).Shrink(0).Tooltip("Runtime of this turn")
+			})
+		}
 	}
 }
 
@@ -875,6 +894,23 @@ func (a *App) addMessage(chat *Chat, m *Message) *Message {
 	}
 	chat.Messages = append(chat.Messages, m)
 	return m
+}
+
+// newTurnSummary builds the muted runtime row that closes one turn. It is a
+// real message so replay can place it at the same boundary as a live turn.
+func (a *App) newTurnSummary(elapsed time.Duration) *Message {
+	if elapsed <= 0 {
+		return nil
+	}
+	return &Message{ID: a.nextID(), Role: RoleTurn, Elapsed: elapsed, Done: true}
+}
+
+func (a *App) addTurnSummary(chat *Chat, elapsed time.Duration) *Message {
+	message := a.newTurnSummary(elapsed)
+	if message == nil {
+		return nil
+	}
+	return a.addMessage(chat, message)
 }
 
 func (a *App) addError(chat *Chat, err error) {

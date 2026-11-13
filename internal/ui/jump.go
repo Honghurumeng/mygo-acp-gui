@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"time"
 
 	mui "github.com/egoist/mygo/ui"
 )
@@ -72,6 +73,31 @@ func imageCountLabel(n int) string {
 		return "1 image"
 	}
 	return fmt.Sprintf("%d images", n)
+}
+
+// jumpEntryTime is the compact send time shown at the right of a history
+// row. Today shows only the clock, other days add the date, and messages
+// replayed from an agent session without a local record show a dash.
+func jumpEntryTime(m *Message) string {
+	if m == nil || m.SentAt.IsZero() {
+		return "—"
+	}
+	return formatJumpTime(m.SentAt, time.Now())
+}
+
+// formatJumpTime takes now as an argument so the date rules stay testable
+// across midnight and year boundaries.
+func formatJumpTime(sentAt, now time.Time) string {
+	local := sentAt.Local()
+	now = now.Local()
+	switch {
+	case local.Year() == now.Year() && local.YearDay() == now.YearDay():
+		return local.Format("15:04")
+	case local.Year() == now.Year():
+		return local.Format("Jan 2 15:04")
+	default:
+		return local.Format("Jan 2, 2006 15:04")
+	}
 }
 
 // truncateRunes cuts text at a rune boundary so a preview never splits a
@@ -157,6 +183,12 @@ func (a *App) jumpDialog(c *mui.Context, chat *Chat) {
 								text = "(empty message)"
 							}
 							mui.Text(c, text).FontSize(11).Grow(1).SingleLine()
+							stamp := mutedText(c, jumpEntryTime(entry.msg), 9).Shrink(0)
+							if entry.msg != nil && !entry.msg.SentAt.IsZero() {
+								stamp.Tooltip("Sent " + entry.msg.SentAt.Local().Format("2006-01-02 15:04:05"))
+							} else {
+								stamp.Tooltip("Send time not recorded; this message came from the agent's history")
+							}
 							mutedText(c, "→", 10).Shrink(0)
 						})
 						if item.Clicked() {

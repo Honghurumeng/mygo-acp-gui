@@ -52,18 +52,20 @@ pi-acp 的启动信息（pi 版本、Extensions、Skills 等）、重试、自�
 
 ## 已保存会话与本地存档
 
-本地存档 `<data>/sessions.json` 是侧栏历史列表的来源，由 `internal/archive` 读写。它把会话列表、session ID 和 agent 关联起来，并保存两个纯本地字段：
+本地存档 `<data>/sessions.json` 是侧栏历史列表的来源，由 `internal/archive` 读写。它把会话列表、session ID 和 agent 关联起来，并保存三个纯本地字段：
 
 - `show`：`true` 正常显示；`false` 表示用户删除，只从侧栏隐藏，记录不删。
 - `showName`：用户重命名后的显示名，优先于 agent 返回的 `title`。
+- `userTurns`：用户每条消息的本地发送时间和该轮运行时间，形如 `[{number, sentAt, durationMs}]`；`number` 是会话中从 1 开始的用户轮次。ACP 历史本身没有时间或耗时，Jump 弹窗用 `sentAt` 在重启后显示发送时间，会话流用 `durationMs` 在重放后重现 `Took …`。
 
-记录结构：`{agentId, sessionId, cwd, title, showName, createdAt, updatedAt, show}`；`(agentId, sessionId)` 唯一，这样不同 agent 的相同 session ID 不会互相覆盖。
+记录结构：`{agentId, sessionId, cwd, title, showName, createdAt, updatedAt, userTurns, show}`；`userTurns` 条目为 `{number, sentAt, durationMs}`；`(agentId, sessionId)` 唯一，这样不同 agent 的相同 session ID 不会互相覆盖。
 
 - 标题清洗：agent 常拿首条 user 消息当兜底标题；带图片的 prompt 会以图片临时路径开头（例如 `/var/folders/.../pi-clipboard-....png`）。`internal/ui/title.go` 去掉开头的绝对路径、保留后面的正文，只有路径时显示 `[Image]`；读存档、合并 `session/list`、接收 `session_info_update` 时都会清洗，旧存档里的路径标题在启动时改写回 `sessions.json`。
 
 - 启动时先读存档并立即按 `cwd` 分组展示，不等 agent 发现，也不自动调 `session/list`。已打开会话不重复显示。
 - session/new / load 成功、标题更新和一轮结束后，自动把 session ID、agent、cwd、agent title 和 `updatedAt` 写进存档；不覆盖 `show/showName`。
-- App 不在本地保存消息正文，右侧历史只能由 agent 重放。点击存档行按记录中的 `agentId` 启动/复用对应 agent，并执行 `session/load` 重放历史；当前会话已有消息、流式、目标 agent 与当前进程不同，或 `cwd` 与当前进程工作区不同时，在新标签页用该会话的 `cwd` 新建进程（Command Code 的 ACP 进程只服务启动时的工作区）。
+- App 不在本地保存消息正文，只保存用户消息的发送时间和每轮运行时间；右侧历史正文仍只能由 agent 重放。点击存档行按记录中的 `agentId` 启动/复用对应 agent，并执行 `session/load` 重放历史；当前会话已有消息、流式、目标 agent 与当前进程不同，或 `cwd` 与当前进程工作区不同时，在新标签页用该会话的 `cwd` 新建进程（Command Code 的 ACP 进程只服务启动时的工作区）。重放时按用户轮次把 `userTurns` 里的时间贴回对应消息；没有本地记录的历史消息显示 `—`，不借用相邻消息的时间。
+- 一轮结束后，从 prompt 发送到结果返回的耗时写入该轮 `durationMs`，并在会话流末尾追加一行右对齐的 muted `Took 1m 23s`；取消和错误也计算到结束为止。`session/load` 重放时按轮次把同样的行插到下一轮用户消息之前（最后一轮放在历史末尾）；没有本地记录的历史轮次不显示，也不猜测耗时。
 - 行尾 `⋯` 只提供 Rename、Delete；打开存档一律走 load。Rename 写 `showName`；Delete 只写 `show=false`，不关 agent 的外部历史。
 - 默认不显示 `show=false` 的行；侧栏 “Show deleted (N)” 展开，`⋯` → Restore 恢复。
 - discovery 完成后，每个 ready agent 会在后台自动拉一次 `session/list` 合并进存档；即使从未连接过该 agent，新增工作区也能看到它的历史。之后该 agent 首次连接成功时再同步一次，用来重试启动时失败的导入。请求显式发送 `cwd: null`（不是省略字段）表示全部工作区，并跟随 `nextCursor` 取完所有分页；否则 pi-acp 会回退到当前进程工作区，只导入一个工作区的历史。有该 agent 的已连接进程（后台标签页也算）时直接复用，否则临时 spawn 一次。同步失败（超时、进程退出）会清除该 agent 的已同步标记，下次连接重试。
@@ -118,7 +120,7 @@ pi-acp 的启动信息（pi 版本、Extensions、Skills 等）、重试、自�
 - 启动恢复：工作区、侧栏工作区列表（含软删除分组）、折叠状态、MCP 列表、上次 agent；显式传入的 `ui.Options.Workspace` 优先（测试用）。上次工作区已被软删除时，草稿改用第一个可见工作区（没有则用 home）。启动时创建的草稿不会展开已折叠的工作区。
 - `paths` 只保存配置里的覆盖值；`ACP_GUI_*` 环境变量优先，且不会被写回文件。
 - 容错：文件缺失用默认值；损坏 JSON、MCP 不是数组、相对路径、未来版本只显示侧栏/标题栏警告，其余字段照常生效。
-- 不保存会话布局、草稿、附件和消息；会话索引在单独的 `sessions.json` 里（见“已保存会话与本地存档”）。
+- 不保存会话布局、草稿、附件和消息；会话索引、用户消息发送时间和每轮运行时间在单独的 `sessions.json` 里（见“已保存会话与本地存档”）。
 
 ## 诊断与日志
 
@@ -139,7 +141,7 @@ pi-acp 的启动信息（pi 版本、Extensions、Skills 等）、重试、自�
 
 - composer 底栏左下角（附件 `＋` 右侧）的 `Jump` 打开“Jump to a message”弹窗；当前会话还没有用户发言时按钮禁用。
 - 列表直接读 `Chat.Messages` 里的 `RoleUser` 行，包括 `session/load` 重放的发言和正在回答的 prompt；助手、工具、系统提示和错误不进列表。
-- 按时间正序显示（旧的在上、新的在下），序号按用户自己的发言轮次从 1 递增；每条显示单行预览（超过 180 个字符按 rune 截断），只有图片的发言显示图片数量。点条目或打开弹窗不会重发 prompt、不改变会话。
+- 按时间正序显示（旧的在上、新的在下），序号按用户自己的发言轮次从 1 递增；每条显示单行预览（超过 180 个字符按 rune 截断）和发送时间，只有图片的发言显示图片数量。发送时间在今天就只显示 `15:04`，同年显示 `Jan 2 15:04`，跨年显示 `Jan 2, 2006 15:04`；没有本地记录的历史消息显示 `—`（tooltip 说明来源），不猜测时间。点条目或打开弹窗不会重发 prompt、不改变会话。
 - 列表区域最大高度 380 DIP，并按窗口高度收缩；超出时在弹窗内滚动。弹窗打开时先滚到最新一条（底部），再向上翻看旧发言。
 - 点击条目关闭弹窗并调用 `chat.list.ScrollTo(row, Start)`，把该发言滚到消息区顶部；只影响当前会话的滚动位置。
 

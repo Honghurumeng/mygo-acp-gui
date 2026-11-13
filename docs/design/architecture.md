@@ -162,7 +162,7 @@ pi 自己的工具在工作区内读写执行；客户端只负责展示和审�
 
 ```
 settings.json        lastAgent、lastWorkspace、workspaces、removedWorkspaces、mcpServers、paths 覆盖
-sessions.json        本地会话存档：agentId、sessionId、cwd、title、showName、show、时间
+sessions.json        本地会话存档：agentId、sessionId、cwd、title、showName、show、会话时间、用户消息发送时间与每轮运行时间
 logs/                每个 agent 的 stderr / 协议日志（1 MiB 滚动，保留一个 .1 备份）
 ```
 
@@ -173,7 +173,7 @@ logs/                每个 agent 的 stderr / 协议日志（1 MiB 滚动，保
 - 加载容错：文件缺失用默认值；JSON 损坏、MCP 不是数组、相对路径、未来版本只产生警告（标题栏/侧栏显示），其余字段照常使用，绝不阻塞启动。
 - 路径优先级：`ACP_GUI_*` 环境变量 > `settings.json` 的 `paths` > 登录 shell 解析。显式覆盖无效时保留 shell 结果并警告，不会把可用的路径清空。
 - 保存最后一次状态（当前会话的 agent/工作区/MCP）、侧栏工作区列表和每个工作区的折叠状态；不保存会话布局、图片草稿或消息。
-- 会话索引单独放在 `sessions.json`，由 `internal/archive` 读写：`{version, sessions:[{agentId,sessionId,cwd,title,showName,createdAt,updatedAt,show}]}`。`(agentId, sessionId)` 唯一；`show=false` 是软删除，`showName` 是本地重命名。
+- 会话索引单独放在 `sessions.json`，由 `internal/archive` 读写：`{version, sessions:[{agentId,sessionId,cwd,title,showName,createdAt,updatedAt,userTurns:[{number,sentAt,durationMs}],show}]}`。`(agentId, sessionId)` 唯一；`show=false` 是软删除，`showName` 是本地重命名；`userTurns` 按用户轮次保存本地发送时间和该轮运行时间（prompt 发送到结果返回），供 Jump 和会话流在 `session/load` 重放后显示（ACP 本身不提供消息时间或耗时）。
 - 存档写入时机：session/new、load 成功，标题/轮次更新，重命名、删除/恢复。启动只读存档，且不会从存档补建 workspace；discovery 完成后，每个 ready agent 在后台自动调一次 `session/list` 合并（`cwd: null` 表示全部工作区并走完分页；有已连接进程时复用，否则临时 spawn；失败下次连接重试），之后该 agent 连接成功时再补一次。合并只保留 cwd 属于已添加 workspace 的会话，且绝不覆盖 `show/showName`。`session_info_update.title` 会立即写入存档；启动读存档时会把旧版本用首条 user 消息生成的图片临时路径标题清洗成正文或 `[Image]`（`internal/ui/title.go`），避免侧栏先显示路径再等同步。新增 workspace 时按该 cwd 过滤同步一次。文件为原子写入、0600；损坏 JSON 只在侧栏提示，不阻塞启动。
 - 不存 registry 快照，也不缓存探测结果：启动时重新检测。
 

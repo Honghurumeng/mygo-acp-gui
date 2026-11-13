@@ -645,19 +645,28 @@ func (a *App) send() bool {
 	chat.ConnectError = ""
 	chat.TurnUsage = nil
 
+	sentAt := time.Now()
 	a.addMessage(chat, &Message{
 		ID:          a.nextID(),
 		Role:        RoleUser,
 		Text:        text,
+		SentAt:      sentAt,
 		Done:        true,
 		Attachments: attachments,
 		FileRefs:    files,
 	})
+	number := chat.userMessageCount()
+	a.recordUserTurnSent(chat, number, sentAt)
 	assistant := a.addMessage(chat, &Message{
 		ID:   a.nextID(),
 		Role: RoleAssistant,
 	})
-	turn := &turnState{assistant: assistant, tools: make(map[string]*Message)}
+	turn := &turnState{
+		assistant: assistant,
+		tools:     make(map[string]*Message),
+		number:    number,
+		startedAt: sentAt,
+	}
 	chat.turn = turn
 	chat.Streaming = true
 	chat.Cancelling = false
@@ -913,6 +922,8 @@ func (a *App) finishReplay(chat *Chat) {
 	if chat == nil || !chat.replaying {
 		return
 	}
+	durations := a.applyReplayTimes(chat)
+	a.applyReplayDurations(chat, durations)
 	for _, message := range chat.Messages {
 		message.Done = true
 	}
@@ -1155,6 +1166,7 @@ func (a *App) applyPromptResult(chat *Chat, turn *turnState, res acp.PromptResul
 	if chat == nil || chat.Session == nil || chat.turn != turn {
 		return
 	}
+	elapsed := a.finishTurnRuntime(chat, turn)
 	if turn.assistant != nil {
 		turn.assistant.Done = true
 	}
@@ -1171,6 +1183,7 @@ func (a *App) applyPromptResult(chat *Chat, turn *turnState, res acp.PromptResul
 		chat.TurnUsage = &usage
 	}
 	a.touchArchivedSession(chat)
+	a.addTurnSummary(chat, elapsed)
 	if err != nil && !errors.Is(err, acp.ErrClosed) {
 		a.addError(chat, err)
 	}
@@ -1179,10 +1192,26 @@ func (a *App) applyPromptResult(chat *Chat, turn *turnState, res acp.PromptResul
 	}
 }
 
+// finishTurnRuntime records the runtime of a live turn once and clears its
+// start time, so an agent exit after a completed turn cannot record it again.
+func (a *App) finishTurnRuntime(chat *Chat, turn *turnState) time.Duration {
+	if chat == nil || turn == nil || turn.startedAt.IsZero() {
+		return 0
+	}
+	elapsed := time.Since(turn.startedAt)
+	turn.startedAt = time.Time{}
+	if elapsed <= 0 {
+		return 0
+	}
+	a.recordUserTurnDuration(chat, turn.number, elapsed)
+	return elapsed
+}
+
 func (a *App) applyExit(chat *Chat, exit session.Exit) {
 	if chat == nil || chat.Closed || chat.Session != exit.Session {
 		return
 	}
+	elapsed := a.finishTurnRuntime(chat, chat.turn)
 	if exit.Err != nil {
 		a.appendStderr(chat, fmt.Sprintf("\n[agent exited: %v]\n", exit.Err))
 	} else {
@@ -1203,6 +1232,7 @@ func (a *App) applyExit(chat *Chat, exit session.Exit) {
 		chat.turn = nil
 	}
 	a.cancelPermissionsFor(chat)
+	a.addTurnSummary(chat, elapsed)
 	if !exit.Expected {
 		msg := "Agent exited unexpectedly."
 		if exit.Err != nil {

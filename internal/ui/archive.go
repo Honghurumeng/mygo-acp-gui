@@ -112,6 +112,152 @@ func archiveNow() string {
 	return time.Now().UTC().Format(time.RFC3339Nano)
 }
 
+// recordUserTurnSent stores the local send time of one user prompt. ACP
+// history carries no timestamps, so this list is what lets Jump show times
+// after a restart. number is the visible user-turn ordinal at send time.
+func (a *App) recordUserTurnSent(chat *Chat, number int, sentAt time.Time) {
+	if chat == nil || number <= 0 || sentAt.IsZero() {
+		return
+	}
+	index := a.archiveIndex(strings.TrimSpace(chat.Agent.ID), strings.TrimSpace(chat.Info.SessionID))
+	if index < 0 {
+		return
+	}
+	record := &a.Archived[index]
+	stamp := sentAt.UTC().Format(time.RFC3339Nano)
+	for i := range record.UserTurns {
+		if record.UserTurns[i].Number == number {
+			record.UserTurns[i].SentAt = stamp
+			a.saveArchive()
+			return
+		}
+	}
+	record.UserTurns = append(record.UserTurns, archive.UserTurn{Number: number, SentAt: stamp})
+	a.saveArchive()
+}
+
+// recordUserTurnDuration stores how long one user prompt took. It updates the
+// entry recordUserTurnSent created, so sessions.json keeps one row per turn.
+func (a *App) recordUserTurnDuration(chat *Chat, number int, elapsed time.Duration) {
+	if chat == nil || number <= 0 || elapsed <= 0 {
+		return
+	}
+	index := a.archiveIndex(strings.TrimSpace(chat.Agent.ID), strings.TrimSpace(chat.Info.SessionID))
+	if index < 0 {
+		return
+	}
+	ms := elapsed.Milliseconds()
+	if ms <= 0 {
+		return
+	}
+	record := &a.Archived[index]
+	for i := range record.UserTurns {
+		if record.UserTurns[i].Number != number {
+			continue
+		}
+		if record.UserTurns[i].DurationMs == ms {
+			return
+		}
+		record.UserTurns[i].DurationMs = ms
+		a.saveArchive()
+		return
+	}
+}
+
+// replayTurn is the locally known timing of one user turn, used to restore
+// timestamps and runtime captions after session/load replays the history.
+type replayTurn struct {
+	sentAt  time.Time
+	elapsed time.Duration
+}
+
+// applyReplayTimes attaches locally recorded send times and runtimes to
+// replayed history. Timestamps are matched by user-turn number, so prompts
+// sent outside this app stay unknown instead of borrowing a neighbour's
+// metadata. The returned map is keyed by user-turn number for the runtime
+// rows applyReplayDurations inserts at the same boundaries as live turns.
+func (a *App) applyReplayTimes(chat *Chat) map[int]time.Duration {
+	if chat == nil {
+		return nil
+	}
+	index := a.archiveIndex(strings.TrimSpace(chat.Agent.ID), strings.TrimSpace(chat.Info.SessionID))
+	if index < 0 {
+		return nil
+	}
+	records := a.Archived[index].UserTurns
+	if len(records) == 0 {
+		return nil
+	}
+	turns := make(map[int]replayTurn, len(records))
+	for _, turn := range records {
+		if turn.Number <= 0 {
+			continue
+		}
+		parsed := replayTurn{}
+		if turn.SentAt != "" {
+			if at, err := time.Parse(time.RFC3339Nano, turn.SentAt); err == nil {
+				parsed.sentAt = at
+			}
+		}
+		if turn.DurationMs > 0 {
+			parsed.elapsed = time.Duration(turn.DurationMs) * time.Millisecond
+		}
+		if parsed.sentAt.IsZero() && parsed.elapsed <= 0 {
+			continue
+		}
+		turns[turn.Number] = parsed
+	}
+	if len(turns) == 0 {
+		return nil
+	}
+	durations := make(map[int]time.Duration, len(turns))
+	number := 0
+	for _, message := range chat.Messages {
+		if message.Role != RoleUser {
+			continue
+		}
+		number++
+		turn, ok := turns[number]
+		if !ok {
+			continue
+		}
+		if message.SentAt.IsZero() && !turn.sentAt.IsZero() {
+			message.SentAt = turn.sentAt
+		}
+		if turn.elapsed > 0 {
+			durations[number] = turn.elapsed
+		}
+	}
+	if len(durations) == 0 {
+		return nil
+	}
+	return durations
+}
+
+// applyReplayDurations inserts the runtime caption after each replayed turn,
+// just before the next user row and at the end of the history. Live turns add
+// the same row from applyPromptResult.
+func (a *App) applyReplayDurations(chat *Chat, durations map[int]time.Duration) {
+	if chat == nil || len(durations) == 0 {
+		return
+	}
+	out := make([]*Message, 0, len(chat.Messages)+len(durations))
+	number := 0
+	for _, message := range chat.Messages {
+		if message.Role == RoleUser {
+			if summary := a.newTurnSummary(durations[number]); summary != nil {
+				out = append(out, summary)
+			}
+			number++
+		}
+		out = append(out, message)
+	}
+	if summary := a.newTurnSummary(durations[number]); summary != nil {
+		out = append(out, summary)
+	}
+	chat.Messages = out
+}
+
 func cleanArchivePath(path string) string {
 	path = strings.TrimSpace(path)
 	if path == "" {

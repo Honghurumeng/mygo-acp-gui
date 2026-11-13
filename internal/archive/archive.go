@@ -30,9 +30,24 @@ type Session struct {
 	ShowName  string `json:"showName,omitempty"`
 	CreatedAt string `json:"createdAt,omitempty"`
 	UpdatedAt string `json:"updatedAt,omitempty"`
+	// UserTurns records when the user sent prompts. ACP history has no
+	// timestamps, so the app keeps them locally by turn number.
+	UserTurns []UserTurn `json:"userTurns,omitempty"`
 	// Show is false after the user deletes the session. The record is kept
 	// so a later agent session/list cannot make it reappear.
 	Show bool `json:"show"`
+}
+
+// UserTurn is the local send time and runtime of the Number-th user prompt in
+// a session, counting only visible user rows and starting at 1. Number, rather
+// than the slice index, keeps metadata attached to the right turn when the app
+// did not see the beginning of a session.
+type UserTurn struct {
+	Number int    `json:"number"`
+	SentAt string `json:"sentAt"`
+	// DurationMs is how long the turn ran, from prompt send to prompt result.
+	// Zero means the turn never finished inside this app (or predates it).
+	DurationMs int64 `json:"durationMs,omitempty"`
 }
 
 // File is the on-disk archive document.
@@ -143,13 +158,14 @@ type rawFile struct {
 }
 
 type rawSession struct {
-	AgentID   string `json:"agentId"`
-	SessionID string `json:"sessionId"`
-	Cwd       string `json:"cwd"`
-	Title     string `json:"title"`
-	ShowName  string `json:"showName"`
-	CreatedAt string `json:"createdAt"`
-	UpdatedAt string `json:"updatedAt"`
+	AgentID   string     `json:"agentId"`
+	SessionID string     `json:"sessionId"`
+	Cwd       string     `json:"cwd"`
+	Title     string     `json:"title"`
+	ShowName  string     `json:"showName"`
+	CreatedAt string     `json:"createdAt"`
+	UpdatedAt string     `json:"updatedAt"`
+	UserTurns []UserTurn `json:"userTurns"`
 	// Missing show on an older record means visible.
 	Show *bool `json:"show"`
 }
@@ -192,11 +208,38 @@ func decode(data []byte) (File, error) {
 			ShowName:  strings.TrimSpace(item.ShowName),
 			CreatedAt: strings.TrimSpace(item.CreatedAt),
 			UpdatedAt: strings.TrimSpace(item.UpdatedAt),
+			UserTurns: cleanUserTurns(item.UserTurns),
 			Show:      show,
 		}
 		file.Sessions = append(file.Sessions, record)
 	}
 	return file, errors.Join(problems...)
+}
+
+// cleanUserTurns drops incomplete or duplicate entries. A duplicate number
+// keeps the first entry, matching the send-order append this package writes.
+func cleanUserTurns(turns []UserTurn) []UserTurn {
+	if len(turns) == 0 {
+		return nil
+	}
+	out := make([]UserTurn, 0, len(turns))
+	seen := make(map[int]bool, len(turns))
+	for _, turn := range turns {
+		at := strings.TrimSpace(turn.SentAt)
+		if turn.Number <= 0 || at == "" || seen[turn.Number] {
+			continue
+		}
+		seen[turn.Number] = true
+		duration := turn.DurationMs
+		if duration < 0 {
+			duration = 0
+		}
+		out = append(out, UserTurn{Number: turn.Number, SentAt: at, DurationMs: duration})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func cleanPath(path string) string {
