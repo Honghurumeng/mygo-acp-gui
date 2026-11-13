@@ -73,9 +73,10 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 
 - composer 的模型 chip 打开面板，四列为 agent / provider / model / thinking；provider 由模型值的 `/` 或 `:` 前缀分组，没有前缀时归入 `Models`。可用 provider 只来自 agent 返回的 model `configOptions`：ACP 没有单独的 provider 可用性接口，模型选项就是 agent 对「当前可用模型」的声明。面板每列按内容取宽、内容左对齐，整个面板与 chip 右对齐，列表变宽时向左展开。chip 左侧画当前 agent 的品牌图标（未知 agent 不画），图标放在 chip 内部且只有 11pt，不改变 22pt 的控件行高。
 - 草稿（还没有 session）也能选 provider / model / thinking：面板数据来自发现阶段的配置探测（`AgentConfigs`），选择存在 `Chat.PendingConfig`，Connect 拿到 session 后按 model 优先的顺序调 `session/set_config_option` 补上；断开连接时把当前值回填为草稿选择，重连不丢。ACP 没有“查询某个未连接模型有哪些 thinking 档位”的接口，所以发现阶段会一个进程把模型列表里缺的模型逐个 `set_config_option` 扫一遍，把每个模型的 `configOptions` 存进 `<data>/model-config.json`；草稿切到已扫过的 model 时直接用它渲染 thinking，未扫到（首次运行、超时或切换失败）才隐藏旧档位并提示先 Connect，同时清掉旧 model 的 thinking 草稿。
-- 草稿的 mode chip 也来自同一次配置探测（`AgentModes`），因此不用发第一条消息就能看到 agent 的 `default` / `plan` 等模式。草稿选择存在 `Chat.PendingMode`，Connect 后、首条 prompt 前调 `session/set_mode`；断开时把当前 mode 回填，重连不丢。切换 agent 时清掉旧 agent 的草稿 mode。
+- 草稿的 mode chip 也来自同一次配置探测（`AgentModes`），因此不用发第一条消息就能看到 agent 的 `default` / `plan` 等模式。草稿选择存在 `Chat.PendingMode`，Connect 后、首条 prompt 前调 `session/set_mode`；断开时把当前 mode 回填，重连不丢。切换 agent 时先清掉旧 agent 的草稿 mode，再填入新 agent 的上次选择。
+- 每个 agent 的模型面板选择会持久化：`settings.json` 的 `lastSelections[agentId]` 保存所有 select 型配置项的当前值（model、thinking 及其他扩展 select）和 session mode。选择 model/thinking/mode 后立即写入（草稿与已连接会话都一样）；启动草稿、`＋` 新建会话、切换 agent 时先填入该 agent 的上次选择，Connect 仍按 `session/new` 返回的 `configOptions` / `modes` 校验，已下架的 model、档位或 mode 直接跳过。provider 不单独保存，由恢复后的 model 值推导。打开已保存会话走 `session/load`，不覆盖会话自己的配置；加载后实际返回的 model/thinking/mode 会作为该 agent 的最新选择写回，供下一个新草稿使用。
 - 启动时的配置缓存不是永久事实：草稿每次打开模型面板都会异步重读 agent 的 model 列表（正常 30 秒节流，缓存为空时 5 秒重试；失败保留旧列表，读取中没有 session 也保留），所以登录/改配置后不再出现的 provider 会在刷新后消失；连接成功、`config_option_update`、切换配置和断开时都用真实 session 的 `configOptions` 更新缓存，并写回 `model-config.json`。启动时把 `session/new` 的模型列表和该文件对照，只扫新模型；缓存完整时只做一次 `session/new`。`PendingConfig` 里已被刷新掉的 model 在 Connect 时跳过，不会静默换用别的模型。每模型缓存只按“模型值是否已存在”判断，不设 TTL：模型档位变化（例如升级 pi 后同一模型多出 `xhigh`）不会自动刷新，需要删掉该文件重扫。
-- agent 只在会话开始前可选；连接后锁定。切换 agent 后重新 Connect 才生效，同时清掉属于旧 agent 的草稿配置选择。
+- agent 只在会话开始前可选；连接后锁定。切换 agent 后重新 Connect 才生效；切换瞬间清掉属于旧 agent 的草稿配置选择，并恢复新 agent 在 `lastSelections` 里的 model/thinking/mode。agent 本身仍由 `lastAgent` 恢复。
 - 选择 model / thinking 调用 `session/set_config_option` `{sessionId, configId, value}`；其他 select 型配置追加显示在 thinking 列。thinking 选项以 agent 当前返回的 configOptions 为准，pi fork 会按当前模型重算（如 `low/high/max`，含 `max`）；响应或 `config_option_update` 里的 `thought_level` 会整组替换，已消失的档位立即从面板和 chip 中移除。
 - 模式 chip 显示当前 mode；连接后点击调用 `session/set_mode` `{sessionId, modeId}`，草稿中点击只记录 `PendingMode`，由 Connect 在 `session/new` 之后统一应用。mode 只来自真实的 `modes`（或未来的 mode config option）；pi-acp v1 的 thinking 兼容块会被过滤，不会渲染成 mode。
 - 两者都更新 `Info`，并接收 agent 的 `config_option_update` / `current_mode_update` 通知。pi-acp 的 `current_mode_update` 在承载 thinking level 时，如果该值属于 thinking 选项，就不写入 `CurrentModeID`；真正的 thinking 当前值以 `thought_level.currentValue` 为准。
@@ -147,12 +148,12 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 ## 设置持久化
 
 - `internal/settings` 读写 `PathUserData/settings.json`；`ui.Options.DataDir` 为空时完全不落盘（测试、便携运行）。
-- 保存内容：最后使用的 agent、工作区、侧栏工作区列表（`workspaces`）、软删除记录（`removedWorkspaces`）、折叠状态（`collapsedWorkspaces`）、MCP 默认列表、系统通知开关（`notifications`，默认 true）、Dock 角标开关（`dockBadge`，默认 true），以及 `paths` 里的显式工具覆盖。
-- 保存时机：切换会话、选择 agent/目录、添加/移除/恢复工作区、折叠/展开工作区、切换系统通知或 Dock 角标、Connect 校验成功、MCP Apply、退出。
-- 启动恢复：工作区、侧栏工作区列表（含软删除分组）、折叠状态、MCP 列表、上次 agent；显式传入的 `ui.Options.Workspace` 优先（测试用）。上次工作区已被软删除时，草稿改用第一个可见工作区（没有则用 home）。启动时创建的草稿不会展开已折叠的工作区。
+- 保存内容：最后使用的 agent、工作区、侧栏工作区列表（`workspaces`）、软删除记录（`removedWorkspaces`）、折叠状态（`collapsedWorkspaces`）、MCP 默认列表、每个 agent 的模型/thinking/mode（`lastSelections`）、系统通知开关（`notifications`，默认 true）、Dock 角标开关（`dockBadge`，默认 true），以及 `paths` 里的显式工具覆盖。
+- 保存时机：切换会话、选择 agent/目录/model/thinking/mode、添加/移除/恢复工作区、折叠/展开工作区、切换系统通知或 Dock 角标、Connect 校验成功、MCP Apply、退出。
+- 启动恢复：工作区、侧栏工作区列表（含软删除分组）、折叠状态、MCP 列表、上次 agent，以及该 agent 的模型/thinking/mode 草稿选择；显式传入的 `ui.Options.Workspace` 优先（测试用）。上次工作区已被软删除时，草稿改用第一个可见工作区（没有则用 home）。启动时创建的草稿不会展开已折叠的工作区。
 - `paths` 只保存配置里的覆盖值；`ACP_GUI_*` 环境变量优先，且不会被写回文件。
 - 容错：文件缺失用默认值；损坏 JSON、MCP 不是数组、相对路径、未来版本只显示侧栏/标题栏警告，其余字段照常生效。
-- 不保存会话布局、草稿、附件和消息；会话索引、用户消息发送时间和每轮运行时间在单独的 `sessions.json` 里（见“已保存会话与本地存档”）。
+- 不保存会话布局、草稿文本、附件和消息；会话索引、用户消息发送时间和每轮运行时间在单独的 `sessions.json` 里（见“已保存会话与本地存档”）。
 
 ## 诊断与日志
 

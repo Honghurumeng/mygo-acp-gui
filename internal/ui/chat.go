@@ -369,6 +369,7 @@ func (a *App) newChatTabIn(workspace string) *Chat {
 	}
 	if spec, ok := a.preferredAgent(); ok {
 		chat.Agent = spec
+		a.restoreSelection(chat)
 	}
 	if current := a.activeChat(); current != nil {
 		chat.MCPServers = append([]any(nil), current.MCPServers...)

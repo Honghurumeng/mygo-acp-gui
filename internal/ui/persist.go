@@ -23,6 +23,12 @@ func (a *App) persistSettings() {
 		Notifications: a.NotificationsEnabled,
 		DockBadge:     a.DockBadgeEnabled,
 	}
+	if len(a.lastSelections) > 0 {
+		file.LastSelections = make(map[string]settings.Selection, len(a.lastSelections))
+		for agentID, selection := range a.lastSelections {
+			file.LastSelections[agentID] = selection
+		}
+	}
 	file.Workspaces = a.savedWorkspaces()
 	file.RemovedWorkspaces = a.removedWorkspaceList()
 	file.CollapsedWorkspaces = a.collapsedWorkspaceList()

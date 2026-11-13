@@ -89,7 +89,7 @@ go test ./internal/ui -run 'TestSettings|TestShutdownPersists|TestCorruptSetting
 11. 多会话：在侧栏开两个会话分别发 `/slow` 和普通消息，切换会话时后台继续流式；后台会话请求权限时弹窗标明会话，回答不影响另一个会话。
 12. 已保存会话：重启后在对应 workspace 下直接从 `sessions.json` 看到历史会话，不等 agent；点击按存档的 agent + sessionId 用 `session/load` 重放历史。重命名后重启仍显示 `showName`；删除后自动同步/重启都不再出现，可从 “Show deleted” 恢复。
 12b. 工作区软删除：工作区 `⋯` → `Remove workspace` 后分组隐藏但存档/会话不变，重启仍不出现；“Show removed (N)” → `Restore workspace` 恢复。
-13. 设置持久化：改 agent/工作区/MCP 后退出，再启动应恢复；手工损坏 `settings.json` 或写入相对路径，应正常启动并在工具栏显示警告。
+13. 设置持久化：改 agent/工作区/MCP/model/thinking/mode 后退出，再启动应恢复（模型面板与草稿都停在原选择）；手改 `lastSelections` 成已下架的 model 或 mode 后重启，Connect 应跳过并保持 agent 默认，不报错；手工损坏 `settings.json` 或写入相对路径，应正常启动并在工具栏显示警告。
 14. 诊断：点顶部 “Logs” 能看到当前会话的 stderr；`logs/<agent>.log` 有连接头和 stderr，超过 1 MiB 后生成 `.1` 备份。
 15. Git：打开非仓库 workspace，右侧提示 “Not a Git repository” 并可 `git init`；PATH 中无 git 时提示安装；仓库内可 stage/commit、查看提交图、切换 workspace 后不串仓库。
 
@@ -113,7 +113,7 @@ scripts/vendor-pi-acp.sh             # 仅在升级 pi-acp 时运行
 - [x] agent 选择 + 工作区选择 + 绝对路径/可写校验（上次使用由 settings.json 恢复）
 - [x] ACP 会话：initialize、session/new、session/prompt、agent_message_chunk 流式 Markdown、思考、工具调用、权限、取消
 - [x] 计划面板、配置选择、已保存会话（list/load/close）
-- [x] 模型/effort/模式配置 + `session/set_config_option` / `set_mode`
+- [x] 模型/effort/模式配置 + `session/set_config_option` / `set_mode`；model/thinking/mode 按 agent 持久化（`lastSelections`），新建草稿恢复、Connect 校验、切换 agent 恢复各自的选择
 - [x] 图片附件（文件选择 + 剪贴板粘贴）、MCP servers JSON、输入 `/` 触发的命令面板、`@` 文件引用（只发路径文本）
 - [x] 侧栏按 workspace 分组、已保存会话直接展示、折叠/展开、超过 5 条收起、重命名/删除/软删除恢复
 - [x] 会话行与标题栏的 agent 品牌图标（pi、Command Code，SVG 内嵌并跟随主题）
@@ -124,7 +124,7 @@ scripts/vendor-pi-acp.sh             # 仅在升级 pi-acp 时运行
 - [x] 系统 Node / pi / command-code 定位（登录 shell + 绝对路径覆盖）+ 登录指引（只展示，不代登录）
 - [x] Command Code 启动与完整聊天流程：initialize、session/new、流式、权限、取消、退出清理
 - [x] 退出清理（Setpgid + 进程组 SIGTERM/SIGKILL）
-- [x] settings.json 持久化（上次 agent/工作区、侧栏工作区列表 + `removedWorkspaces` 软删除、MCP 默认值、paths 覆盖、外观/主题；原子写入 + 容错加载）
+- [x] settings.json 持久化（上次 agent/工作区、每个 agent 的模型/thinking/mode、侧栏工作区列表 + `removedWorkspaces` 软删除、MCP 默认值、paths 覆盖、外观/主题；原子写入 + 容错加载）
 - [x] 错误诊断面板、stderr 日志滚动（Diagnostics 模态 + `logs/<agent>.log`，1 MiB 滚动）
 - [x] 基础测试：framing、launch spec、登录 shell 解析、fake agent 会话、UI 发送/流式/停止/权限、进程组清理
 - [x] 新能力测试：probe、config/mode、list/load/close、侧栏已保存会话 UI、图片 prompt、MCP 校验、命令面板、图片发送 UI、设置持久化、诊断面板与日志滚动

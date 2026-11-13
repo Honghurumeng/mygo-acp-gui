@@ -308,6 +308,10 @@ type App struct {
 	settings         *settings.Store
 	settingsPaths    settings.Paths
 	preferredAgentID string
+	// lastSelections remembers the model-panel values and session mode per
+	// agent, so a new draft starts where the last conversation left off. It
+	// is loaded from settings.json and rewritten by rememberSelection.
+	lastSelections map[string]settings.Selection
 	// modelConfig persists AgentModelConfigs; nil when there is no data
 	// directory.
 	modelConfig *modelconfig.Store
@@ -361,6 +365,7 @@ func New(opts Options) *App {
 		WorkspaceExpanded:  make(map[string]bool),
 		RemovedWorkspaces:  make(map[string]bool),
 		savedSynced:        make(map[string]bool),
+		lastSelections:     make(map[string]settings.Selection),
 
 		Appearance:           AppearanceSystem,
 		Theme:                ThemeDefault,
@@ -443,6 +448,9 @@ func (a *App) loadSettings(dataDir string, workspaceDefault bool) {
 	}
 	a.settingsPaths = file.Paths
 	a.preferredAgentID = file.LastAgent
+	if len(file.LastSelections) > 0 {
+		a.lastSelections = file.LastSelections
+	}
 	a.Appearance = normalizeAppearance(file.Appearance)
 	a.Theme = normalizeTheme(file.Theme)
 	a.Fonts = normalizeFontScales(file.Fonts)

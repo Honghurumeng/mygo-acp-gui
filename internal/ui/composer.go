@@ -334,8 +334,10 @@ func (a *App) modelPanel(c *mui.Context, chat *Chat) {
 					a.preferredAgentID = spec.ID
 					chat.WorkspaceError = ""
 					chat.ConnectError = ""
-					// Model and thinking belong to the previous agent.
+					// Model, thinking and mode belong to the previous agent;
+					// offer this agent's last selection instead.
 					chat.clearDraftConfig()
+					a.restoreSelection(chat)
 					a.probeAgentConfig(spec, false)
 					a.persistSettings()
 				}

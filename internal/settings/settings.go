@@ -70,6 +70,15 @@ type Paths struct {
 	CommandCode string `json:"commandCode,omitempty"`
 }
 
+// Selection is the last model-panel choice for one agent: the current value
+// of every select config option (model, thinking, ...) plus the session mode.
+// A new draft starts from these values, and Connect skips any the agent no
+// longer advertises.
+type Selection struct {
+	ConfigOptions map[string]string `json:"configOptions,omitempty"`
+	Mode          string            `json:"mode,omitempty"`
+}
+
 // File is the on-disk settings document. Workspaces keeps every known folder
 // in sidebar order; RemovedWorkspaces holds the soft-deleted ones, which stay
 // in the list so they can be restored later. CollapsedWorkspaces lists the
@@ -100,6 +109,10 @@ type File struct {
 	// Fonts scales the four text areas. A missing object keeps the default
 	// 100% everywhere.
 	Fonts Fonts `json:"fonts"`
+	// LastSelections maps an agent ID to the config values and session mode
+	// last used with it, so a new draft opens with the same model, thinking
+	// level and mode instead of the agent's defaults.
+	LastSelections map[string]Selection `json:"lastSelections,omitempty"`
 }
 
 // Store reads and writes one settings file. A nil Store or an empty path is
@@ -163,6 +176,7 @@ func (s *Store) Save(file File) error {
 		file.Version = CurrentVersion
 	}
 	file.Fonts = file.Fonts.withDefaults()
+	file.LastSelections = sanitizeSelections(file.LastSelections)
 	data, err := json.MarshalIndent(file, "", "  ")
 	if err != nil {
 		return fmt.Errorf("settings: encode: %w", err)
@@ -225,6 +239,8 @@ type rawFile struct {
 	// A pointer tells an older file without fonts apart from an explicit
 	// object whose fields are still defaults.
 	Fonts *Fonts `json:"fonts"`
+	// Raw keeps one malformed selection from discarding the other fields.
+	LastSelections json.RawMessage `json:"lastSelections"`
 }
 
 func decode(data []byte) (File, error) {
@@ -267,7 +283,55 @@ func decode(data []byte) (File, error) {
 	if raw.Fonts != nil {
 		file.Fonts = raw.Fonts.withDefaults()
 	}
+	file.LastSelections = decodeSelections(raw.LastSelections, &problems)
 	return file, errors.Join(problems...)
+}
+
+func decodeSelections(raw json.RawMessage, problems *[]error) map[string]Selection {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	var selections map[string]Selection
+	if err := json.Unmarshal(raw, &selections); err != nil {
+		*problems = append(*problems, fmt.Errorf("settings: ignoring lastSelections: %w", err))
+		return nil
+	}
+	return sanitizeSelections(selections)
+}
+
+// sanitizeSelections drops empty agent IDs, option IDs and values so a
+// generated or hand-edited file cannot make the model panel submit blanks.
+func sanitizeSelections(selections map[string]Selection) map[string]Selection {
+	if len(selections) == 0 {
+		return nil
+	}
+	clean := make(map[string]Selection, len(selections))
+	for agentID, selection := range selections {
+		agentID = strings.TrimSpace(agentID)
+		if agentID == "" {
+			continue
+		}
+		out := Selection{Mode: strings.TrimSpace(selection.Mode)}
+		for id, value := range selection.ConfigOptions {
+			id = strings.TrimSpace(id)
+			value = strings.TrimSpace(value)
+			if id == "" || value == "" {
+				continue
+			}
+			if out.ConfigOptions == nil {
+				out.ConfigOptions = make(map[string]string, len(selection.ConfigOptions))
+			}
+			out.ConfigOptions[id] = value
+		}
+		if len(out.ConfigOptions) == 0 && out.Mode == "" {
+			continue
+		}
+		clean[agentID] = out
+	}
+	if len(clean) == 0 {
+		return nil
+	}
+	return clean
 }
 
 func decodeWorkspaceList(raw json.RawMessage, name string, problems *[]error) []string {

@@ -126,6 +126,7 @@ func (a *App) discover(ctx context.Context) {
 		for _, chat := range a.chatsSnapshot() {
 			if chat.Session == nil && chat.Agent.ID == "" && len(a.Agents) > 0 {
 				chat.Agent = a.Agents[a.AgentIndex]
+				a.restoreSelection(chat)
 			}
 		}
 		// Second pass: read each ready agent's config options and modes so the
@@ -495,8 +496,12 @@ func (a *App) Connect() {
 		if !a.trackSession(s) {
 			return
 		}
-		a.applyDraftConfig(ctx, s, spec.ID, pendingConfig)
-		a.applyDraftMode(ctx, s, spec.ID, pendingMode)
+		if action != "load" {
+			// A loaded session keeps the config it was saved with; draft picks
+			// belong to new conversations.
+			a.applyDraftConfig(ctx, s, spec.ID, pendingConfig)
+			a.applyDraftMode(ctx, s, spec.ID, pendingMode)
+		}
 		a.Post(func() {
 			if a.closed.Load() || !a.connectIsCurrent(chat, gen) {
 				a.untrackSession(s)
@@ -519,6 +524,7 @@ func (a *App) Connect() {
 			a.cacheAgentModes(spec.ID, chat.Info.Modes, chat.Info.CurrentModeID)
 			chat.PendingConfig = nil
 			chat.PendingMode = ""
+			a.rememberSelection(chat)
 			chat.Connecting = false
 			chat.Connected = true
 			chat.ConnectError = ""
@@ -670,6 +676,7 @@ func (a *App) Disconnect() {
 	}
 	chat.seedDraftConfig()
 	chat.seedDraftMode()
+	a.rememberSelection(chat)
 	chat.Info = session.Info{}
 	chat.pendingSend = false
 	a.resetConversation(chat)
@@ -862,6 +869,7 @@ func (a *App) setConfigOption(id, value string) {
 				delete(chat.PendingConfig, thinkingID)
 			}
 		}
+		a.rememberSelection(chat)
 		return
 	}
 	s := chat.Session
@@ -880,6 +888,7 @@ func (a *App) setConfigOption(id, value string) {
 			}
 			chat.Info = s.Info()
 			a.cacheAgentConfigs(chat.Agent.ID, chat.Info.ConfigOptions)
+			a.rememberSelection(chat)
 			if err != nil {
 				a.addError(chat, err)
 			}
@@ -896,6 +905,7 @@ func (a *App) setMode(modeID string) {
 		// Draft: the mode is applied by set_mode right after Connect's
 		// session/new, before the first prompt.
 		chat.PendingMode = modeID
+		a.rememberSelection(chat)
 		return
 	}
 	s := chat.Session
@@ -960,6 +970,7 @@ func (a *App) newSession() {
 			}
 			a.cacheAgentConfigs(chat.Agent.ID, info.ConfigOptions)
 			a.cacheAgentModes(chat.Agent.ID, info.Modes, info.CurrentModeID)
+			a.rememberSelection(chat)
 			a.rememberArchivedSession(chat)
 		})
 	}()
@@ -1118,6 +1129,7 @@ func (a *App) applyUpdate(chat *Chat, ev session.Event) {
 			chat.Info.CurrentModeID = info.CurrentModeID
 			a.cacheAgentConfigs(chat.Agent.ID, chat.Info.ConfigOptions)
 			a.cacheAgentModes(chat.Agent.ID, chat.Info.Modes, chat.Info.CurrentModeID)
+			a.rememberSelection(chat)
 		}
 		chat.ConfigBusy = ""
 		return
@@ -1127,6 +1139,7 @@ func (a *App) applyUpdate(chat *Chat, ev session.Event) {
 			chat.Info.Modes = info.Modes
 			chat.Info.CurrentModeID = info.CurrentModeID
 			a.cacheAgentModes(chat.Agent.ID, chat.Info.Modes, chat.Info.CurrentModeID)
+			a.rememberSelection(chat)
 		}
 		chat.ConfigBusy = ""
 		return
@@ -1365,6 +1378,7 @@ func (a *App) applyExit(chat *Chat, exit session.Exit) {
 		return
 	}
 	elapsed := a.finishTurnRuntime(chat, chat.turn)
+	a.rememberSelection(chat)
 	if exit.Err != nil {
 		a.appendStderr(chat, fmt.Sprintf("\n[agent exited: %v]\n", exit.Err))
 	} else {

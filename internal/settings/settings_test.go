@@ -317,3 +317,68 @@ func TestLoadSanitizesWorkspaces(t *testing.T) {
 		t.Errorf("removedWorkspaces = %+v", file.RemovedWorkspaces)
 	}
 }
+
+func TestLastSelectionsRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	store := Open(path)
+	want := map[string]Selection{
+		"pi": {
+			ConfigOptions: map[string]string{"model": "anthropic/claude", "thought_level": "high"},
+			Mode:          "plan",
+		},
+	}
+	if err := store.Save(File{LastSelections: want}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(got.LastSelections) != 1 {
+		t.Fatalf("lastSelections = %+v", got.LastSelections)
+	}
+	pi := got.LastSelections["pi"]
+	if pi.Mode != "plan" || pi.ConfigOptions["model"] != "anthropic/claude" || pi.ConfigOptions["thought_level"] != "high" {
+		t.Errorf("lastSelections[pi] = %+v", pi)
+	}
+}
+
+func TestLastSelectionsDropEmptyEntries(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	document := `{"version": 1, "lastSelections": {
+		" pi ": {"configOptions": {"model": " demo/large ", "": "x", "thought_level": " "}, "mode": " plan "},
+		"": {"mode": "plan"},
+		"other": {"configOptions": {}}
+	}}`
+	if err := os.WriteFile(path, []byte(document), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file, err := Open(path).Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(file.LastSelections) != 1 {
+		t.Fatalf("lastSelections = %+v", file.LastSelections)
+	}
+	pi := file.LastSelections["pi"]
+	if pi.Mode != "plan" || len(pi.ConfigOptions) != 1 || pi.ConfigOptions["model"] != "demo/large" {
+		t.Errorf("lastSelections[pi] = %+v", pi)
+	}
+}
+
+func TestInvalidLastSelectionsKeepOtherFields(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if err := os.WriteFile(path, []byte(`{"version": 1, "lastAgent": "pi", "lastSelections": {"pi": "bad"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file, err := Open(path).Load()
+	if err == nil || !strings.Contains(err.Error(), "lastSelections") {
+		t.Fatalf("error = %v", err)
+	}
+	if file.LastAgent != "pi" {
+		t.Errorf("lastAgent = %q, want pi", file.LastAgent)
+	}
+	if file.LastSelections != nil {
+		t.Errorf("lastSelections = %+v, want nil", file.LastSelections)
+	}
+}
