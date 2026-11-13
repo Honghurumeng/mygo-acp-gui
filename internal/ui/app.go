@@ -14,8 +14,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	cryfeedback "github.com/ELY-Open-Source/CrychicUI/feedback"
-	crylayout "github.com/ELY-Open-Source/CrychicUI/layout"
 	"github.com/egoist/mygo"
 	mui "github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
@@ -804,34 +802,34 @@ func (a *App) emptyState(c *mui.Context) {
 	chat := a.activeChat()
 	switch {
 	case chat != nil && chat.Connecting:
-		crylayout.Centered(c, func() {
-			cryfeedback.Busy(c, true, "Connecting…", "Connected")
+		centered(c, func() {
+			busyLine(c, "Connecting…")
 		})
 	case a.Resolving:
-		crylayout.Centered(c, func() {
-			cryfeedback.Busy(c, true, "Probing pi and Command Code…", "Agents ready")
+		centered(c, func() {
+			busyLine(c, "Probing pi and Command Code…")
 		})
 	default:
 		glyph, title, text := emptyStateCopy(chat, len(a.Agents))
-		crylayout.Centered(c, func() {
-			cryfeedback.EmptyState(c, glyph, title, text, "")
+		centered(c, func() {
+			emptyState(c, glyph, title, text)
 		})
 	}
 }
 
 // emptyStateCopy names the empty list's icon, title and body.
-func emptyStateCopy(chat *Chat, agents int) (glyph, title, text string) {
+func emptyStateCopy(chat *Chat, agents int) (glyph *mui.SVG, title, text string) {
 	switch {
 	case chat != nil && chat.Session != nil && chat.Info.SessionID == "":
-		return "message-square", "No active session.", "Create a new chat or open a saved session from the sidebar."
+		return messageSquareIcon, "No active session.", "Create a new chat or open a saved session from the sidebar."
 	case chat != nil && chat.Session != nil:
-		return "messages-square", "Connected. Send a message to start.", "Agent updates stream into this list."
+		return messagesSquareIcon, "Connected. Send a message to start.", "Agent updates stream into this list."
 	case agents == 0:
-		return "unplug", "No ACP agent available", "Install pi or Command Code, then refresh discovery in the sidebar."
+		return unplugIcon, "No ACP agent available", "Install pi or Command Code, then refresh discovery in the sidebar."
 	case chat != nil:
-		return "sparkles", "Start the conversation.", "Type below and press Enter; the app connects on the first message."
+		return sparklesIcon, "Start the conversation.", "Type below and press Enter; the app connects on the first message."
 	default:
-		return "message-square", "New conversation", "Create one from the sidebar and type a message."
+		return messageSquareIcon, "New conversation", "Create one from the sidebar and type a message."
 	}
 }
 

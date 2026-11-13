@@ -34,7 +34,7 @@
 - 列表内容右侧留 10 DIP 内边距：滚动条是覆盖在内容上的 overlay，不占布局宽度，留白保证 `＋`/`－`
   和 Stage all / Unstage all 不被滚动条盖住。
 - 图表用 `git log --topo-order --all -n 80 --pretty=format:%H%x1f%P%x1f%an%x1f%s%x1f%D%x1f%cI`，解析成 `internal/git.LogCommit`（hash、parents、author、subject、refs、committer time），由 `internal/git` 计算 lane，界面由 `internal/ui/gitgraph.go` 自绘泳道、分支/标签芯片和提交行。
-  不用 CrychicUI `code.CommitGraph`：它的行高固定 36 DIP、行不可点，没法缩间距或插入文件列表。
+  不用通用提交图组件：它的行高固定、行不可点，没法缩间距或插入文件列表。
 - 行高 22 DIP，整行可点（含左侧 lane 区域）；hover/展开时背景覆盖整行，lane 线用 `DrawOver` 画在行上层，不会遮住文字。
 - 提交行不再显示 7 位 hash，只保留 ref 芯片和 subject；完整 hash 放在 hover 详情卡里。
 - 指针在提交行停留 350 ms 后弹出详情卡（`ui.PopoverBase`）：显示完整 subject、Author、Date（本地时间）、全部 refs、

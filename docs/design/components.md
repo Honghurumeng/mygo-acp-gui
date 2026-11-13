@@ -1,50 +1,37 @@
-# UI 组件库（CrychicUI）
+# UI 组件层
 
 ## 目标
 
-界面继续由 MyGo 自绘；通用外观（弹窗、按钮、空状态、代码块）改用 [CrychicUI](https://github.com/ELY-Open-Source/CrychicUI)，避免每个面板手写 padding/圆角/hover。业务状态、ACP 数据流和 `internal/ui` 的渲染器不变。
+界面全部由 MyGo 自绘，不依赖第三方 UI 库。通用外观分两层放在 `internal/ui`：
 
-## 依赖与版本
+- `widgets.go`：无状态样式函数，只抽颜色、尺寸、圆角等重复写法。
+- `components.go`：带跨帧状态或动画的组件，才用 `mui.Local`、`mui.Key`、`mui.Keyframes`。
 
-```go
-require (
-	github.com/ELY-Open-Source/CrychicUI v0.0.0-20261110123803-1c55e6a884bb
-	github.com/egoist/mygo v0.8.3
-)
-```
+`go.mod` 只有 MyGo 一个直接依赖；图标是 `internal/ui/icons/` 里的 SVG 子集，没有图标库。
 
-- CrychicUI 要求 MyGo v0.8.3，因此 MyGo 从 `v0.7.1-0.2026…` 升级到 `v0.8.3`；升级后 `go build`、`go tool mygo vet`、`go test ./...` 全绿，现有手写 `mui` 代码无需改动。
-- 仓库没有 tag，只有伪版本。`go get` 会解析到最新 commit，**必须**把 `go.mod` 里的伪版本当成锁：升级时手动指定 commit，跑完检查再提交。
-- 不 import `diagram`（pele-go，约 +6 MB）；其余包按需 import，未用到的不会链接。
+## 图标
 
-## 别名约定
+`internal/ui/icons.go` 用 `//go:embed` + `mui.MustParseSVG` 嵌入，方式与 `agenticons.go` 一致。
+只加当前界面用到的图标，避免又长成一个图标库：
 
-`internal/ui` 里 CrychicUI 的包统一加 `cry` 前缀，避免与 `internal/agent`、`internal/session` 以及局部变量（`chat := a.activeChat()`）重名：
+| 变量 | 来源 | 用途 |
+|---|---|---|
+| `messageSquareIcon` | Lucide `message-square` | 空状态：新建/无活动会话 |
+| `messagesSquareIcon` | Lucide `messages-square` | 空状态：已连接 |
+| `unplugIcon` | Lucide `unplug` | 空状态：没有可用 agent |
+| `sparklesIcon` | Lucide `sparkles` | 空状态：开始对话 |
+| `gitCompareIcon` | Lucide `git-compare` | Git diff：两边相同 |
+| `circleXIcon` | Lucide `circle-x` | danger alert |
+| `codeIcon` | Lucide `code` | code block 标题栏 |
+| `copyIcon` / `checkIcon` | Lucide `copy`、`check` | code block 复制/已复制 |
 
-```go
-crycode    "github.com/ELY-Open-Source/CrychicUI/code"
-cryfeedback "github.com/ELY-Open-Source/CrychicUI/feedback"
-crykit      "github.com/ELY-Open-Source/CrychicUI/kit"
-crylayout  "github.com/ELY-Open-Source/CrychicUI/layout"
-cryoverlay "github.com/ELY-Open-Source/CrychicUI/overlay"
-```
+- SVG 用 `stroke="currentColor"`，由 `mui.Icon(...).TextColor(...)` 跟随主题，深浅色不用分支。
+- 新增图标时同时改 `icons/LICENSE`（Lucide ISC；部分图标来自 Feather，MIT）。
+- `emptyStateCopy` 直接返回 `*mui.SVG`，不再用字符串图标名，拼错名会编译失败而不是运行时 panic。
 
-## 已替换
+## widgets.go
 
-- 权限弹窗 `internal/ui/permission.go`：MyGo `ui.DialogBase` + `crykit.Arrive`/`crykit.Shade` 复刻 CrychicUI 模态外观
-  （遮罩、宽度、圆角、阴影、入场动画），不用 `cryoverlay.Modal`：后者点遮罩或 Esc 会关闭并让请求回 `cancelled`，
-  而权限请求必须由弹窗内的按钮作答。内容用 `crycode.CodeBlock`（工具入参）+ 按 `option.kind` 选按钮
-  （`allow*` → `primaryButton`，`reject*` → `dangerButton`，其余与 `Cancel` → `quietButton`）。
-  ACP 的 option 列表原样保留，不压缩成 Allow/Deny 两键；按钮改用项目统一样式后不再有 `crybutton` 的音效。
-- 空状态 `internal/ui/app.go`：`crylayout.Centered` + `cryfeedback.EmptyState`；连接/探测中用 `cryfeedback.Busy` 转圈。
-  图标必须是 Lucide 里存在的名字，否则 `icon.Must` 会 panic。
-- Git diff 卡片 `internal/ui/gitpanel.go`：`ui.PopoverBase` 定位在 Git 面板左侧，内容直接用 MyGo `editor.DiffView`
-  （不再用 `crycode.DiffView`，因为它只收固定高度、不能设字号和换行），加载/错误/无变化用
-  `cryfeedback.Busy` / `Alert` / `EmptyState`。
-## 自有组件层
-
-CrychicUI 只覆盖通用外观；界面里反复出现的「小样式」放在 `internal/ui/widgets.go`，一处定义、处处调用（MyGo
-没有样式表，组件就是给元素设好样式的 Go 函数）：
+界面里反复出现的「小样式」一处定义、处处调用（MyGo 没有样式表，组件就是给元素设好样式的 Go 函数）：
 
 - `mutedText(c, text, size)`：次要文字的基元，颜色取 `c.Theme().TextMuted`；返回元素，调用方继续
   `.Selectable()` / `.Grow()` / `.Tooltip()`。
@@ -62,62 +49,72 @@ CrychicUI 只覆盖通用外观；界面里反复出现的「小样式」放在 
 - `chipBase(c)`：composer 的模型/模式/用量/分支胶囊，与按钮同形状、无边框，padding 收紧为 `3, 8`。
 - `menuTrigger(c, label, background)`：行尾「⋯」菜单按钮；label 供无障碍与 `Tester` 使用，背景跟随所在行。
 
-Git 历史不是 CrychicUI 的 `code.CommitGraph`，而是 `internal/ui/gitgraph.go` 的自绘列表：行高 22 DIP、整行可点、
-点击展开该提交改动的文件（`git show --name-status`，异步读）。CrychicUI 的组件行高固定 36 DIP 且行不可点，
-没法缩间距或插入文件列表；lane 数据仍来自 `internal/git.assignLanes`（0..7、父提交在子提交之后），只有 ref 保留
-第一个并截到 12 字。
-
-按钮约定：项目里不再直接调用 `mui.Button` / `mui.PrimaryButton` / `crybutton.*`；新增按钮一律走上面三个变体，
-需要更宽的点击区或字号时在返回值上叠加 `.Padding` / `.FontSize`，不要另起一套背景和边框。ButtonBase 的列表行
-（会话、存档、workspace 标题、git 文件行）不是按钮外观，保留各自的选中/hover 背景。
-
-权限弹窗里原本由 `crybutton` 播的点击音效随之去掉；CrychicUI 的其它组件（`crycode`、`cryfeedback`）仍按需播音效。
-
 约定：
 
 - 只抽颜色、尺寸、圆角这类会被复制粘贴的样式，不抽业务状态和布局。函数返回 `mui.Element`，调用方
   继续链式覆盖，后写的生效（等价于外部覆盖 class）。
-- 有跨帧状态的组件才用 `mui.Local`/`mui.Key`；上面这些样式函数保持无状态。
+- 这些样式函数保持无状态，不用 `mui.Local`；有跨帧状态的组件放 `components.go`。
 - `caption` 强制 `SingleLine`，可能很长、需要换行的文本用 `mutedText`。
-- `a.composerChip(c)` 已并入 `chipBase(c)`，不要再按 App 方法添加同类样式。
-- 新增共享组件先加进 `widgets.go`，并在本文件补一行；可交互组件保留 label，现有 `Tester` 断言
-  （`tt.Click("Allow once")` 一类）不依赖样式。
+- 可交互组件保留 label，`Tester` 断言（`tt.Click("Allow once")` 一类）不依赖具体样式。
+- 项目里不再直接调用 `mui.Button` / `mui.PrimaryButton`；新增按钮一律走上面三个变体，需要更宽的点击区或
+  字号时在返回值上叠加 `.Padding` / `.FontSize`。ButtonBase 的列表行（会话、存档、workspace 标题、git 文件行）
+  不是按钮外观，保留各自的选中/hover 背景。
 
-已迁移：`app.go`、`composer.go`、`attachments.go`、`diagnostics.go`、`gitpanel.go`、`permission.go`、
-`saved.go`、`settings.go`、`sidebar.go` 中的重复次要文字、工具卡片、胶囊、「⋯」菜单，以及全部
-`mui.Button` / `mui.PrimaryButton` / `crybutton` 调用（统一为 `quietButton` / `primaryButton` / `dangerButton`）。
-Git 历史改为 `internal/ui/gitgraph.go` 的自绘可展开列表。
+## components.go
+
+- `shade(a)`：`mui.RGBA(0, 0, 0, a)`，遮罩和阴影用；不引入动画工具包。
+- `arrive(e, from)`：一次 `Keyframes`（200 ms，`EaseOut`）把 `from` 的位移/缩放/透明度收到 0，复刻入场动画。
+  只做一次入场，不做退出。
+- `centered(c, content)`：`Column.Fill().Center()` 包住内容并 `arrive` 缩放淡入。
+- `busyLine(c, text)`：`Spinner` + 12px muted 文本，`RoleStatus` + `Label(text)`；连接、探测、加载统一用它。
+- `emptyState(c, icon, title, text)`：居中列 + 圆形 tint 背景 + 图标 + `Bold` 标题 + muted 正文，`MaxWidth`
+  取 `t.Space(100)`；整块是一个 `RoleStatus`，`Label(title)`。没有 action 参数，当前也不需要。
+- `dangerAlert(c, title, body)`：danger 色 8% 背景 + 1 DIP 30% 边框 + `circle-x` 图标 + 正文按 20% 混入 danger；
+  上方滑入。只实现 danger 一种色调。
+- `codeBlock(c, lang, code, title)`：权限弹窗的工具入参。
+  - 容器：`Column` + `Clip` + `Radius(t.Radius)` + `Surface` 背景 + 1 DIP 边框，`RoleGroup` + `Label(title)`。
+  - 标题栏：`code` 图标 + 等宽加粗标题（`Input`）+ `copyButton`；标题文字在 description 之后，测试依赖顺序。
+  - 代码体：`editor.LanguageNamed(lang)` 取 tokenizer，`editor.DefaultTheme(c.Theme())` 取颜色，逐行
+    `Tokenize` 后转成 `mui.Span` 用 `RichText` 画；等宽 `t.Rem(0.8)`、行高 1.6、带行号、长行 `Wrap`。
+  - 复制：`c.WriteClipboard(code)`，`mui.Local` 记 2 秒「已复制」，期间图标换成 `check`；不播声音。
+- 所有组件从 `c.Theme()` 取色，不硬编码颜色，也不判断深浅色。
+
+## 使用位置
+
+- 空状态与连接/探测中：`app.go`，`busyLine` + `emptyState`。
+- Git diff 卡片：`gitpanel.go`，加载中 `busyLine`、错误 `dangerAlert`、两边相同 `emptyState`。
+- 权限弹窗：`permission.go`，`codeBlock` + `arrive`/`shade` 的遮罩与面板。
 
 ## 不替换
 
-- 消息渲染：CrychicUI 的 `chat.Message` 只有 `Sender/Text/Mine/At`，装不下本项目的角色、thinking、tool call、附件、
-  plan/usage；继续用 `App.message` 自己的渲染器。需要时只替换其中的零件（如 `code.CodeBlock`、`agent.Reasoning`）。
-- 侧栏与 composer：现有状态（多会话、存档、拖拽高度、git 分支芯片、模型弹层）与组件库模型不匹配，混用会花；
-  换之前先确认数据能映射，不做一次性重写。
+- 消息渲染：角色、thinking、tool call、附件、plan/usage 都是 `App.message` 自己的渲染器。
+- 侧栏与 composer：多会话、存档、拖拽高度、分支芯片、模型弹层。
+- `mui.DialogBase`、`editor.DiffView`、`internal/ui/gitpanel.go` 的 popover、`internal/ui/gitgraph.go`
+  的自绘提交列表：它们已经贴合数据流，换成通用组件只会丢功能。
+  Git 历史是自绘列表（行高 22 DIP、整行可点、点击展开文件、lane 用 `DrawOver` 画），不是通用提交图组件：
+  后者行高固定、行不可点，没法缩间距或插入文件列表。
 
 ## 交互约定
 
-- diff 卡片直接用 `editor.DiffView`（`editor.DiffState`）：它收两份完整文本（`editor.NewBuffer`），不是 patch；由
-  `internal/git.Diff` 负责取 old/new，组件只画。切换文件时重建 `editor.DiffState`，同一份文本不重建。
+- diff 卡片直接用 `editor.DiffView`（`editor.DiffState`）：它收两份完整文本（`editor.NewBuffer`），不是 patch；
+  由 `internal/git.Diff` 负责取 old/new，组件只画。切换文件时重建 `editor.DiffState`，同一份文本不重建。
   `DiffState` 支持 `Wrap`、`Font`、`LineHeight`；卡片宽时 `DiffSplit`，窄时 `DiffUnified`，`Wrap` 始终开启。
-
-- 组件自己播音效（`sound` 包合成，默认开启）。不需要时 `sound.SetEnabled(false)`，或 `sound.SetVolume`。
-  测试二进制默认静音，断言音效才用 `sound.Recent()`。
+- 不做组件音效：`mygo/audio` 只为几处点击声引入并不值得，交互反馈靠 hover/pressed 和图标变化。
 - 可交互组件通过 `.Label()` 暴露标签，`tt.Click("Allow once")` 这类按标签点击仍然有效。
 - 事件返回值与 ACP 语义解耦：先拿到点击/变更，再调用 `finishPermission` 等现有函数。
 - `ui.DialogBase` 在点遮罩或 Esc 时会把 `*open` 置 false 并标记 `Dismissed()`；权限弹窗传入只存在于当前帧的
-  `open`，所以这些关闭动作被吞掉。只有 `finishPermission`（选项或 `Cancel`）会结束请求，不要改回
-  `cryoverlay.Modal` 或复用 `a.PermissionOpen` 指针。
+  `open`，所以这些关闭动作被吞掉。只有 `finishPermission`（选项或 `Cancel`）会结束请求，
+  不要复用 `a.PermissionOpen` 指针。
 - `showNextPermission` 只取出属于当前会话的请求；其他会话的请求留在 `permissionQueue`，切走时把可见请求放回
   队首并隐藏弹窗，切回时再显示。后台请求不能抢焦点或自动切换会话。
-- 组件对必填参数 panic（空 label、空 code、无效图标、非法索引）。列表数据要先补齐（如 `At` 非零），不要给组件塞空值。
+- 组件对必填参数有约定（标题、code 非空；`codeBlock` 的 title 固定传 `Input`）。列表数据要先补齐，不要塞空值。
 
-## 升级检查
+## 验证
 
 ```sh
-go get github.com/ELY-Open-Source/CrychicUI@<commit>
-go mod tidy
 go build ./... && go vet ./... && go tool mygo vet . && go test ./...
+go test ./internal/ui -count=5
 ```
 
-再跑一次真实界面：空状态、权限弹窗、深浅色各看一遍（组件库按 `c.Theme()` 取色，主题由 MyGo 提供）。
+再跑一次真实界面：空状态四种、权限弹窗（遮罩/Esc 不关闭、`Input` 在 description 之后、复制）、
+Git diff 四态（加载、错误、两边相同、正常），深浅色各看一遍（组件按 `c.Theme()` 取色，主题由 MyGo 提供）。

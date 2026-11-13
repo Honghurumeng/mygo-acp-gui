@@ -10,8 +10,6 @@ import (
 	"strings"
 	"time"
 
-	cryfeedback "github.com/ELY-Open-Source/CrychicUI/feedback"
-	crylayout "github.com/ELY-Open-Source/CrychicUI/layout"
 	mui "github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 	"github.com/reed/acp-gui/internal/git"
@@ -1059,16 +1057,16 @@ func (a *App) gitDiffCard(c *mui.Context, panel, anchor mui.Element) {
 		a.gitDiffHeader(c)
 		switch {
 		case a.Git.PreviewBusy:
-			crylayout.Centered(c, func() {
-				cryfeedback.Busy(c, true, "Loading diff…", "Loaded")
+			centered(c, func() {
+				busyLine(c, "Loading diff…")
 			})
 		case a.Git.PreviewErr != "":
 			mui.Column(c).Grow(1).Padding(12, 12).Children(func() {
-				cryfeedback.Alert(c, cryfeedback.ToneDanger, "Cannot show this diff", a.Git.PreviewErr)
+				dangerAlert(c, "Cannot show this diff", a.Git.PreviewErr)
 			})
 		case a.Git.PreviewOld == a.Git.PreviewNew:
-			crylayout.Centered(c, func() {
-				cryfeedback.EmptyState(c, "git-compare", "No changes to show", "Both sides of this file are identical.", "")
+			centered(c, func() {
+				emptyState(c, gitCompareIcon, "No changes to show", "Both sides of this file are identical.")
 			})
 		default:
 			a.gitDiffBody(c, view, gitDiffSplit(width))

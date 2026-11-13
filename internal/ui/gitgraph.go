@@ -1,7 +1,7 @@
-// The commit history of the Git panel. It replaces CrychicUI's CommitGraph,
-// whose fixed 36 DIP rows left too much air and could not expand: here a row
-// is 22 DIP, clicking it shows the files that commit changed, and the lanes
-// are drawn behind the rows for the same geometry MyGo lays out.
+// The commit history of the Git panel, drawn as a list rather than taken from
+// a component's fixed rows: a row here is 22 DIP, clicking it shows the files
+// that commit changed, and the lanes are drawn behind the rows for the same
+// geometry MyGo lays out.
 
 package ui
 

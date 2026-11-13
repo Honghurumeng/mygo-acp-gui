@@ -20,7 +20,7 @@ func TestCleanSessionTitleStripsAttachmentPaths(t *testing.T) {
 			want: imageSessionTitle,
 		},
 		{raw: "  修复会话名称  ", want: "修复会话名称"},
-		{raw: "https://github.com/ELY-Open-Source/CrychicUI 看看", want: "https://github.com/ELY-Open-Source/CrychicUI 看看"},
+		{raw: "https://example.com/docs 看看", want: "https://example.com/docs 看看"},
 		{raw: "/name My Session", want: "/name My Session"},
 		{raw: "", want: ""},
 	}

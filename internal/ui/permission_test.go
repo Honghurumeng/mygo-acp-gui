@@ -2,6 +2,7 @@ package ui
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -21,6 +22,28 @@ func TestToolDescription(t *testing.T) {
 		if got := toolDescription(json.RawMessage(tc.raw)); got != tc.want {
 			t.Errorf("toolDescription(%q) = %q, want %q", tc.raw, got, tc.want)
 		}
+	}
+}
+
+// The tool input is a titled code block whose copy button writes it.
+func TestPermissionCodeBlockCopiesInput(t *testing.T) {
+	app, tt := newFakeApp(t)
+	current(app).Input = "/permission"
+	tt.Frame()
+	if err := tt.Click("Send"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool { return app.Permission != nil })
+	tt.Frame()
+	if !tt.HasText("Input") || !strings.Contains(strings.Join(tt.Texts(), "\n"), `"command"`) {
+		t.Fatalf("tool input is missing; texts: %q", tt.Texts())
+	}
+	if err := tt.Click("Copy"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if got := tt.Clipboard(); !strings.Contains(got, `"command"`) {
+		t.Errorf("clipboard = %q", got)
 	}
 }
 

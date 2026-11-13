@@ -138,6 +138,7 @@ scripts/vendor-pi-acp.sh             # 仅在升级 pi-acp 时运行
 - [x] `@` 文件引用面板（只发 `@路径` 文本，agent 自行读文件）
 - [x] 多会话并行（侧栏每个会话一个 agent 进程；后台流式、权限按会话路由、重命名/删除/切换）
 - [x] settings.json 持久化（MCP、上次 agent/工作区）
+- [x] 移除 CrychicUI：通用外观改到 `internal/ui/widgets.go` / `components.go`，图标内嵌 Lucide 子集，release 二进制约减 1.3 MB（见 [components.md](components.md)）
 - [ ] MCP 行编辑器（当前是校验过的 JSON）
 - [ ] ACP 报文监视器
 - [ ] Windows / Linux 打包验证

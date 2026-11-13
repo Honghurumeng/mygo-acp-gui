@@ -6,8 +6,6 @@ import (
 	"strings"
 	"sync"
 
-	crycode "github.com/ELY-Open-Source/CrychicUI/code"
-	crykit "github.com/ELY-Open-Source/CrychicUI/kit"
 	mui "github.com/egoist/mygo/ui"
 	"github.com/reed/acp-gui/internal/acp"
 	"github.com/reed/acp-gui/internal/session"
@@ -217,7 +215,7 @@ func (a *App) permissionDialog(c *mui.Context) {
 			mutedText(c, strings.TrimSpace(req.ToolCall.Kind+" · "+req.ToolCall.Status), 11)
 		}
 		if detail := compactJSON(req.ToolCall.RawInput); detail != "" {
-			crycode.CodeBlock(c, "json", detail, crycode.CodeBlockOptions{Title: "Input"})
+			codeBlock(c, "json", detail, "Input")
 		}
 		mutedText(c, "Choose what the agent may do.", 12)
 
@@ -256,10 +254,10 @@ func permissionModal(c *mui.Context, title string, content func()) {
 	t := c.Theme()
 	open := true
 	mui.DialogBase(c, &open, func(backdrop, panel mui.Element) {
-		crykit.Arrive(backdrop.Background(crykit.Shade(0.4)), mui.Pose{Fade: 1}, 0)
+		arrive(backdrop.Background(shade(0.4)), mui.Pose{Fade: 1})
 		panel.FillWidth().MaxWidth(t.Space(110)).Padding(t.Space(5)).Radius(t.Radius*1.5).
-			Background(t.Background).Shadow(0, 12, 32, 0, crykit.Shade(0.24))
-		crykit.Arrive(panel, mui.Pose{Scale: 0.95, Fade: 1}, 0)
+			Background(t.Background).Shadow(0, 12, 32, 0, shade(0.24))
+		arrive(panel, mui.Pose{Scale: 0.95, Fade: 1})
 		mui.Column(c).FillWidth().Gap(t.Space(3)).Children(func() {
 			mui.Text(c, title).Bold().FontSize(t.Rem(1.1))
 			content()
