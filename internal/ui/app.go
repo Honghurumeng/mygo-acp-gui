@@ -109,6 +109,12 @@ type AgentStatus struct {
 	InstallHint string
 }
 
+// AgentModeState is the session mode list cached from a config probe.
+type AgentModeState struct {
+	Modes         []acp.Mode
+	CurrentModeID string
+}
+
 // Agent status values.
 const (
 	AgentProbing   = "probing"
@@ -142,6 +148,10 @@ type App struct {
 	// and by reopening the model panel; ACP has no provider-readiness call,
 	// so the agent's current model list is the only availability signal.
 	AgentConfigs map[string][]acp.ConfigOption
+	// AgentModes caches the session modes returned by the same throwaway
+	// session/new, so the mode chip is visible in a draft instead of only
+	// after the first connect. Keyed by agent ID.
+	AgentModes   map[string]AgentModeState
 	Env          agent.Environment
 	Resolving    bool
 	ResolveError string
@@ -285,6 +295,7 @@ func New(opts Options) *App {
 		probeConfig:        session.ProbeConfig,
 		Workspaces:         []string{},
 		AgentConfigs:       make(map[string][]acp.ConfigOption),
+		AgentModes:         make(map[string]AgentModeState),
 		agentConfigAt:      make(map[string]time.Time),
 		agentConfigBusy:    make(map[string]bool),
 		WorkspaceCollapsed: make(map[string]bool),

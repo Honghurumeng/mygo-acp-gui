@@ -168,34 +168,35 @@ func clampComposer(v float32) float32 {
 }
 
 func (a *App) modeChip(c *mui.Context, chat *Chat) {
-	if len(chat.Info.Modes) == 0 {
+	modes, currentID := a.chatModes(chat)
+	if len(modes) == 0 {
 		return
 	}
 	current := ""
-	for _, mode := range chat.Info.Modes {
-		if mode.ID == chat.Info.CurrentModeID {
+	for _, mode := range modes {
+		if mode.ID == currentID {
 			current = modeLabel(mode)
 			break
 		}
 	}
 	if current == "" {
-		current = modeLabel(chat.Info.Modes[0])
+		current = modeLabel(modes[0])
 	}
 	chip := composerControl(chipBase(c)).Label("Session mode: " + current)
 	chip.Children(func() {
 		mui.Text(c, current).FontSize(9).SingleLine()
 	})
 	chip.Tooltip("Session mode")
-	chip.Disabled(chat.ConfigBusy != "" || chat.Connecting || chat.Streaming || chat.Busy != "" || chat.Info.SessionID == "")
+	chip.Disabled(chat.ConfigBusy != "" || chat.Connecting || chat.Streaming || chat.Busy != "" || (chat.Session != nil && chat.Info.SessionID == ""))
 	if chip.Clicked() {
 		chat.ModeOpen = !chat.ModeOpen
 	}
 	mui.Popover(c, chip, &chat.ModeOpen, func() {
 		mui.Column(c).Width(170).Gap(1).Children(func() {
-			for _, mode := range chat.Info.Modes {
+			for _, mode := range modes {
 				mode := mode
 				item := mui.ButtonBase(c).FillWidth().Padding(4, 8).Radius(6)
-				if mode.ID == chat.Info.CurrentModeID {
+				if mode.ID == currentID {
 					item.Background(c.Theme().Surface)
 				}
 				item.Children(func() {
@@ -204,13 +205,40 @@ func (a *App) modeChip(c *mui.Context, chat *Chat) {
 				if mode.Description != "" {
 					item.Tooltip(mode.Description)
 				}
-				if item.Clicked() && mode.ID != chat.Info.CurrentModeID {
+				if item.Clicked() && mode.ID != currentID {
 					a.setMode(mode.ID)
 					chat.ModeOpen = false
 				}
 			}
 		})
 	})
+}
+
+// chatModes returns the live session's modes, or the discovery cache while
+// the chat is still a draft. A draft pick is applied on top so the chip shows
+// what Connect will send.
+func (a *App) chatModes(chat *Chat) ([]acp.Mode, string) {
+	if chat == nil {
+		return nil, ""
+	}
+	if chat.Session != nil {
+		return chat.Info.Modes, chat.Info.CurrentModeID
+	}
+	modes := chat.Info.Modes
+	current := chat.Info.CurrentModeID
+	if cached := a.AgentModes[chat.Agent.ID]; len(cached.Modes) > 0 {
+		modes = cached.Modes
+		current = cached.CurrentModeID
+	}
+	if chat.PendingMode != "" {
+		for _, mode := range modes {
+			if mode.ID == chat.PendingMode {
+				current = chat.PendingMode
+				break
+			}
+		}
+	}
+	return modes, current
 }
 
 func modeLabel(mode acp.Mode) string {

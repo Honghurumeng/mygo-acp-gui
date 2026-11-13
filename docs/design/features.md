@@ -42,10 +42,11 @@ pi-acp 的启动信息（pi 版本、Extensions、Skills 等）、重试、自�
 
 - composer 的模型 chip 打开面板，四列为 agent / provider / model / thinking；provider 由模型值的 `/` 或 `:` 前缀分组，没有前缀时归入 `Models`。可用 provider 只来自 agent 返回的 model `configOptions`：ACP 没有单独的 provider 可用性接口，模型选项就是 agent 对「当前可用模型」的声明。面板每列按内容取宽、内容左对齐，整个面板与 chip 右对齐，列表变宽时向左展开。chip 左侧画当前 agent 的品牌图标（未知 agent 不画），图标放在 chip 内部且只有 11pt，不改变 22pt 的控件行高。
 - 草稿（还没有 session）也能选 provider / model / thinking：面板数据来自发现阶段的配置探测（`AgentConfigs`），选择存在 `Chat.PendingConfig`，Connect 拿到 session 后按 model 优先的顺序调 `session/set_config_option` 补上；断开连接时把当前值回填为草稿选择，重连不丢。
+- 草稿的 mode chip 也来自同一次配置探测（`AgentModes`），因此不用发第一条消息就能看到 agent 的 `default` / `plan` 等模式。草稿选择存在 `Chat.PendingMode`，Connect 后、首条 prompt 前调 `session/set_mode`；断开时把当前 mode 回填，重连不丢。切换 agent 时清掉旧 agent 的草稿 mode。
 - 启动时的配置缓存不是永久事实：草稿每次打开模型面板都会异步重读 agent 的 model 列表（正常 30 秒节流，缓存为空时 5 秒重试；失败保留旧列表，读取中没有 session 也保留），所以登录/改配置后不再出现的 provider 会在刷新后消失；连接成功、`config_option_update`、切换配置和断开时都用真实 session 的 `configOptions` 更新缓存。`PendingConfig` 里已被刷新掉的 model 在 Connect 时跳过，不会静默换用别的模型。
 - agent 只在会话开始前可选；连接后锁定。切换 agent 后重新 Connect 才生效，同时清掉属于旧 agent 的草稿配置选择。
 - 选择 model / thinking 调用 `session/set_config_option` `{sessionId, configId, value}`；其他 select 型配置追加显示在 thinking 列。thinking 选项以 agent 当前返回的 configOptions 为准，pi fork 会按当前模型重算（如 `low/high/max`，含 `max`）。
-- 模式 chip 显示当前 mode，点击后调用 `session/set_mode` `{sessionId, modeId}`。
+- 模式 chip 显示当前 mode；连接后点击调用 `session/set_mode` `{sessionId, modeId}`，草稿中点击只记录 `PendingMode`，由 Connect 在 `session/new` 之后统一应用。
 - 两者都更新 `Info`，并接收 agent 的 `config_option_update` / `current_mode_update` 通知。
 - 流式回合、连接中或即将切换会话时禁用，避免 agent 返回 `-32600`。
 - Command Code 的 `effort` 可能随模型变化；选项一律以 agent 返回为准，不硬编码。

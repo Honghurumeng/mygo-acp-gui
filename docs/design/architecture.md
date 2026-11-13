@@ -142,7 +142,7 @@ pi 自己的工具在工作区内读写执行；客户端只负责展示和审�
 - 思考/工具：`ui.Collapsible`；工具卡片用 `ui.CollapsibleBase` 做成整卡可点击：默认折叠，标题（指令）单行省略，展开后显示完整指令与入参/输出，再次点击重新折叠。
 - 权限：`session/request_permission` 回调阻塞；弹窗用 MyGo `ui.DialogBase` + CrychicUI `kit` 复刻模态外观，展示工具名、入参和 agent 给出的 `options`；`rawInput.description` 存在时作为主标题，工具 `title` 降为次行；只有弹窗按钮会作答（选项回 `optionId`，`Cancel` 回 `cancelled`），点遮罩或按 Esc 被吞掉，避免误拒绝。
 - 通用外观取自 CrychicUI（按钮、弹窗、空状态、代码块），业务渲染仍是本仓库的 `internal/ui`；版本与替换范围见 [components.md](components.md)。
-- 配置：模型面板按 agent → provider → model → thinking 选择；模型/思考来自 `configOptions`，mode 来自 `modes`，不硬编码。agent 只在会话开始前可选。
+- 配置：模型面板按 agent → provider → model → thinking 选择；模型/思考来自 `configOptions`，mode 来自 `modes`，不硬编码。agent 只在会话开始前可选；未连接的草稿用发现阶段的配置探测缓存显示模型、thinking 和 mode，选择在 Connect 后补发。
 - 输入：`ui.TextAreaBase` 嵌在可拖动高度的 composer 卡片中；Enter 发送、Shift+Enter 换行；流式期间 Send 切换为 Stop；支持图片附件。
 - 多会话：左侧栏按 workspace 分组，先显示打开会话，再显示该目录的已保存会话；打开会话的状态用行背景表达：流式为移动的绿色斜线，其他会话结束/报错为绿底，当前会话结束为蓝底，权限请求为蓝/白闪烁。两类会话合并后默认只列前 5 条，`Show N more` / `Show less` 展开收起，展开状态不落盘（启动时默认折叠）。会话名前的内联图标标明 agent（pi 的方块 mark、Command Code 的 # 徽标，`internal/ui/agenticons.go`，随主题变色）；已保存会话用存档里的 `agentId` 画同一个图标，标题栏也用同一图标标当前会话，模型 chip 左侧也用它标当前 agent。工作区头部 `⋯` 可移除该分组（软删除，只隐藏不删记录/会话），移除项通过 “Show removed (N)” 查看并从同一菜单恢复。工作区的 `＋` 新建独立进程；连接在首条消息或打开存档时自动发生。
 - 权限：模态只显示当前会话的请求并标注 `Chat: …`；后台请求只排队，由侧栏 `!` 提醒，用户切到该会话时才显示，切走时隐藏但保留；回答按所属 `Chat` 路由；遮罩/Esc 不关闭。

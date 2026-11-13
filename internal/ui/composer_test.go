@@ -31,7 +31,15 @@ func TestModelPanelRefreshesProviderList(t *testing.T) {
 		Workspace: t.TempDir(),
 		Agents:    []agent.LaunchSpec{{ID: "fake", Name: "fake-agent"}},
 		ProbeConfig: func(context.Context, agent.LaunchSpec) (session.Info, error) {
-			return session.Info{SessionID: "probe-session", ConfigOptions: fresh}, nil
+			return session.Info{
+				SessionID:     "probe-session",
+				ConfigOptions: fresh,
+				Modes: []acp.Mode{
+					{ID: "default", Name: "Standard"},
+					{ID: "plan", Name: "Plan"},
+				},
+				CurrentModeID: "default",
+			}, nil
 		},
 	})
 	t.Cleanup(func() {
@@ -52,7 +60,9 @@ func TestModelPanelRefreshesProviderList(t *testing.T) {
 	}
 	waitFor(t, app, tt, func() bool {
 		options := app.AgentConfigs["fake"]
-		return len(options) == 1 && len(options[0].Options) == 2
+		modes := app.AgentModes["fake"]
+		return len(options) == 1 && len(options[0].Options) == 2 &&
+			len(modes.Modes) == 2 && modes.CurrentModeID == "default"
 	})
 	tt.Frame()
 	if tt.HasText("stale") {
@@ -61,12 +71,58 @@ func TestModelPanelRefreshesProviderList(t *testing.T) {
 	if !tt.HasText("other") {
 		t.Errorf("refreshed provider missing; texts: %q", tt.Texts())
 	}
+	if !tt.HasText("Standard") {
+		t.Errorf("probed mode missing from draft chip; texts: %q", tt.Texts())
+	}
+}
+
+func TestDraftModeChipUsesProbedModes(t *testing.T) {
+	app, tt := newFakeApp(t)
+	chat := current(app)
+	// Discovery caches each agent's modes; injected agents skip it.
+	app.AgentModes["fake"] = AgentModeState{
+		Modes: []acp.Mode{
+			{ID: "default", Name: "Standard"},
+			{ID: "plan", Name: "Plan"},
+		},
+		CurrentModeID: "default",
+	}
+	tt.Frame()
+	if chat.Session != nil {
+		t.Fatal("draft started connected")
+	}
+	if !tt.HasText("Session mode: Standard") {
+		t.Fatalf("chip misses the probed mode; texts: %q", tt.Texts())
+	}
+
+	if err := tt.Click("Session mode: Standard"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if err := tt.Click("Plan"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if got := chat.PendingMode; got != "plan" {
+		t.Fatalf("pending mode = %q, want plan", got)
+	}
+	if !tt.HasText("Session mode: Plan") {
+		t.Fatalf("chip misses the draft mode pick; texts: %q", tt.Texts())
+	}
+
+	// Connecting applies the draft mode to the new session.
+	app.Connect()
+	waitFor(t, app, tt, func() bool {
+		ch := current(app)
+		return ch.Connected && ch.PendingMode == "" && ch.Info.CurrentModeID == "plan"
+	})
 }
 
 func TestDraftPicksModelAndThinkingBeforeConnect(t *testing.T) {
 	app, tt := newFakeApp(t)
 	chat := current(app)
-	// Discovery caches each agent's config options; injected agents skip it.
+	// Discovery caches each agent's config options and modes; injected agents
+	// skip it.
 	app.AgentConfigs["fake"] = []acp.ConfigOption{
 		{
 			ID: "model", Name: "Model", Category: "model", Type: "select", CurrentValue: "demo/small",

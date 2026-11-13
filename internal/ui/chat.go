@@ -90,6 +90,9 @@ type Chat struct {
 	// draft: the composer shows the discovery cache, and Connect applies the
 	// picks right after session/new.
 	PendingConfig map[string]string
+	// PendingMode is the draft's session mode. The discovery probe supplies
+	// the visible list, and Connect applies the pick right after session/new.
+	PendingMode string
 
 	// pendingSend remembers a submit made while the chat was still a draft:
 	// Connect runs first, then the prompt is sent.
@@ -182,7 +185,25 @@ func (c *Chat) clearDraftConfig() {
 		return
 	}
 	c.PendingConfig = nil
+	c.PendingMode = ""
 	c.ModelProvider = ""
+}
+
+// draftMode returns the mode picked while this chat is still a draft.
+func (c *Chat) draftMode() string {
+	if c == nil || c.Session != nil {
+		return ""
+	}
+	return c.PendingMode
+}
+
+// seedDraftMode keeps the live mode selected after a disconnect, so a later
+// reconnect re-applies it.
+func (c *Chat) seedDraftMode() {
+	if c == nil || len(c.Info.Modes) == 0 || c.Info.CurrentModeID == "" {
+		return
+	}
+	c.PendingMode = c.Info.CurrentModeID
 }
 
 func (c *Chat) clearPendingSession() {

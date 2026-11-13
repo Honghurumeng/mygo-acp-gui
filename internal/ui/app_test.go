@@ -360,6 +360,9 @@ func TestSessionConfigModeAndCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, app, tt, func() bool { return current(app).Info.CurrentModeID == "plan" && current(app).ConfigBusy == "" })
+	if got := app.AgentModes["fake"].CurrentModeID; got != "plan" {
+		t.Errorf("cached mode = %q, want plan", got)
+	}
 
 	// Typing / opens the command palette instead of a Commands button.
 	current(app).Input = "/"

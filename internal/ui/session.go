@@ -130,8 +130,9 @@ func (a *App) discover(ctx context.Context) {
 				chat.Agent = a.Agents[a.AgentIndex]
 			}
 		}
-		// Second pass: read each ready agent's config options so the composer
-		// can offer provider, model and thinking without a connect.
+		// Second pass: read each ready agent's config options and modes so the
+		// composer can offer provider, model, thinking and mode without a
+		// connect.
 		a.probeAgentConfigs()
 		// Import every ready agent's saved sessions in the background. The
 		// sidebar draws from the archive, so a workspace added later in this
@@ -143,8 +144,8 @@ func (a *App) discover(ctx context.Context) {
 }
 
 // probeAgentConfig starts one throwaway session per ready agent to cache its
-// config options. It runs after the status check has already been published,
-// so it never delays startup and cannot change an agent's status.
+// config options and modes. It runs after the status check has already been
+// published, so it never delays startup and cannot change an agent's status.
 func (a *App) probeAgentConfigs() {
 	for _, spec := range a.Agents {
 		a.probeAgentConfig(spec, true)
@@ -161,12 +162,14 @@ const (
 	agentConfigRetryAfter = 5 * time.Second
 )
 
-// probeAgentConfig refreshes one agent's cached config options in the
-// background. ACP has no separate provider-readiness method: the model
+// probeAgentConfig refreshes one agent's cached config options and modes in
+// the background. ACP has no separate provider-readiness method: the model
 // select in session/new is the agent's own list of usable models, so
-// re-reading it is how stale or unauthenticated providers disappear. A
-// failed read keeps the previous cache instead of showing an empty panel.
-// All map access is on the UI thread; the goroutine only posts its result.
+// re-reading it is how stale or unauthenticated providers disappear. The same
+// session/new also carries the session modes, so the mode chip can be drawn
+// before the first connect. A failed read keeps the previous cache instead of
+// showing an empty panel. All map access is on the UI thread; the goroutine
+// only posts its result.
 func (a *App) probeAgentConfig(spec agent.LaunchSpec, force bool) {
 	if a.closed.Load() || spec.ID == "" || a.probeConfig == nil {
 		return
@@ -200,6 +203,7 @@ func (a *App) probeAgentConfig(spec agent.LaunchSpec, force bool) {
 		// the agent did not actually return a session, so keep old options.
 		fresh := err == nil && info.SessionID != ""
 		options := copyConfigOptions(info.ConfigOptions)
+		modes := copyAgentModeState(info.Modes, info.CurrentModeID)
 		a.Post(func() {
 			delete(a.agentConfigBusy, spec.ID)
 			if a.closed.Load() {
@@ -212,12 +216,13 @@ func (a *App) probeAgentConfig(spec agent.LaunchSpec, force bool) {
 				return
 			}
 			a.AgentConfigs[spec.ID] = options
+			a.AgentModes[spec.ID] = modes
 		})
 	}()
 }
 
-// refreshAgentConfig re-reads the provider/model list behind a draft. A
-// connected chat reads its live session instead.
+// refreshAgentConfig re-reads the provider/model and mode lists behind a
+// draft. A connected chat reads its live session instead.
 func (a *App) refreshAgentConfig(chat *Chat) {
 	if chat == nil || chat.Session != nil || chat.Connecting {
 		return
@@ -250,6 +255,24 @@ func (a *App) cacheAgentConfigs(agentID string, options []acp.ConfigOption) {
 	a.agentConfigAt[agentID] = time.Now()
 }
 
+// cacheAgentModes keeps the draft mode cache in step with a live session.
+func (a *App) cacheAgentModes(agentID string, modes []acp.Mode, current string) {
+	if agentID == "" || a.closed.Load() {
+		return
+	}
+	if a.AgentModes == nil {
+		a.AgentModes = make(map[string]AgentModeState)
+	}
+	a.AgentModes[agentID] = copyAgentModeState(modes, current)
+}
+
+func copyAgentModeState(modes []acp.Mode, current string) AgentModeState {
+	return AgentModeState{
+		Modes:         append([]acp.Mode(nil), modes...),
+		CurrentModeID: current,
+	}
+}
+
 func copyConfigOptions(options []acp.ConfigOption) []acp.ConfigOption {
 	if len(options) == 0 {
 		return nil
@@ -269,6 +292,7 @@ func (a *App) retryDiscovery() {
 	a.Resolving = true
 	a.ResolveError = ""
 	a.AgentConfigs = make(map[string][]acp.ConfigOption)
+	a.AgentModes = make(map[string]AgentModeState)
 	for i := range a.AgentStatuses {
 		a.AgentStatuses[i].Status = AgentProbing
 		a.AgentStatuses[i].Detail = ""
@@ -334,6 +358,7 @@ func (a *App) Connect() {
 	sessionID := chat.pendingSessionID
 	title := chat.pendingSessionTitle
 	pendingConfig := chat.draftConfig()
+	pendingMode := chat.draftMode()
 	chat.clearPendingSession()
 	cfg := session.Config{
 		Launch:     spec,
@@ -413,6 +438,7 @@ func (a *App) Connect() {
 			return
 		}
 		a.applyDraftConfig(ctx, s, spec.ID, pendingConfig)
+		a.applyDraftMode(ctx, s, spec.ID, pendingMode)
 		a.Post(func() {
 			if a.closed.Load() || !a.connectIsCurrent(chat, gen) {
 				a.untrackSession(s)
@@ -432,7 +458,9 @@ func (a *App) Connect() {
 			chat.Session = s
 			chat.Info = s.Info()
 			a.cacheAgentConfigs(spec.ID, chat.Info.ConfigOptions)
+			a.cacheAgentModes(spec.ID, chat.Info.Modes, chat.Info.CurrentModeID)
 			chat.PendingConfig = nil
+			chat.PendingMode = ""
 			chat.Connecting = false
 			chat.Connected = true
 			chat.ConnectError = ""
@@ -513,6 +541,34 @@ func (a *App) applyDraftConfig(ctx context.Context, s *session.Session, agentID 
 	}
 }
 
+// applyDraftMode pushes a mode picked in a draft onto the freshly created
+// session, before the first prompt is sent. A mode the agent no longer
+// advertises is skipped, just like a stale draft config choice.
+func (a *App) applyDraftMode(ctx context.Context, s *session.Session, agentID, modeID string) {
+	if modeID == "" {
+		return
+	}
+	info := s.Info()
+	if info.CurrentModeID == modeID {
+		return
+	}
+	found := false
+	for _, mode := range info.Modes {
+		if mode.ID == modeID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return
+	}
+	callCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	if err := s.SetMode(callCtx, modeID); err != nil {
+		a.appendAgentLog(agentID, []byte("[mode] "+modeID+": "+err.Error()+"\n"))
+	}
+}
+
 func (a *App) markAgentAuth(id string, err error) {
 	if session.IsAuthRequired(err) {
 		a.setAgentStatus(id, AgentNeedsAuth, err.Error())
@@ -552,8 +608,10 @@ func (a *App) Disconnect() {
 	chat.Connected = false
 	if chat.Info.SessionID != "" {
 		a.cacheAgentConfigs(chat.Agent.ID, chat.Info.ConfigOptions)
+		a.cacheAgentModes(chat.Agent.ID, chat.Info.Modes, chat.Info.CurrentModeID)
 	}
 	chat.seedDraftConfig()
+	chat.seedDraftMode()
 	chat.Info = session.Info{}
 	chat.pendingSend = false
 	a.resetConversation(chat)
@@ -755,7 +813,13 @@ func (a *App) setConfigOption(id, value string) {
 
 func (a *App) setMode(modeID string) {
 	chat := a.activeChat()
-	if chat == nil || chat.Session == nil || chat.ConfigBusy != "" || chat.Connecting || chat.Streaming || chat.Busy != "" {
+	if chat == nil || chat.ConfigBusy != "" || chat.Connecting || chat.Streaming || chat.Busy != "" {
+		return
+	}
+	if chat.Session == nil {
+		// Draft: the mode is applied by set_mode right after Connect's
+		// session/new, before the first prompt.
+		chat.PendingMode = modeID
 		return
 	}
 	s := chat.Session
@@ -772,7 +836,9 @@ func (a *App) setMode(modeID string) {
 			chat.Info = s.Info()
 			if err == nil {
 				chat.Info.CurrentModeID = modeID
-			} else {
+			}
+			a.cacheAgentModes(chat.Agent.ID, chat.Info.Modes, chat.Info.CurrentModeID)
+			if err != nil {
 				a.addError(chat, err)
 			}
 		})
@@ -817,6 +883,7 @@ func (a *App) newSession() {
 				chat.Title = title
 			}
 			a.cacheAgentConfigs(chat.Agent.ID, info.ConfigOptions)
+			a.cacheAgentModes(chat.Agent.ID, info.Modes, info.CurrentModeID)
 			a.rememberArchivedSession(chat)
 		})
 	}()
@@ -895,6 +962,7 @@ func (a *App) loadHistory(sessionID, title, cwd string) {
 			}
 			chat.Info = newInfo
 			a.cacheAgentConfigs(chat.Agent.ID, newInfo.ConfigOptions)
+			a.cacheAgentModes(chat.Agent.ID, newInfo.Modes, newInfo.CurrentModeID)
 			if cwd != "" {
 				workspace := a.workspacePath(cwd)
 				chat.Workspace = workspace
@@ -973,6 +1041,7 @@ func (a *App) applyUpdate(chat *Chat, ev session.Event) {
 	case session.UpdateCurrentMode:
 		if ev.CurrentModeID != "" {
 			chat.Info.CurrentModeID = ev.CurrentModeID
+			a.cacheAgentModes(chat.Agent.ID, chat.Info.Modes, ev.CurrentModeID)
 		}
 		chat.ConfigBusy = ""
 		return

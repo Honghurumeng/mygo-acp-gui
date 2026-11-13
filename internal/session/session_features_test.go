@@ -214,6 +214,9 @@ func TestProbeConfigReadsConfigOptions(t *testing.T) {
 	if info.ConfigOption("thought_level") == nil {
 		t.Errorf("thinking option missing: %+v", info.ConfigOptions)
 	}
+	if len(info.Modes) == 0 || info.CurrentModeID == "" {
+		t.Errorf("modes missing: %+v current=%q", info.Modes, info.CurrentModeID)
+	}
 
 	// The options probe must survive a session/new failure: an agent that
 	// needs a login still has to probe cleanly, just without options.

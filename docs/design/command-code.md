@@ -36,6 +36,7 @@ Command Code 是用户自备的 CLI，应用只定位已有安装，不安装、
 成功时返回 `sessionId`、`modes`、`configOptions`、`models`：
 
 - `modes`: `default`、`auto-accept`、`plan`、`dont-ask`、`bypass`
+- 发现阶段的配置探测会缓存这些 `modes`，所以草稿还没发第一条消息时 composer 就显示 mode chip；草稿选择在 Connect 后由 `session/set_mode` 补上。
 - `configOptions`: `model`（很多模型）和 `effort`（off/low/high/max）
 - `model` 列表由 Command Code 自己决定，包含普通模型和 `opencode-go/*`（byok）等；ACP 没有 provider 可用性字段，也没有标记某个模型需要额外 BYOK key。GUI 只能展示 agent 返回的列表，无法区分 BYOK 或未配置的 provider；这类过滤应在 agent 侧完成。
 - 默认工作区是绝对路径；命令写入 stderr，不污染 stdout
