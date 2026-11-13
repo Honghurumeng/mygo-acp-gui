@@ -408,6 +408,7 @@ func (a *App) selectChat(chat *Chat) {
 		chat.Unread = false
 		chat.gitWorkspace = ""
 		a.showNextPermission()
+		a.updateDockBadge()
 		return
 	}
 	previous := a.activeChat()
@@ -432,6 +433,7 @@ func (a *App) selectChat(chat *Chat) {
 	a.WorkspaceCollapsed[chat.Workspace] = false
 	a.persistSettings()
 	a.showNextPermission()
+	a.updateDockBadge()
 }
 
 func (a *App) agentIndex(id string) int {

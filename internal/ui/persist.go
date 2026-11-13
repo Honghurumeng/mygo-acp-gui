@@ -18,6 +18,7 @@ func (a *App) persistSettings() {
 		Version:       settings.CurrentVersion,
 		Paths:         a.settingsPaths,
 		Notifications: a.NotificationsEnabled,
+		DockBadge:     a.DockBadgeEnabled,
 	}
 	file.Workspaces = a.savedWorkspaces()
 	file.RemovedWorkspaces = a.removedWorkspaceList()

@@ -23,6 +23,9 @@ func TestLoadMissingFileReturnsDefaults(t *testing.T) {
 	if !file.Notifications {
 		t.Error("notifications should default to on")
 	}
+	if !file.DockBadge {
+		t.Error("the Dock badge should default to on")
+	}
 }
 
 func TestSaveLoadRoundTrip(t *testing.T) {
@@ -41,6 +44,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		},
 		Paths:         Paths{Shell: "/bin/zsh", Node: "/usr/local/bin/node"},
 		Notifications: true,
+		DockBadge:     true,
 	}
 	if err := store.Save(want); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -89,6 +93,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	if !got.Notifications {
 		t.Error("notifications were not restored")
 	}
+	if !got.DockBadge {
+		t.Error("the Dock badge was not restored")
+	}
 }
 
 func TestNotificationsDefaultOnAndPersistOff(t *testing.T) {
@@ -114,6 +121,33 @@ func TestNotificationsDefaultOnAndPersistOff(t *testing.T) {
 		t.Fatal(err)
 	}
 	if file.Notifications {
+		t.Fatal("an explicit off setting was not persisted")
+	}
+}
+
+func TestDockBadgeDefaultOnAndPersistOff(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	store := Open(path)
+	if err := os.WriteFile(path, []byte(`{"version": 1, "lastAgent": "pi"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !file.DockBadge {
+		t.Fatal("a file without dockBadge should default to on")
+	}
+
+	file.DockBadge = false
+	if err := store.Save(file); err != nil {
+		t.Fatal(err)
+	}
+	file, err = store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if file.DockBadge {
 		t.Fatal("an explicit off setting was not persisted")
 	}
 }

@@ -45,6 +45,10 @@ type File struct {
 	// older files without the field keep the previous behavior; the field is
 	// written even when false so turning notifications off survives a restart.
 	Notifications bool `json:"notifications"`
+	// DockBadge enables the icon badge for conversations waiting for the user.
+	// Like Notifications, it defaults to true for older files and is written
+	// even when false.
+	DockBadge bool `json:"dockBadge"`
 }
 
 // Store reads and writes one settings file. A nil Store or an empty path is
@@ -71,7 +75,7 @@ func (s *Store) Path() string {
 // at the current version. Other problems are returned together with whatever
 // fields could be decoded, so the caller can warn and continue.
 func defaults() File {
-	return File{Version: CurrentVersion, Notifications: true}
+	return File{Version: CurrentVersion, Notifications: true, DockBadge: true}
 }
 
 func (s *Store) Load() (File, error) {
@@ -155,9 +159,10 @@ type rawFile struct {
 	CollapsedWorkspaces json.RawMessage `json:"collapsedWorkspaces"`
 	MCPServers          json.RawMessage `json:"mcpServers"`
 	Paths               Paths           `json:"paths"`
-	// A pointer distinguishes an older file without the setting (default
-	// on) from an explicit false.
+	// Pointers distinguish an older file without the setting (default on)
+	// from an explicit false.
 	Notifications *bool `json:"notifications"`
+	DockBadge     *bool `json:"dockBadge"`
 }
 
 func decode(data []byte) (File, error) {
@@ -191,6 +196,9 @@ func decode(data []byte) (File, error) {
 	file.Paths = sanitizePaths(raw.Paths, &problems)
 	if raw.Notifications != nil {
 		file.Notifications = *raw.Notifications
+	}
+	if raw.DockBadge != nil {
+		file.DockBadge = *raw.DockBadge
 	}
 	return file, errors.Join(problems...)
 }

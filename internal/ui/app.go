@@ -209,6 +209,13 @@ type App struct {
 	NotificationsEnabled bool
 	// NotificationTestNotice is the result of the test button, shown under it.
 	NotificationTestNotice string
+	// DockBadgeEnabled gates the Dock icon badge. It defaults to on and is
+	// persisted in settings.json.
+	DockBadgeEnabled bool
+	// dockBadgeCount is the badge last sent to the platform; -1 means none
+	// was sent yet. Comparing against it keeps UI updates from calling the
+	// platform when the count did not change.
+	dockBadgeCount int
 
 	SavedLoading  bool
 	SavedError    string
@@ -278,6 +285,12 @@ type App struct {
 	// notify shows a desktop notification. Nil uses mygo (see notify.go);
 	// tests replace it to capture what the app would show.
 	notify func(desktopNotification)
+	// setDockBadge shows n on the Dock icon. Nil uses mygo (see badge.go);
+	// tests replace it to capture the count.
+	setDockBadge func(int)
+	// isFocused overrides the window's focus state in tests; nil asks the
+	// window.
+	isFocused func() bool
 
 	// agentConfigAt and agentConfigBusy throttle config probes. Both are
 	// UI-thread state; background probes only post their result back.
@@ -342,6 +355,8 @@ func New(opts Options) *App {
 		savedSynced:        make(map[string]bool),
 
 		NotificationsEnabled: true,
+		DockBadgeEnabled:     true,
+		dockBadgeCount:       -1,
 	}
 	if opts.Agents != nil {
 		a.Agents = append([]agent.LaunchSpec(nil), opts.Agents...)
@@ -418,6 +433,7 @@ func (a *App) loadSettings(dataDir string, workspaceDefault bool) {
 	a.settingsPaths = file.Paths
 	a.preferredAgentID = file.LastAgent
 	a.NotificationsEnabled = file.Notifications
+	a.DockBadgeEnabled = file.DockBadge
 	for _, workspace := range file.Workspaces {
 		a.ensureWorkspace(workspace)
 	}
@@ -476,7 +492,17 @@ func (a *App) Attach(win *mygo.Window) {
 	for _, fn := range pending {
 		fn()
 	}
-	win.OnFocus(a.refreshGitOnFocus)
+	win.OnFocus(func() {
+		a.clearActiveUnread()
+		a.refreshGitOnFocus()
+	})
+	// Repaint the badge for this run: a count cached before the first
+	// window would otherwise look unchanged and never reach the platform.
+	// Reopening the window shows the active chat, so what finished while it
+	// was closed is read again.
+	a.dockBadgeCount = -1
+	a.clearActiveUnread()
+	a.updateDockBadge()
 	if discover {
 		a.startDiscovery()
 	}
@@ -1031,9 +1057,7 @@ func (a *App) addError(chat *Chat, err error) {
 		}
 	}
 	a.addMessage(chat, &Message{ID: a.nextID(), Role: RoleError, Text: msg, Done: true})
-	if chat != a.activeChat() {
-		chat.Unread = true
-	}
+	a.markChatUnread(chat)
 }
 
 func compactJSON(raw json.RawMessage) string {

@@ -48,8 +48,11 @@ func TestSettingsGearOpensPanelAndNotificationsPersist(t *testing.T) {
 	if !tt.HasText("Notifications") || !tt.HasText("Send test notification") {
 		t.Fatalf("notification settings not shown; texts: %q", tt.Texts())
 	}
-	if !app.NotificationsEnabled {
-		t.Fatal("notifications should default on")
+	if !tt.HasText("Dock badge") {
+		t.Fatalf("Dock badge setting not shown; texts: %q", tt.Texts())
+	}
+	if !app.NotificationsEnabled || !app.DockBadgeEnabled {
+		t.Fatal("notifications and the Dock badge should default on")
 	}
 
 	if err := tt.Click("Toggle system notifications"); err != nil {
@@ -59,9 +62,19 @@ func TestSettingsGearOpensPanelAndNotificationsPersist(t *testing.T) {
 	if app.NotificationsEnabled {
 		t.Fatal("switch did not turn notifications off")
 	}
+	if err := tt.Click("Toggle Dock badge"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if app.DockBadgeEnabled {
+		t.Fatal("switch did not turn the Dock badge off")
+	}
 	file := loadPersistedSettings(t, dataDir)
 	if file.Notifications {
 		t.Fatal("notifications off was not persisted")
+	}
+	if file.DockBadge {
+		t.Fatal("Dock badge off was not persisted")
 	}
 
 	restarted := New(Options{
@@ -76,6 +89,9 @@ func TestSettingsGearOpensPanelAndNotificationsPersist(t *testing.T) {
 	})
 	if restarted.NotificationsEnabled {
 		t.Fatal("notifications off was not restored")
+	}
+	if restarted.DockBadgeEnabled {
+		t.Fatal("Dock badge off was not restored")
 	}
 }
 

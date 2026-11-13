@@ -66,6 +66,7 @@ func (a *App) enqueuePermission(p *permissionPrompt) {
 		p.Chat.Attention = true
 	}
 	a.showNextPermission()
+	a.updateDockBadge()
 	a.notifyPermission(p)
 }
 
@@ -173,6 +174,7 @@ func (a *App) refreshAttention(chat *Chat) {
 	if chat == nil {
 		return
 	}
+	defer a.updateDockBadge()
 	for _, p := range a.permissionQueue {
 		if p.Chat == chat {
 			chat.Attention = true

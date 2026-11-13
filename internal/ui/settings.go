@@ -154,6 +154,19 @@ func (a *App) notificationSettings(c *mui.Context) {
 				a.persistSettings()
 			}
 		})
+		mui.Row(c).Gap(16).AlignItems(mui.Center).Padding(10, 12).Radius(8).
+			Background(t.Surface).Children(func() {
+			mui.Column(c).Gap(3).Grow(1).Children(func() {
+				mui.Text(c, "Dock badge").FontSize(12)
+				mutedText(c, "Show the number of conversations waiting for a permission answer or that finished while you were elsewhere. On the Dock (macOS) or launcher (Linux).", 10)
+			})
+			sw := mui.Switch(c, &a.DockBadgeEnabled).Label("Toggle Dock badge")
+			if sw.Changed() {
+				a.NotificationTestNotice = ""
+				a.persistSettings()
+				a.updateDockBadge()
+			}
+		})
 		mui.Row(c).Gap(10).AlignItems(mui.Center).Children(func() {
 			test := quietButton(c, "Send test notification").FontSize(11).Border(1, t.Border)
 			test.Disabled(!a.NotificationsEnabled)

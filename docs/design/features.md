@@ -48,10 +48,19 @@ pi-acp 的启动信息（pi 版本、Extensions、Skills 等）、重试、自�
 - 测试通过 `App.notify` 注入记录器，不启动桌面后端。
 - 设置面板的开关持久化为 `notifications`，默认开启；关闭后 `canNotify` 直接返回 false，权限和完成通知都不再发送。
 
+Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待用户的会话数：权限待回答（`Attention`），或回合已结束且未读（`Unread && !Streaming`），每个会话最多算一个。流式中的后台会话先不计数，回合结束后才加入；选中会话、回答权限、关闭会话或删除标签都会减少，归零即清除。
+
+回合结束时如果窗口已关闭或失去焦点，当前会话也会标记 `Unread`（`markChatUnread`），所以关窗后完成的回合同样会让角标亮起。重新打开或重新聚焦窗口会把当前会话视为已读并清掉它的角标，后台会话的未读仍保留；窗口关闭期间角标一直保留。
+
+- 设置面板的 `Dock badge` 开关持久化为 `dockBadge`，默认开启；关闭时立即清空当前角标，之后不再更新。
+- `updateDockBadge` 缓存上次发送的数字，session 事件再频繁也不会重复调用平台；`App.SetBadgeCount` 在 macOS 画在 Dock 图标上，Linux 走 Unity launcher API，Windows 不显示（无操作）。
+- 测试通过 `App.setDockBadge` 注入记录器；没有窗口（测试环境）时不调用 MyGo。
+
 ## 设置面板
 
 - 侧栏左下角 agent 状态（名称、CLI 版本、ready 等状态）右侧的齿轮按钮打开设置面板；也可以从代码调用 `openSettings`。面板左侧是分类列表，右侧是选中分类的内容，当前只有 `Notifications`，后续分类在同一 `SettingsSection` 切换。
 - 开关改动立即生效并写入 `settings.json`；测试按钮发送一条标题为 `ACP GUI` 的桌面通知，不依赖窗口焦点，用于检查系统通知权限。通知关闭时测试按钮禁用，并提示先开启。
+- `Dock badge` 开关与系统通知开关并列，独立持久化；切换后立即重算或清空角标。默认开启，不依赖通知开关。
 - MCP 编辑仍走顶部 `MCP…` 的独立模态，因为它修改的是当前会话的服务器列表，不放进通用设置分类。
 
 ## 配置与模式
@@ -136,8 +145,8 @@ pi-acp 的启动信息（pi 版本、Extensions、Skills 等）、重试、自�
 ## 设置持久化
 
 - `internal/settings` 读写 `PathUserData/settings.json`；`ui.Options.DataDir` 为空时完全不落盘（测试、便携运行）。
-- 保存内容：最后使用的 agent、工作区、侧栏工作区列表（`workspaces`）、软删除记录（`removedWorkspaces`）、折叠状态（`collapsedWorkspaces`）、MCP 默认列表、系统通知开关（`notifications`，默认 true），以及 `paths` 里的显式工具覆盖。
-- 保存时机：切换会话、选择 agent/目录、添加/移除/恢复工作区、折叠/展开工作区、切换系统通知、Connect 校验成功、MCP Apply、退出。
+- 保存内容：最后使用的 agent、工作区、侧栏工作区列表（`workspaces`）、软删除记录（`removedWorkspaces`）、折叠状态（`collapsedWorkspaces`）、MCP 默认列表、系统通知开关（`notifications`，默认 true）、Dock 角标开关（`dockBadge`，默认 true），以及 `paths` 里的显式工具覆盖。
+- 保存时机：切换会话、选择 agent/目录、添加/移除/恢复工作区、折叠/展开工作区、切换系统通知或 Dock 角标、Connect 校验成功、MCP Apply、退出。
 - 启动恢复：工作区、侧栏工作区列表（含软删除分组）、折叠状态、MCP 列表、上次 agent；显式传入的 `ui.Options.Workspace` 优先（测试用）。上次工作区已被软删除时，草稿改用第一个可见工作区（没有则用 home）。启动时创建的草稿不会展开已折叠的工作区。
 - `paths` 只保存配置里的覆盖值；`ACP_GUI_*` 环境变量优先，且不会被写回文件。
 - 容错：文件缺失用默认值；损坏 JSON、MCP 不是数组、相对路径、未来版本只显示侧栏/标题栏警告，其余字段照常生效。
@@ -198,7 +207,7 @@ pi-acp 的启动信息（pi 版本、Extensions、Skills 等）、重试、自�
 
 ```bash
 go test ./... -race
-go test ./internal/ui -run 'TestSessionConfig|TestSaved|TestDeleteSaved|TestDeleteOpen|TestCloseChat|TestSendImage|TestPasteImage|TestPasteText|TestImagePreview|Test.*Mention|TestMCP|TestPromptUsageFallback|TestMultipleChats|TestBackgroundChat|TestPermissionFrom|TestCloseTab|TestFirstMessage|TestWorkspaceConversation|TestRename|TestGit|TestGitPanel|TestComposerHeight|TestRemoveWorkspace|TestRemovedWorkspace|TestAgentIcon|TestAgentBadges' -v
+go test ./internal/ui -run 'TestSessionConfig|TestSaved|TestDeleteSaved|TestDeleteOpen|TestCloseChat|TestSendImage|TestPasteImage|TestPasteText|TestImagePreview|Test.*Mention|TestMCP|TestPromptUsageFallback|TestMultipleChats|TestBackgroundChat|TestPermissionFrom|TestCloseTab|TestFirstMessage|TestWorkspaceConversation|TestRename|TestGit|TestGitPanel|TestComposerHeight|TestRemoveWorkspace|TestRemovedWorkspace|TestAgentIcon|TestAgentBadges|TestDockBadge|TestBackgroundTurn|TestActiveChatIsUnread' -v
 go test ./internal/archive -v
 go test ./internal/git -v
 go test ./internal/settings -v

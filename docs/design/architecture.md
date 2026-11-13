@@ -41,7 +41,7 @@ MyGo 原生窗口 (Go + ui)
   internal/archive/        sessions.json 本地会话存档（agent/session 关系、show/showName）
   internal/logs/           每个 agent 的滚动日志文件（已实现）
   internal/git/            Git 探测、status 解析、提交与远端操作（不经过 shell）
-  internal/ui/             多会话侧栏、聊天、流式 Markdown、权限队列、系统通知、Git 面板、窗口更新（已实现）
+  internal/ui/             多会话侧栏、聊天、流式 Markdown、权限队列、系统通知、Dock 角标、Git 面板、窗口更新（已实现）
   internal/ui/icons/       pi / Command Code 品牌图标（SVG，侧栏 + 标题栏）
   resources/
     agents/pi-acp/
@@ -172,8 +172,8 @@ logs/                每个 agent 的 stderr / 协议日志（1 MiB 滚动，保
 
 `settings.json` 由 `internal/settings` 读写：
 
-- 结构：`{version, lastAgent, lastWorkspace, workspaces, removedWorkspaces, mcpServers, notifications, paths:{shell,node,pi,commandCode}}`。`workspaces` 保留全部已知目录（含软删除项），`removedWorkspaces` 是软删除标记，二者都按侧栏顺序保存；`notifications` 缺省为 true，显式 false 会持久化。
-- 保存时机：切换会话、选择 agent/目录、添加/移除/恢复工作区、切换设置面板里的系统通知、Connect 校验成功、MCP Apply、退出。写入是原子的（同目录临时文件 + rename，0600），父目录不存在时创建。
+- 结构：`{version, lastAgent, lastWorkspace, workspaces, removedWorkspaces, mcpServers, notifications, dockBadge, paths:{shell,node,pi,commandCode}}`。`workspaces` 保留全部已知目录（含软删除项），`removedWorkspaces` 是软删除标记，二者都按侧栏顺序保存；`notifications` 和 `dockBadge` 缺省为 true，显式 false 会持久化。
+- 保存时机：切换会话、选择 agent/目录、添加/移除/恢复工作区、切换设置面板里的系统通知或 Dock 角标、Connect 校验成功、MCP Apply、退出。写入是原子的（同目录临时文件 + rename，0600），父目录不存在时创建。
 - 加载容错：文件缺失用默认值；JSON 损坏、MCP 不是数组、相对路径、未来版本只产生警告（标题栏/侧栏显示），其余字段照常使用，绝不阻塞启动。
 - 路径优先级：`ACP_GUI_*` 环境变量 > `settings.json` 的 `paths` > 登录 shell 解析。显式覆盖无效时保留 shell 结果并警告，不会把可用的路径清空。
 - 保存最后一次状态（当前会话的 agent/工作区/MCP）、侧栏工作区列表和每个工作区的折叠状态；不保存会话布局、图片草稿或消息。

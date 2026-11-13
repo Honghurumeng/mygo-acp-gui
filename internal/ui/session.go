@@ -721,6 +721,7 @@ func (a *App) resetConversation(chat *Chat) {
 	chat.MenuOpen = false
 	chat.JumpOpen = false
 	chat.ModelProvider = ""
+	a.updateDockBadge()
 }
 
 func (a *App) send() bool {
@@ -1089,6 +1090,7 @@ func (a *App) applyUpdate(chat *Chat, ev session.Event) {
 	}
 	if chat != a.activeChat() {
 		chat.Unread = true
+		a.updateDockBadge()
 	}
 	if ev.Kind == session.UpdateMessageChunk {
 		if ev.StartupInfo {
@@ -1339,9 +1341,7 @@ func (a *App) applyPromptResult(chat *Chat, turn *turnState, res acp.PromptResul
 	if err != nil && !errors.Is(err, acp.ErrClosed) {
 		a.addError(chat, err)
 	}
-	if chat != a.activeChat() {
-		chat.Unread = true
-	}
+	a.markChatUnread(chat)
 	a.notifyTurnFinished(chat, elapsed, res.StopReason, err)
 }
 
@@ -1399,9 +1399,7 @@ func (a *App) applyExit(chat *Chat, exit session.Exit) {
 		}
 		a.addError(chat, errors.New(msg))
 	}
-	if chat != a.activeChat() {
-		chat.Unread = true
-	}
+	a.markChatUnread(chat)
 }
 
 func connectError(err error, spec agent.LaunchSpec) string {
