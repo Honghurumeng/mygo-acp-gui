@@ -182,5 +182,6 @@ context=1609/1000000 turn={TotalTokens:1609 InputTokens:1350 OutputTokens:3 Cach
 - 保持 `@agentclientprotocol/sdk@0.26.0`、`zod@3.25.76` 不变；升级 SDK 属于独立变更。
 - `pi-acp-main` 缺少的 `LICENSE` 已从上游 0.4.0 补回；`.github` / `assets` 等发布用文件不需要。
 - bundle 旁的 `package.json` 决定 `agentInfo.name/version`；包名改了会显示在新状态行/日志里，但 Agent 下拉仍是内置的 pi。
+- 当前 `SessionManager.closeAllExcept` 让一个 ACP 进程只保留最新会话；如果未来要支持并发多会话，这是 fork 侧需要改的点（见 [multi-session.md](multi-session.md)）。
 - 长期维护要 rebase 上游；若 usage / 推理强度映射是通用需求，优先给上游提 PR，届时可以直接回到 `scripts/vendor-pi-acp.sh` 的上游流程。
 - 接入后同步更新 `docs/design/pi.md` 的版本表、sha256、来源和用量说明。

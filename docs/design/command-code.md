@@ -40,6 +40,7 @@ Command Code 是用户自备的 CLI，应用只定位已有安装，不安装、
 - `configOptions`: `model`（很多模型）和 `effort`（off/low/high/max）
 - `model` 列表由 Command Code 自己决定，包含普通模型和 `opencode-go/*`（byok）等；ACP 没有 provider 可用性字段，也没有标记某个模型需要额外 BYOK key。GUI 只能展示 agent 返回的列表，无法区分 BYOK 或未配置的 provider；这类过滤应在 agent 侧完成。
 - 默认工作区是绝对路径；命令写入 stderr，不污染 stdout
+- 同一进程可以开多个会话并并发 prompt，但所有活动会话必须共用同一个 cwd（`createCwdLease` 引用计数）；跨 cwd 创建/加载返回 `-32602` `This cmd acp process serves <cwd>; start another for <cwd>`，全部会话关闭后才能换目录。详见 [multi-session.md](multi-session.md)
 
 未登录时返回 JSON-RPC `-32000`（`Not authenticated. Run \`cmd login\` in a terminal first.`），应用进入 `needs-auth`，展示 `authMethods` 和 `command-code login`，不代登录。
 

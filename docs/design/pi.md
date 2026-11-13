@@ -106,6 +106,10 @@ UI 中这个 agent 叫 `pi`，侧栏状态和已连接状态栏显示的是 `pi 
 - pi 已配置模型凭据（`~/.pi/agent` 或 `PI_CODING_AGENT_DIR`）。
 - Node 与 pi 都由用户自备：应用不捆绑、不下载、不安装、不升级 Node，也不检测或代管模型凭据/配额。
 
+## 单进程多会话
+
+当前 vendored fork 的 `SessionManager` 虽然是 `Map`，但 `newSession` / `loadSession` / `resumeSession` 在创建目标会话后会调用 `closeAllExcept`，关闭此前所有会话。因此一个 ACP 进程同时只有一个活会话；重复 `session/new` 会 dispose 上一个 pi 子进程，之后只能靠 `session/load` 恢复。详见 [multi-session.md](multi-session.md)。
+
 ## PATH
 
 GUI 从 Finder 启动时 PATH 往往不含 `/usr/local/bin`、`~/.npm-global/bin`。`internal/agent` 已实现：

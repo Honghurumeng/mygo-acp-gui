@@ -17,7 +17,7 @@
 
 每个会话是一个独立的 `Chat`：拥有自己的 agent 进程、ACP session、工作区、MCP 列表、消息、配置、草稿和权限请求。会话之间并行运行，切换只改变显示，不会暂停后台流式回复。
 
-选择“每会话独立进程”而不是共享进程里的多个 ACP session：进程级隔离让 cwd、取消、权限和崩溃互不影响，代价是每个会话各有一套 agent 运行时资源。
+选择“每会话独立进程”而不是共享进程里的多个 ACP session：进程级隔离让 cwd、取消、权限和崩溃互不影响，代价是每个会话各有一套 agent 运行时资源。agent 侧的单进程多会话能力并不一致：Command Code 可同进程多会话但必须共用 cwd，pi-acp 当前只保留最新一个活会话，见 [multi-session.md](multi-session.md)。
 
 - `App` 只保存全局状态（内置 agent、发现结果、工作区列表、MCP 默认值、会话列表、当前会话）和 `[]*Chat`。
 - session 回调在创建时捕获所属 `*Chat`，按 session 指针路由，不读取“当前会话”，所以后台会话的 `session/update`、退出和权限都能落到正确位置。
