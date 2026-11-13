@@ -403,6 +403,55 @@ func TestModelChipShowsAgentIconWithoutGrowing(t *testing.T) {
 	}
 }
 
+// A long model name must widen the chip instead of being cut with an
+// ellipsis. When the action row runs out of room, the chip wraps as a whole
+// and stays readable rather than shrinking its text.
+func TestModelChipShowsFullModelName(t *testing.T) {
+	model := "anthropic/claude-sonnet-4-5-20250929-extra-long-model-name"
+	app := New(Options{
+		Version:   "test",
+		Workspace: t.TempDir(),
+		DataDir:   t.TempDir(),
+		Agents:    []agent.LaunchSpec{{ID: "fake", Name: "fake-agent"}},
+	})
+	t.Cleanup(func() {
+		app.Shutdown()
+		app.Flush()
+	})
+	app.AgentConfigs["fake"] = []acp.ConfigOption{
+		{
+			ID: "model", Name: "Model", Category: "model", Type: "select", CurrentValue: model,
+			Options: []acp.ConfigOptionValue{{Value: model, Name: model}},
+		},
+		{
+			ID: "thought_level", Name: "Thinking", Category: "thought_level", Type: "select", CurrentValue: "high",
+			Options: []acp.ConfigOptionValue{{Value: "high", Name: "high"}},
+		},
+	}
+	tt := mui.NewTester(app.View, 1060, 760)
+	tt.Frame()
+
+	chip, ok := tt.Find("Agent and model: " + model + " · high")
+	if !ok {
+		t.Fatalf("model chip missing; texts: %q", tt.Texts())
+	}
+	if chip.W <= 230 {
+		t.Errorf("model chip width = %v, want its full content", chip.W)
+	}
+	if chip.X < 0 || chip.X+chip.W > 1060 {
+		t.Errorf("model chip is outside the window: %+v", chip)
+	}
+	if _, ok := tt.Find(model); !ok {
+		t.Errorf("model label is truncated; texts: %q", tt.Texts())
+	}
+	if _, ok := tt.Find("· high"); !ok {
+		t.Errorf("thinking label is truncated; texts: %q", tt.Texts())
+	}
+	if chip.H != composerControlHeight {
+		t.Errorf("model chip height = %v, want %v", chip.H, composerControlHeight)
+	}
+}
+
 // Opening the slash-command list above the composer must not rebuild the
 // textarea under a new element id: the composer is keyed so focus and the
 // next typed rune stay with it.

@@ -121,31 +121,38 @@ func (a *App) composer(c *mui.Context) {
 				return false
 			})
 
-			mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
-				attach := a.composerControl(quietButton(c, "＋").Label("Attach images").FontSize(a.composerFont(14))).Tooltip("Attach or paste images")
-				attach.Disabled(!chat.canAttach())
-				if attach.Clicked() {
-					a.chooseImages()
-				}
+			// The model chip grows with its label. The right-hand controls
+			// wrap as one group when the row runs out of room, so the chip
+			// never has to truncate or overlap its neighbors.
+			mui.Row(c).Gap(6).AlignItems(mui.Center).Wrap().Children(func() {
+				mui.Row(c).Gap(6).AlignItems(mui.Center).Shrink(0).Children(func() {
+					attach := a.composerControl(quietButton(c, "＋").Label("Attach images").FontSize(a.composerFont(14))).Tooltip("Attach or paste images")
+					attach.Disabled(!chat.canAttach())
+					if attach.Clicked() {
+						a.chooseImages()
+					}
 
-				a.jumpButton(c, chat)
+					a.jumpButton(c, chat)
 
-				if branch := chat.gitBranch(); branch != "" {
-					chip := a.composerControl(chipBase(c)).Label("Git branch: " + branch)
-					chip.Children(func() {
-						mui.Text(c, "⑂ "+truncate(branch, 24)).FontSize(a.composerFont(9)).SingleLine()
-					})
-					chip.Tooltip("Git branch in " + chat.Workspace)
-				}
+					if branch := chat.gitBranch(); branch != "" {
+						chip := a.composerControl(chipBase(c)).Label("Git branch: " + branch)
+						chip.Children(func() {
+							mui.Text(c, "⑂ "+truncate(branch, 24)).FontSize(a.composerFont(9)).SingleLine()
+						})
+						chip.Tooltip("Git branch in " + chat.Workspace)
+					}
 
-				a.modeChip(c, chat)
-				if text := formatTurnUsage(chat.TurnUsage); text != "" {
-					a.composerCaption(c, text)
-				}
+					a.modeChip(c, chat)
+					if text := formatTurnUsage(chat.TurnUsage); text != "" {
+						a.composerCaption(c, text)
+					}
+				})
 				mui.Spacer(c)
-				a.usageChip(c, chat)
-				a.modelChip(c, chat)
-				a.sendButton(c, chat)
+				mui.Row(c).Gap(6).AlignItems(mui.Center).Wrap().Children(func() {
+					a.usageChip(c, chat)
+					a.modelChip(c, chat)
+					a.sendButton(c, chat)
+				})
 			})
 		})
 	})
@@ -273,14 +280,14 @@ func (a *App) modelChip(c *mui.Context, chat *Chat) {
 	if thinking != "" {
 		chipName += " · " + thinking
 	}
-	chip := a.composerControl(chipBase(c)).MaxWidth(230).Label("Agent and model: " + chipName)
+	chip := a.composerControl(chipBase(c)).Shrink(0).Label("Agent and model: " + chipName)
 	chip.Children(func() {
 		// The mark sits inside the chip, so it cannot make the action row
 		// taller than composerControlHeight.
 		agentBadge(c, chat.Agent.ID, 11)
-		mui.Text(c, truncate(model, 28)).FontSize(a.composerFont(9)).SingleLine()
+		mui.Text(c, model).FontSize(a.composerFont(9)).SingleLine().Shrink(0)
 		if thinking != "" {
-			a.composerCaption(c, "· "+truncate(thinking, 12))
+			a.composerCaption(c, "· "+thinking).Shrink(0)
 		}
 	})
 	chip.Tooltip("Agent, provider, model and thinking")
