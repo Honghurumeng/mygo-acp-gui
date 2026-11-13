@@ -151,6 +151,12 @@ pi-acp 的启动信息（pi 版本、Extensions、Skills 等）、重试、自�
 - 不在底部时，消息区底部中央浮出 `↓ Latest` 按钮（可访问名为 `Jump to latest`，边框 + 阴影），读 `chat.list.AtEnd()`；MyGo 在滚动改变该状态时自动重绘一帧，所以按钮随滚动出现/消失。
 - 点击调用 `chat.list.ScrollToEnd()`，列表回到底部并重新跟随。按钮绝对定位在消息列表外层的 `Box` 上（`LeftPercent(50)` + `TranslatePercent(-50, 0)`），不参与列布局，显示或隐藏都不会改变滚动位置。
 
+## 实时运行时间
+
+- 回答进行中，会话流右下角浮出不可点击的 `Working 1m 23s` 胶囊（`IgnoreInput`），样式与 `↓ Latest` 一致：Surface 背景、1px 边框、阴影，绝对定位 `Right(14).Bottom(14)`，不参与列布局。
+- 计时读取 `chat.turn.startedAt` 和当前帧的 `Context.Now()`；每个活动帧用 `Context.After(100 * time.Millisecond)` 请求下一帧，所以 10 秒内按 0.1 秒刷新，之后按秒刷新。
+- prompt 结果、取消、错误或 agent 退出后 `chat.Streaming`/`turn.startedAt` 清除，胶囊立即消失；持久化的 `Took …` 行仍按“已保存会话与本地存档”写入会话流。
+
 ## 计划、标题与用量
 
 - `plan` → composer 上方的可折叠计划列表，显示状态。

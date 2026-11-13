@@ -560,6 +560,7 @@ func (a *App) conversation(c *mui.Context, chat *Chat) {
 				}
 			})
 			a.jumpToLatestButton(c, chat)
+			a.turnTimer(c, chat)
 		})
 		if a.commandOpen(chat) {
 			a.commandPalette(c, chat)
