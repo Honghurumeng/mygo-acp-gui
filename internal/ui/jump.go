@@ -114,7 +114,7 @@ func truncateRunes(text string, limit int) string {
 // left of the input card, after the attach button.
 func (a *App) jumpButton(c *mui.Context, chat *Chat) {
 	count := chat.userMessageCount()
-	button := quietButton(c, "Jump").Label("Jump to your message").FontSize(10)
+	button := composerControl(quietButton(c, "Jump").Label("Jump to your message").FontSize(10))
 	if count == 0 {
 		button.Tooltip("No messages of yours to jump to yet")
 	} else {

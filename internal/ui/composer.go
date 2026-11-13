@@ -121,7 +121,7 @@ func (a *App) composer(c *mui.Context) {
 			})
 
 			mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
-				attach := quietButton(c, "＋").Label("Attach images").FontSize(14).Tooltip("Attach or paste images")
+				attach := composerControl(quietButton(c, "＋").Label("Attach images").FontSize(14)).Tooltip("Attach or paste images")
 				attach.Disabled(!chat.canAttach())
 				if attach.Clicked() {
 					a.chooseImages()
@@ -130,7 +130,7 @@ func (a *App) composer(c *mui.Context) {
 				a.jumpButton(c, chat)
 
 				if branch := chat.gitBranch(); branch != "" {
-					chip := chipBase(c)
+					chip := composerControl(chipBase(c)).Label("Git branch: " + branch)
 					chip.Children(func() {
 						mui.Text(c, "⑂ "+truncate(branch, 24)).FontSize(9).SingleLine()
 					})
@@ -181,7 +181,7 @@ func (a *App) modeChip(c *mui.Context, chat *Chat) {
 	if current == "" {
 		current = modeLabel(chat.Info.Modes[0])
 	}
-	chip := chipBase(c)
+	chip := composerControl(chipBase(c)).Label("Session mode: " + current)
 	chip.Children(func() {
 		mui.Text(c, current).FontSize(9).SingleLine()
 	})
@@ -240,7 +240,11 @@ func (a *App) modelChip(c *mui.Context, chat *Chat) {
 	if model == "" {
 		model = "Agent"
 	}
-	chip := chipBase(c).MaxWidth(230)
+	chipName := model
+	if thinking != "" {
+		chipName += " · " + thinking
+	}
+	chip := composerControl(chipBase(c)).MaxWidth(230).Label("Agent and model: " + chipName)
 	chip.Children(func() {
 		mui.Text(c, truncate(model, 28)).FontSize(9).SingleLine()
 		if thinking != "" {
@@ -431,21 +435,21 @@ func (a *App) usageChip(c *mui.Context, chat *Chat) {
 	}
 	t := c.Theme()
 	pct, known := usagePercent(chat.Usage)
-	chip := chipBase(c).Padding(3, 7)
+	label := "—"
+	if known {
+		label = fmt.Sprintf("%d%%", pct)
+		// A 1M-token window with a short conversation rounds to 0%,
+		// which looks like no context at all. Mark the non-zero sliver.
+		if pct == 0 && chat.Usage.Used > 0 {
+			label = "<1%"
+		}
+	}
+	chip := composerControl(chipBase(c).Padding(3, 7)).Label("Context usage: " + label)
 	chip.Children(func() {
 		ring := mui.Box(c).Size(14, 14)
 		ring.Draw(func(p *mui.Painter, r mui.Rect) {
 			drawUsageRing(p, r, pct, t.Border, t.Accent)
 		})
-		label := "—"
-		if known {
-			label = fmt.Sprintf("%d%%", pct)
-			// A 1M-token window with a short conversation rounds to 0%,
-			// which looks like no context at all. Mark the non-zero sliver.
-			if pct == 0 && chat.Usage.Used > 0 {
-				label = "<1%"
-			}
-		}
 		mui.Text(c, label).FontSize(9)
 	})
 	tip := "Context " + formatCount(chat.Usage.Used) + " · window size not reported"
@@ -505,10 +509,10 @@ func drawUsageRing(p *mui.Painter, r mui.Rect, percent int, track, fill mui.Colo
 func (a *App) sendButton(c *mui.Context, chat *Chat) {
 	label := "Send"
 	disabled := !chat.canSend() || !chat.hasPrompt()
-	button := primaryButton(c, label)
+	button := composerControl(primaryButton(c, label))
 	if chat.Streaming {
 		label = "Stop"
-		button = dangerButton(c, label)
+		button = composerControl(dangerButton(c, label))
 		disabled = chat.Cancelling
 	}
 	button.FontSize(10).Bold().Disabled(disabled)

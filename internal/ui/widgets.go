@@ -104,6 +104,18 @@ func chipBase(c *mui.Context) mui.Element {
 	return chip.Background(fill)
 }
 
+// composerControlHeight is the height of every control in the composer's
+// action row. The row mixes an icon, chips and text buttons at different
+// font sizes; one height keeps their edges lined up.
+const composerControlHeight = 22
+
+// composerControl fits a button or chip to the composer's action row. The
+// fixed height centers the label, so the control's own vertical padding is
+// dropped rather than added on top of it.
+func composerControl(e mui.Element) mui.Element {
+	return e.Height(composerControlHeight).PaddingY(0)
+}
+
 // menuTrigger is the "⋯" row action that opens a popover. The label is for
 // assistive technology and tests, the background keeps the row's own fill.
 func menuTrigger(c *mui.Context, label string, background mui.Color) mui.Element {

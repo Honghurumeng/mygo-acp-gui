@@ -278,6 +278,52 @@ func TestComposerHeightClamp(t *testing.T) {
 	}
 }
 
+// The action row mixes an icon button, chips and the send/stop button, all
+// drawn at different font sizes. They must still share one height, or the
+// row looks ragged.
+func TestComposerControlsShareHeight(t *testing.T) {
+	app, tt := newFakeApp(t)
+	chat := current(app)
+	chat.Info.Modes = []acp.Mode{{ID: "ask", Name: "Ask"}}
+	chat.Info.CurrentModeID = "ask"
+	chat.Usage = &acp.Usage{Used: 1, Size: 100}
+	app.AgentConfigs["fake"] = []acp.ConfigOption{{
+		ID: "model", Name: "Model", Category: "model", Type: "select", CurrentValue: "demo/small",
+		Options: []acp.ConfigOptionValue{{Value: "demo/small", Name: "demo/small"}},
+	}}
+	tt.Frame()
+
+	labels := []string{
+		"Attach images",
+		"Jump to your message",
+		"Session mode: Ask",
+		"Agent and model: demo/small",
+		"Context usage: 1%",
+		"Send",
+	}
+	want := float32(composerControlHeight)
+	for _, label := range labels {
+		r, ok := tt.Find(label)
+		if !ok {
+			t.Fatalf("%q missing; texts: %q", label, tt.Texts())
+		}
+		if r.H != want {
+			t.Errorf("%q height = %v, want %v", label, r.H, want)
+		}
+	}
+
+	// While a turn streams, Send becomes Stop in the same slot.
+	chat.Streaming = true
+	tt.Frame()
+	stop, ok := tt.Find("Stop")
+	if !ok {
+		t.Fatalf("Stop missing; texts: %q", tt.Texts())
+	}
+	if stop.H != want {
+		t.Errorf("Stop height = %v, want %v", stop.H, want)
+	}
+}
+
 // Opening the slash-command list above the composer must not rebuild the
 // textarea under a new element id: the composer is keyed so focus and the
 // next typed rune stay with it.
