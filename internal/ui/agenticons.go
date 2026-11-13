@@ -45,9 +45,9 @@ func agentIconName(agentID string) string {
 	return ""
 }
 
-// agentBadge draws an agent's icon before a conversation title, so rows from
-// different agents are easy to tell apart. It draws nothing for agents
-// without a mark.
+// agentBadge draws an agent's icon before a conversation title or the model
+// chip, so rows from different agents are easy to tell apart. It draws
+// nothing for agents without a mark.
 func agentBadge(c *mui.Context, agentID string, size float32) {
 	icon := agentIcon(agentID)
 	name := agentIconName(agentID)

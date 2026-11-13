@@ -327,6 +327,34 @@ func TestComposerControlsShareHeight(t *testing.T) {
 	}
 }
 
+// The model chip shows the current agent's mark on its left without
+// making the composer's action row taller.
+func TestModelChipShowsAgentIconWithoutGrowing(t *testing.T) {
+	app := New(Options{
+		Version:   "test",
+		Workspace: t.TempDir(),
+		DataDir:   t.TempDir(),
+		Agents:    []agent.LaunchSpec{{ID: agent.PiID, Name: "pi"}},
+	})
+	tt := mui.NewTester(app.View, 1060, 760)
+	t.Cleanup(func() {
+		app.Shutdown()
+		app.Flush()
+	})
+	tt.Frame()
+
+	chip, ok := tt.Find("Agent and model: pi")
+	if !ok {
+		t.Fatalf("model chip missing; texts: %q", tt.Texts())
+	}
+	if chip.H != composerControlHeight {
+		t.Errorf("model chip height = %v, want %v", chip.H, composerControlHeight)
+	}
+	if !tt.HasText("pi agent") {
+		t.Errorf("agent icon missing; texts: %q", tt.Texts())
+	}
+}
+
 // Opening the slash-command list above the composer must not rebuild the
 // textarea under a new element id: the composer is keyed so focus and the
 // next typed rune stay with it.

@@ -246,6 +246,9 @@ func (a *App) modelChip(c *mui.Context, chat *Chat) {
 	}
 	chip := composerControl(chipBase(c)).MaxWidth(230).Label("Agent and model: " + chipName)
 	chip.Children(func() {
+		// The mark sits inside the chip, so it cannot make the action row
+		// taller than composerControlHeight.
+		agentBadge(c, chat.Agent.ID, 11)
 		mui.Text(c, truncate(model, 28)).FontSize(9).SingleLine()
 		if thinking != "" {
 			caption(c, "· "+truncate(thinking, 12))
