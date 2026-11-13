@@ -114,7 +114,7 @@ func truncateRunes(text string, limit int) string {
 // left of the input card, after the attach button.
 func (a *App) jumpButton(c *mui.Context, chat *Chat) {
 	count := chat.userMessageCount()
-	button := composerControl(quietButton(c, "Jump").Label("Jump to your message").FontSize(10))
+	button := a.composerControl(quietButton(c, "Jump").Label("Jump to your message").FontSize(a.composerFont(10)))
 	if count == 0 {
 		button.Tooltip("No messages of yours to jump to yet")
 	} else {
@@ -152,19 +152,19 @@ func (a *App) jumpDialog(c *mui.Context, chat *Chat) {
 	mui.Modal(c, &chat.JumpOpen, func() {
 		mui.Column(c).Width(560).Gap(8).Children(func() {
 			mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-				mui.Text(c, "Jump to a message").FontSize(16).Bold().Grow(1)
+				mui.Text(c, "Jump to a message").FontSize(a.chatFont(16)).Bold().Grow(1)
 				if len(entries) > 0 {
 					label := fmt.Sprintf("%d message", len(entries))
 					if len(entries) != 1 {
 						label += "s"
 					}
-					caption(c, label)
+					a.chatCaption(c, label)
 				}
 			})
-			mutedText(c, "Your messages in this conversation, oldest first. Choose one to scroll to it.", 10)
+			mutedText(c, "Your messages in this conversation, oldest first. Choose one to scroll to it.", a.chatFont(10))
 			switch {
 			case len(entries) == 0:
-				mutedText(c, "No messages of yours yet.", 11)
+				mutedText(c, "No messages of yours yet.", a.chatFont(11))
 			default:
 				mui.Scroll(c).TrackScroll(&chat.jumpScroll).MaxHeight(listMaxHeight).Gap(2).Children(func() {
 					for _, entry := range entries {
@@ -176,20 +176,20 @@ func (a *App) jumpDialog(c *mui.Context, chat *Chat) {
 							item.Background(t.Surface)
 						}
 						item.Children(func() {
-							mutedText(c, fmt.Sprintf("%d", entry.number), 9).
+							mutedText(c, fmt.Sprintf("%d", entry.number), a.chatFont(9)).
 								Width(24).TextAlign(mui.End).Shrink(0)
 							text := jumpEntryText(entry.msg)
 							if text == "" {
 								text = "(empty message)"
 							}
-							mui.Text(c, text).FontSize(11).Grow(1).SingleLine()
-							stamp := mutedText(c, jumpEntryTime(entry.msg), 9).Shrink(0)
+							mui.Text(c, text).FontSize(a.chatFont(11)).Grow(1).SingleLine()
+							stamp := mutedText(c, jumpEntryTime(entry.msg), a.chatFont(9)).Shrink(0)
 							if entry.msg != nil && !entry.msg.SentAt.IsZero() {
 								stamp.Tooltip("Sent " + entry.msg.SentAt.Local().Format("2006-01-02 15:04:05"))
 							} else {
 								stamp.Tooltip("Send time not recorded; this message came from the agent's history")
 							}
-							mutedText(c, "→", 10).Shrink(0)
+							mutedText(c, "→", a.chatFont(10)).Shrink(0)
 						})
 						if item.Clicked() {
 							chat.list.ScrollTo(entry.row, mui.Start)

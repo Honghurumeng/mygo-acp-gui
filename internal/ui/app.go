@@ -209,6 +209,9 @@ type App struct {
 	// persisted in settings.json and applied in View.
 	Appearance string
 	Theme      string
+	// Fonts scales each text area: the workspace list, the conversation, the
+	// composer and the Git panel. It is persisted in settings.json.
+	Fonts settings.Fonts
 	// NotificationsEnabled gates desktop notifications. It defaults to on and
 	// is persisted in settings.json.
 	NotificationsEnabled bool
@@ -361,6 +364,7 @@ func New(opts Options) *App {
 
 		Appearance:           AppearanceSystem,
 		Theme:                ThemeDefault,
+		Fonts:                defaultFontScales(),
 		NotificationsEnabled: true,
 		DockBadgeEnabled:     true,
 		dockBadgeCount:       -1,
@@ -441,6 +445,7 @@ func (a *App) loadSettings(dataDir string, workspaceDefault bool) {
 	a.preferredAgentID = file.LastAgent
 	a.Appearance = normalizeAppearance(file.Appearance)
 	a.Theme = normalizeTheme(file.Theme)
+	a.Fonts = normalizeFontScales(file.Fonts)
 	a.NotificationsEnabled = file.Notifications
 	a.DockBadgeEnabled = file.DockBadge
 	for _, workspace := range file.Workspaces {
@@ -633,6 +638,9 @@ func (a *App) nextChatID() int {
 // conversation with its composer, and the collapsible Git panel.
 func (a *App) View(c *mui.Context) {
 	a.applyTheme(c)
+	// Markdown headings and code are sized in ems of this body size, so one
+	// value scales the whole message while keeping its hierarchy.
+	a.MD.Theme = &markdown.Theme{FontSize: a.chatBodyFont(c)}
 	a.syncWorkspaces()
 	chat := a.activeChat()
 	if chat != nil {
@@ -915,7 +923,7 @@ func (a *App) planPanel(c *mui.Context, chat *Chat) {
 				if entry.Status != "" {
 					text += " · " + entry.Status
 				}
-				mui.Text(c, text).FontSize(11).TextColor(color)
+				mui.Text(c, text).FontSize(a.chatFont(11)).TextColor(color)
 			}
 		})
 	})
@@ -930,6 +938,7 @@ func (a *App) message(c *mui.Context, m *Message) {
 			mui.Column(c).Gap(6).MaxWidth(520).Children(func() {
 				if m.Text != "" {
 					mui.Text(c, m.Text).
+						FontSize(a.chatBodyFont(c)).
 						Selectable().
 						Padding(8, 12).
 						Radius(14).
@@ -943,13 +952,13 @@ func (a *App) message(c *mui.Context, m *Message) {
 		mui.Column(c).MaxWidth(760).Children(func() {
 			if m.Thought != "" {
 				mui.Collapsible(c, "Thinking", &m.ShowThought, func() {
-					mutedText(c, m.Thought, 12).Selectable()
+					mutedText(c, m.Thought, a.chatFont(12)).Selectable()
 				})
 			}
 			if m.Text == "" && !m.Done {
 				mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
 					mui.Spinner(c)
-					mutedText(c, "Waiting for the agent…", 12)
+					mutedText(c, "Waiting for the agent…", a.chatFont(12))
 				})
 				return
 			}
@@ -962,7 +971,7 @@ func (a *App) message(c *mui.Context, m *Message) {
 	case RoleTool:
 		a.toolMessage(c, m)
 	case RoleError:
-		mui.Text(c, "⚠ "+m.Text).TextColor(t.Danger).Selectable()
+		mui.Text(c, "⚠ "+m.Text).FontSize(a.chatBodyFont(c)).TextColor(t.Danger).Selectable()
 	case RoleSystem:
 		color := t.TextMuted
 		switch m.NoticeLevel {
@@ -971,12 +980,12 @@ func (a *App) message(c *mui.Context, m *Message) {
 		case "error":
 			color = t.Danger
 		}
-		mui.Text(c, m.Text).TextColor(color).TextAlign(mui.Center)
+		mui.Text(c, m.Text).FontSize(a.chatBodyFont(c)).TextColor(color).TextAlign(mui.Center)
 	case RoleTurn:
 		if m.Elapsed > 0 {
 			mui.Row(c).Children(func() {
 				mui.Spacer(c)
-				mutedText(c, "Took "+formatElapsed(m.Elapsed), 9).Shrink(0).Tooltip("Runtime of this turn")
+				mutedText(c, "Took "+formatElapsed(m.Elapsed), a.chatFont(9)).Shrink(0).Tooltip("Runtime of this turn")
 			})
 		}
 	}
@@ -1008,19 +1017,19 @@ func (a *App) toolMessage(c *mui.Context, m *Message) {
 				mark = "▾"
 			}
 			// A fixed arrow width keeps the panel aligned with the command.
-			mutedText(c, mark, 10).Width(10)
-			title := mui.Text(c, m.Title).Bold().FontSize(12).Grow(1)
+			mutedText(c, mark, a.chatFont(10)).Width(10)
+			title := mui.Text(c, m.Title).Bold().FontSize(a.chatFont(12)).Grow(1)
 			if !m.DetailOpen {
 				// Long commands stay one line until the card is opened.
 				title.SingleLine()
 			}
 			if m.Status != "" {
-				mui.Text(c, m.Status).FontSize(11).TextColor(statusColor).Shrink(0)
+				mui.Text(c, m.Status).FontSize(a.chatFont(11)).TextColor(statusColor).Shrink(0)
 			}
 		})
 		parts.Panel(func() {
 			if m.Detail != "" {
-				mutedText(c, m.Detail, 11).Selectable()
+				mutedText(c, m.Detail, a.chatFont(11)).Selectable()
 			}
 		}).PaddingStart(16)
 	})

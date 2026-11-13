@@ -35,7 +35,7 @@ func (a *App) gitGraphBody(c *mui.Context) {
 	commits := a.Git.Commits
 	if len(commits) == 0 {
 		a.closeCommitHover()
-		mutedText(c, "No commits yet.", 10).Padding(0, 6)
+		mutedText(c, "No commits yet.", a.gitFont(10)).Padding(0, 6)
 		return
 	}
 	if a.Git.CommitHoverOpen && !a.Git.CommitHoverLeave.IsZero() &&
@@ -147,15 +147,15 @@ func (a *App) gitGraphCommit(c *mui.Context, commit git.LogCommit, indent float3
 	row.Children(func() {
 		if ref := graphRef(commit); ref != "" {
 			ink := inks[commit.Lane%len(inks)]
-			mui.Text(c, ref).FontSize(8).Padding(1, 4).Radius(4).
+			mui.Text(c, ref).FontSize(a.gitFont(8)).Padding(1, 4).Radius(4).
 				Background(ink.Alpha(0.16)).TextColor(ink).Shrink(0)
 		}
-		mui.Text(c, commit.Message).FontSize(10).Grow(1).MinWidth(0).SingleLine()
+		mui.Text(c, commit.Message).FontSize(a.gitFont(10)).Grow(1).MinWidth(0).SingleLine()
 		mark := "▸"
 		if open {
 			mark = "▾"
 		}
-		mui.Text(c, mark).FontSize(8).TextColor(t.TextMuted).Shrink(0)
+		mui.Text(c, mark).FontSize(a.gitFont(8)).TextColor(t.TextMuted).Shrink(0)
 	})
 	if row.Clicked() {
 		a.hideCommitHover(commit.Hash)
@@ -260,28 +260,28 @@ func (a *App) gitGraphDetails(c *mui.Context, panel, anchor mui.Element, commit 
 		Shadow(0, 8, 24, 0, mui.RGBA(0, 0, 0, 0.24)).
 		AttachTo(anchor, mui.AnchorStart, mui.AnchorEnd).MarginEnd(8)
 	panel.Children(func() {
-		mui.Text(c, commit.Message).FontSize(11).Bold().MaxLines(3)
+		mui.Text(c, commit.Message).FontSize(a.gitFont(11)).Bold().MaxLines(3)
 		if commit.Author != "" {
-			gitDetailLine(c, "Author", commit.Author)
+			a.gitDetailLine(c, "Author", commit.Author)
 		}
 		if !commit.Time.IsZero() {
-			gitDetailLine(c, "Date", commit.Time.Local().Format("2006-01-02 15:04"))
+			a.gitDetailLine(c, "Date", commit.Time.Local().Format("2006-01-02 15:04"))
 		}
 		if len(commit.Refs) > 0 {
-			gitDetailLine(c, "Refs", strings.Join(commit.Refs, ", "))
+			a.gitDetailLine(c, "Refs", strings.Join(commit.Refs, ", "))
 		}
 		switch {
 		case a.Git.CommitStatBusy:
-			gitDetailLine(c, "Changes", "Reading…")
+			a.gitDetailLine(c, "Changes", "Reading…")
 		case a.Git.CommitStatErr != "":
-			gitDetailLine(c, "Changes", truncate(singleLine(a.Git.CommitStatErr), 48))
+			a.gitDetailLine(c, "Changes", truncate(singleLine(a.Git.CommitStatErr), 48))
 		default:
-			gitCommitStats(c, "Changes", a.Git.CommitStat)
+			a.gitCommitStats(c, "Changes", a.Git.CommitStat)
 		}
 		mui.Row(c).FillWidth().Gap(6).AlignItems(mui.Center).Children(func() {
-			mui.Text(c, commit.Hash).Font("monospace").FontSize(8).Grow(1).
+			mui.Text(c, commit.Hash).Font("monospace").FontSize(a.gitFont(8)).Grow(1).
 				MinWidth(0).SingleLine().Selectable()
-			copy := quietButton(c, "Copy").Label("Copy commit hash").FontSize(8)
+			copy := quietButton(c, "Copy").Label("Copy commit hash").FontSize(a.gitFont(8))
 			copy.Shrink(0).Tooltip("Copy the full commit hash")
 			if copy.Clicked() {
 				c.WriteClipboard(commit.Hash)
@@ -292,34 +292,34 @@ func (a *App) gitGraphDetails(c *mui.Context, panel, anchor mui.Element, commit 
 }
 
 // gitDetailLine is one label and value of the commit details card.
-func gitDetailLine(c *mui.Context, label, value string) {
+func (a *App) gitDetailLine(c *mui.Context, label, value string) {
 	mui.Row(c).FillWidth().Gap(6).AlignItems(mui.Start).Children(func() {
-		mui.Text(c, label).FontSize(8).TextColor(c.Theme().TextMuted).Width(38).Shrink(0)
-		mui.Text(c, value).FontSize(9).Grow(1).MinWidth(0).MaxLines(2)
+		mui.Text(c, label).FontSize(a.gitFont(8)).TextColor(c.Theme().TextMuted).Width(38).Shrink(0)
+		mui.Text(c, value).FontSize(a.gitFont(9)).Grow(1).MinWidth(0).MaxLines(2)
 	})
 }
 
 // gitCommitStats is the card's changed file count and added and removed
 // lines on one row, colored as the header's counts are.
-func gitCommitStats(c *mui.Context, label string, stat git.DiffStat) {
+func (a *App) gitCommitStats(c *mui.Context, label string, stat git.DiffStat) {
 	t := c.Theme()
 	files := strconv.Itoa(stat.Files) + " files"
 	if stat.Files == 1 {
 		files = "1 file"
 	}
 	mui.Row(c).FillWidth().Gap(6).AlignItems(mui.Center).Children(func() {
-		mui.Text(c, label).FontSize(8).TextColor(t.TextMuted).Width(38).Shrink(0)
-		mui.Text(c, files).FontSize(9)
-		mutedText(c, "·", 9)
+		mui.Text(c, label).FontSize(a.gitFont(8)).TextColor(t.TextMuted).Width(38).Shrink(0)
+		mui.Text(c, files).FontSize(a.gitFont(9))
+		mutedText(c, "·", a.gitFont(9))
 		if stat.Added == 0 && stat.Removed == 0 {
-			mutedText(c, "0 lines", 9)
+			mutedText(c, "0 lines", a.gitFont(9))
 			return
 		}
 		if stat.Added > 0 {
-			mui.Text(c, "+"+strconv.Itoa(stat.Added)).FontSize(9).TextColor(t.Success)
+			mui.Text(c, "+"+strconv.Itoa(stat.Added)).FontSize(a.gitFont(9)).TextColor(t.Success)
 		}
 		if stat.Removed > 0 {
-			mui.Text(c, "−"+strconv.Itoa(stat.Removed)).FontSize(9).TextColor(t.Danger)
+			mui.Text(c, "−"+strconv.Itoa(stat.Removed)).FontSize(a.gitFont(9)).TextColor(t.Danger)
 		}
 	})
 }
@@ -332,14 +332,14 @@ func (a *App) gitGraphFiles(c *mui.Context, hash string, indent float32) {
 	mui.Column(c).FillWidth().Height(height).Padding(2, 8, 2, indent).Children(func() {
 		switch {
 		case a.Git.CommitFilesBusy:
-			a.gitGraphFileLine(c, func() { mutedText(c, "Reading changed files…", 9) })
+			a.gitGraphFileLine(c, func() { mutedText(c, "Reading changed files…", a.gitFont(9)) })
 		case a.Git.CommitFilesErr != "":
 			a.gitGraphFileLine(c, func() {
 				mui.Text(c, truncate(singleLine(a.Git.CommitFilesErr), 64)).
-					FontSize(8).TextColor(t.Danger).SingleLine()
+					FontSize(a.gitFont(8)).TextColor(t.Danger).SingleLine()
 			})
 		case len(a.Git.CommitFiles) == 0:
-			a.gitGraphFileLine(c, func() { mutedText(c, "No files changed.", 9) })
+			a.gitGraphFileLine(c, func() { mutedText(c, "No files changed.", a.gitFont(9)) })
 		default:
 			for _, file := range a.Git.CommitFiles {
 				a.gitGraphFile(c, hash, file)
@@ -371,10 +371,10 @@ func (a *App) gitGraphFile(c *mui.Context, hash string, file git.CommitFile) {
 		row.Background(t.SurfaceHover)
 	}
 	row.Children(func() {
-		mui.Text(c, code).Font("monospace").FontSize(8).TextColor(color).Shrink(0)
-		mui.Text(c, truncate(name, 22)).FontSize(9).SingleLine()
+		mui.Text(c, code).Font("monospace").FontSize(a.gitFont(8)).TextColor(color).Shrink(0)
+		mui.Text(c, truncate(name, 22)).FontSize(a.gitFont(9)).SingleLine()
 		if dir != "" {
-			mutedText(c, truncate(dir, 18), 8).SingleLine()
+			mutedText(c, truncate(dir, 18), a.gitFont(8)).SingleLine()
 		}
 	})
 	if row.Clicked() {

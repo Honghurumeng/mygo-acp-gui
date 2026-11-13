@@ -362,11 +362,11 @@ func (a *App) mentionPalette(c *mui.Context, chat *Chat) {
 			Radius(10).Background(t.Background).Border(1, t.Border).
 			Children(func() {
 				if chat.fileIndexLoading && len(chat.fileIndex) == 0 {
-					caption(c, "Indexing workspace files…").Padding(5, 8)
+					a.composerCaption(c, "Indexing workspace files…").Padding(5, 8)
 					return
 				}
 				if chat.fileIndexErr != "" {
-					mutedText(c, "Could not index workspace: "+chat.fileIndexErr, 10).Padding(5, 8)
+					mutedText(c, "Could not index workspace: "+chat.fileIndexErr, a.composerFont(10)).Padding(5, 8)
 					return
 				}
 				if len(matches) == 0 {
@@ -374,7 +374,7 @@ func (a *App) mentionPalette(c *mui.Context, chat *Chat) {
 					if chat.MentionQuery != "" {
 						label = "No files match @" + chat.MentionQuery
 					}
-					caption(c, label).Padding(5, 8)
+					a.composerCaption(c, label).Padding(5, 8)
 					return
 				}
 				mui.Scroll(c).MaxHeight(mentionPanelHeight - 8).Gap(1).Children(func() {
@@ -389,13 +389,13 @@ func (a *App) mentionPalette(c *mui.Context, chat *Chat) {
 							name, dir := mentionPathParts(relative)
 							// The name leads, the directory trails it muted the way
 							// the Git panel lists changed files.
-							mui.Text(c, truncate(name, 36)).FontSize(10).SingleLine().Shrink(0)
+							mui.Text(c, truncate(name, 36)).FontSize(a.composerFont(10)).SingleLine().Shrink(0)
 							if dir != "" {
-								mutedText(c, truncate(dir, 56), 8).SingleLine()
+								mutedText(c, truncate(dir, 56), a.composerFont(8)).SingleLine()
 							}
 							mui.Spacer(c)
 							if info, err := os.Stat(filepath.Join(chat.Workspace, filepath.FromSlash(relative))); err == nil {
-								caption(c, formatBytes(info.Size())).Shrink(0)
+								a.composerCaption(c, formatBytes(info.Size())).Shrink(0)
 							}
 						})
 						item.Label("Mention " + relative)

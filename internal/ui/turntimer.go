@@ -30,7 +30,7 @@ func (a *App) turnTimer(c *mui.Context, chat *Chat) {
 		Absolute().Right(14).Bottom(14).
 		IgnoreInput(true)
 	pill.Children(func() {
-		mui.Text(c, "Working "+formatElapsed(elapsed)).FontSize(10).TextColor(t.Text)
+		mui.Text(c, "Working "+formatElapsed(elapsed)).FontSize(a.chatFont(10)).TextColor(t.Text)
 	})
 	c.After(100 * time.Millisecond)
 }

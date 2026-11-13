@@ -368,19 +368,19 @@ func (a *App) gitPanelHeader(c *mui.Context) {
 		BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
 		mui.Column(c).Gap(1).Grow(1).Children(func() {
 			mui.Row(c).Gap(5).AlignItems(mui.Center).Children(func() {
-				mui.Text(c, "Git").FontSize(14).Bold()
+				mui.Text(c, "Git").FontSize(a.gitFont(14)).Bold()
 				if a.Git.Loading {
 					mui.Spinner(c)
 				}
 				if a.Git.Busy != "" {
-					caption(c, a.Git.Busy+"…")
+					a.gitCaption(c, a.Git.Busy+"…")
 				}
 				mui.Spacer(c)
 				a.gitHeaderStat(c)
 			})
 			line, tip := a.gitHeaderLine()
 			if line != "" {
-				text := caption(c, line)
+				text := a.gitCaption(c, line)
 				if tip != "" {
 					text.Tooltip(tip)
 				}
@@ -401,12 +401,12 @@ func (a *App) gitHeaderStat(c *mui.Context) {
 	if stat.Files == 1 {
 		files = "1 file"
 	}
-	caption(c, files)
+	a.gitCaption(c, files)
 	if stat.Added > 0 {
-		mui.Text(c, "+"+strconv.Itoa(stat.Added)).FontSize(9).TextColor(t.Success)
+		mui.Text(c, "+"+strconv.Itoa(stat.Added)).FontSize(a.gitFont(9)).TextColor(t.Success)
 	}
 	if stat.Removed > 0 {
-		mui.Text(c, "−"+strconv.Itoa(stat.Removed)).FontSize(9).TextColor(t.Danger)
+		mui.Text(c, "−"+strconv.Itoa(stat.Removed)).FontSize(a.gitFont(9)).TextColor(t.Danger)
 	}
 }
 
@@ -469,7 +469,7 @@ func (a *App) gitPanelBody(c *mui.Context) {
 func (a *App) gitLoading(c *mui.Context) {
 	mui.Column(c).Grow(1).Center().Gap(8).Children(func() {
 		mui.Spinner(c)
-		mutedText(c, "Reading repository…", 10)
+		mutedText(c, "Reading repository…", a.gitFont(10))
 	})
 }
 
@@ -477,9 +477,9 @@ func (a *App) gitUnavailable(c *mui.Context) {
 	t := c.Theme()
 	workspace := a.Git.Workspace
 	mui.Column(c).Grow(1).Padding(14, 14).Gap(8).Children(func() {
-		mui.Text(c, "Git is not installed.").FontSize(13).Bold().TextColor(t.Warning)
-		mutedText(c, "Install Git, make sure it is on PATH, then refresh.", 10)
-		if quietButton(c, "Refresh").FontSize(10).Clicked() {
+		mui.Text(c, "Git is not installed.").FontSize(a.gitFont(13)).Bold().TextColor(t.Warning)
+		mutedText(c, "Install Git, make sure it is on PATH, then refresh.", a.gitFont(10))
+		if quietButton(c, "Refresh").FontSize(a.gitFont(10)).Clicked() {
 			a.startGitLoad(workspace, true)
 		}
 	})
@@ -489,10 +489,10 @@ func (a *App) gitNoRepository(c *mui.Context) {
 	workspace := a.Git.Workspace
 	busy := a.Git.Busy != "" || a.Git.Loading
 	mui.Column(c).Grow(1).Padding(14, 14).Gap(8).Children(func() {
-		mui.Text(c, "Not a Git repository").FontSize(13).Bold()
-		mutedText(c, "This workspace is not inside a Git repository.", 10)
-		mutedText(c, workspace, 9).Selectable()
-		button := primaryButton(c, "Initialize Git repository").FontSize(10)
+		mui.Text(c, "Not a Git repository").FontSize(a.gitFont(13)).Bold()
+		mutedText(c, "This workspace is not inside a Git repository.", a.gitFont(10))
+		mutedText(c, workspace, a.gitFont(9)).Selectable()
+		button := primaryButton(c, "Initialize Git repository").FontSize(a.gitFont(10))
 		button.Disabled(busy)
 		button.Tooltip("Run git init in this workspace")
 		if button.Clicked() && !busy {
@@ -503,7 +503,7 @@ func (a *App) gitNoRepository(c *mui.Context) {
 		if a.Git.Busy != "" {
 			mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
 				mui.Spinner(c)
-				caption(c, a.Git.Busy+"…")
+				a.gitCaption(c, a.Git.Busy+"…")
 			})
 		}
 		if a.Git.Error != "" {
@@ -516,10 +516,10 @@ func (a *App) gitInitialError(c *mui.Context) {
 	t := c.Theme()
 	workspace := a.Git.Workspace
 	mui.Column(c).Grow(1).Padding(14, 14).Gap(8).Children(func() {
-		mui.Text(c, "Git unavailable").FontSize(13).Bold().TextColor(t.Danger)
+		mui.Text(c, "Git unavailable").FontSize(a.gitFont(13)).Bold().TextColor(t.Danger)
 		message := truncate(singleLine(a.Git.Error), 240)
-		mui.Text(c, message).FontSize(10).TextColor(t.Danger).Selectable().Tooltip(a.Git.Error)
-		if quietButton(c, "Refresh").FontSize(10).Clicked() {
+		mui.Text(c, message).FontSize(a.gitFont(10)).TextColor(t.Danger).Selectable().Tooltip(a.Git.Error)
+		if quietButton(c, "Refresh").FontSize(a.gitFont(10)).Clicked() {
 			a.startGitLoad(workspace, true)
 		}
 	})
@@ -535,11 +535,12 @@ func (a *App) gitCommitBox(c *mui.Context) {
 			Placeholder("Commit message").
 			Lines(2, 4).
 			Padding(5, 7).
+			FontSize(a.gitBodyFont(c)).
 			Radius(t.Radius).
 			Border(1, t.Border).
 			Background(t.Background).
 			Disabled(busy)
-		button := primaryButton(c, "Commit").FontSize(10).FillWidth()
+		button := primaryButton(c, "Commit").FontSize(a.gitFont(10)).FillWidth()
 		disabled := busy || staged == 0 || strings.TrimSpace(a.Git.Message) == ""
 		button.Disabled(disabled)
 		button.Tooltip("Commit the staged changes")
@@ -560,10 +561,10 @@ func (a *App) gitFeedback(c *mui.Context) {
 	mui.Column(c).Gap(2).Padding(3, 12, 3, 12).Children(func() {
 		if a.Git.Error != "" {
 			message := truncate(singleLine(a.Git.Error), 240)
-			mui.Text(c, "⚠ "+message).FontSize(9).TextColor(t.Danger).Selectable().Tooltip(a.Git.Error)
+			mui.Text(c, "⚠ "+message).FontSize(a.gitFont(9)).TextColor(t.Danger).Selectable().Tooltip(a.Git.Error)
 		}
 		if a.Git.Notice != "" {
-			mui.Text(c, a.Git.Notice).FontSize(9).TextColor(t.Success)
+			mui.Text(c, a.Git.Notice).FontSize(a.gitFont(9)).TextColor(t.Success)
 		}
 	})
 }
@@ -595,7 +596,7 @@ func (a *App) gitChanges(c *mui.Context) {
 					},
 				})
 				if len(staged) == 0 {
-					caption(c, "No staged changes")
+					a.gitCaption(c, "No staged changes")
 				} else {
 					for _, file := range staged {
 						a.gitFileRow(c, file, true)
@@ -623,7 +624,7 @@ func (a *App) gitChanges(c *mui.Context) {
 					},
 				)
 				if len(changes) == 0 {
-					caption(c, "No changes")
+					a.gitCaption(c, "No changes")
 				} else {
 					for _, file := range changes {
 						a.gitFileRow(c, file, false)
@@ -647,8 +648,8 @@ type gitSectionAction struct {
 func (a *App) gitSectionHeader(c *mui.Context, title string, count int, actions ...gitSectionAction) {
 	busy := a.Git.Busy != "" || a.Git.Loading
 	mui.Row(c).Gap(4).AlignItems(mui.Center).Children(func() {
-		sectionLabel(c, title)
-		mutedText(c, strconv.Itoa(count), 8)
+		a.gitSectionLabel(c, title)
+		mutedText(c, strconv.Itoa(count), a.gitFont(8))
 		mui.Spacer(c)
 		for _, action := range actions {
 			if !action.show {
@@ -660,7 +661,7 @@ func (a *App) gitSectionHeader(c *mui.Context, title string, count int, actions 
 			} else {
 				button = quietButton(c, action.label)
 			}
-			button.FontSize(8)
+			button.FontSize(a.gitFont(8))
 			button.Disabled(busy)
 			button.Tooltip(action.tip)
 			if button.Clicked() && !busy {
@@ -694,7 +695,7 @@ func (a *App) gitFileRow(c *mui.Context, file git.File, staged bool) {
 	busy := a.Git.Busy != "" || a.Git.Loading
 
 	mui.Row(c).Gap(4).AlignItems(mui.Center).Children(func() {
-		mui.Text(c, code).Font("monospace").FontSize(8).TextColor(color)
+		mui.Text(c, code).Font("monospace").FontSize(a.gitFont(8)).TextColor(color)
 		preview := mui.ButtonBase(c).Gap(5).Grow(1).Padding(1, 2).Radius(4).
 			Justify(mui.Start).Label("Diff of " + path)
 		hover := float32(0)
@@ -703,9 +704,9 @@ func (a *App) gitFileRow(c *mui.Context, file git.File, staged bool) {
 		}
 		preview.Background(preview.AnimateColor("bg", t.SurfaceHover.Alpha(hover), mui.Snappy))
 		preview.Children(func() {
-			mui.Text(c, truncate(name, 24)).FontSize(10).SingleLine()
+			mui.Text(c, truncate(name, 24)).FontSize(a.gitFont(10)).SingleLine()
 			if dir != "" {
-				mutedText(c, truncate(dir, 20), 8).SingleLine()
+				mutedText(c, truncate(dir, 20), a.gitFont(8)).SingleLine()
 			}
 		})
 		if preview.Clicked() {
@@ -715,7 +716,7 @@ func (a *App) gitFileRow(c *mui.Context, file git.File, staged bool) {
 		if staged {
 			label, action = "－", "Unstage "
 		}
-		button := quietButton(c, label).Label(action + path).FontSize(9)
+		button := quietButton(c, label).Label(action + path).FontSize(a.gitFont(9))
 		button.Disabled(busy)
 		if button.Clicked() && !busy {
 			if staged {
@@ -965,10 +966,10 @@ func (a *App) gitDiscardDialog(c *mui.Context) {
 	confirm := false
 	mui.Modal(c, &a.Git.DiscardOpen, func() {
 		mui.Column(c).Gap(10).Width(380).Children(func() {
-			mui.Text(c, "Discard all changes?").FontSize(16).Bold()
+			mui.Text(c, "Discard all changes?").FontSize(a.gitFont(16)).Bold()
 			mui.Text(c, "Tracked files go back to the last commit, and untracked files and folders are deleted. Ignored files stay. This cannot be undone.").
-				FontSize(11).TextColor(t.TextMuted)
-			mutedText(c, fmt.Sprintf("%d staged · %d unstaged", len(a.Git.Staged), len(a.Git.Changes)), 10)
+				FontSize(a.gitFont(11)).TextColor(t.TextMuted)
+			mutedText(c, fmt.Sprintf("%d staged · %d unstaged", len(a.Git.Staged), len(a.Git.Changes)), a.gitFont(10))
 			mui.Row(c).Gap(8).Justify(mui.End).Children(func() {
 				if quietButton(c, "Cancel").Clicked() {
 					a.Git.DiscardOpen = false
@@ -989,6 +990,7 @@ func (a *App) gitDiscardDialog(c *mui.Context) {
 // change, and MyGo diffs them again as they do.
 type gitDiffView struct {
 	old, new string
+	fontSize float32
 	state    *editor.DiffState
 }
 
@@ -1079,9 +1081,9 @@ func (a *App) gitDiffHeader(c *mui.Context) {
 	t := c.Theme()
 	mui.Row(c).Height(48).Gap(6).Padding(0, 12).AlignItems(mui.Center).
 		BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
-		mui.Text(c, a.gitPreviewTitle()).FontSize(11).Bold().SingleLine().
+		mui.Text(c, a.gitPreviewTitle()).FontSize(a.gitFont(11)).Bold().SingleLine().
 			MinWidth(0).Grow(1).Tooltip(a.Git.PreviewPath)
-		if quietButton(c, "✕").Label("Close").FontSize(9).Tooltip("Close the diff").Clicked() {
+		if quietButton(c, "✕").Label("Close").FontSize(a.gitFont(9)).Tooltip("Close the diff").Clicked() {
 			a.closeGitPreview()
 		}
 	})
@@ -1095,14 +1097,16 @@ func (a *App) gitDiffBody(c *mui.Context, view *gitDiffView, split bool) {
 	if split {
 		layout = editor.DiffSplit
 	}
-	if view.old != a.Git.PreviewOld || view.new != a.Git.PreviewNew {
+	fontSize := a.gitFont(11)
+	if view.old != a.Git.PreviewOld || view.new != a.Git.PreviewNew || view.fontSize != fontSize {
 		view.old, view.new = a.Git.PreviewOld, a.Git.PreviewNew
+		view.fontSize = fontSize
 		view.state = &editor.DiffState{
 			Old:        editor.NewBuffer(view.old),
 			New:        editor.NewBuffer(view.new),
 			Layout:     layout,
 			Wrap:       true,
-			Font:       mui.Font{Size: 11},
+			Font:       mui.Font{Size: fontSize},
 			LineHeight: 1.4,
 		}
 	}
@@ -1113,7 +1117,7 @@ func (a *App) gitDiffBody(c *mui.Context, view *gitDiffView, split bool) {
 }
 
 func (a *App) gitToolButton(c *mui.Context, label, tip string, disabled bool, fn func()) {
-	button := quietButton(c, label).FontSize(8)
+	button := quietButton(c, label).FontSize(a.gitFont(8))
 	button.Disabled(disabled)
 	button.Tooltip(tip)
 	if button.Clicked() && !disabled {

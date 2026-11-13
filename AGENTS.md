@@ -20,6 +20,7 @@
 - `docs/design/git.md`：右侧 Git 面板、仓库探测、状态/图表、提交与 fetch/pull/push、异步与安全。
 - `docs/design/components.md`：本地 UI 组件层（widgets.go 样式、components.go 有状态组件、图标子集）、交互约定。
 - `docs/design/themes.md`：外观（system/light/dark）、主题目录（default/nord/solarized/catppuccin/claude）、持久化、原生外观同步。
+- `docs/design/fonts.md`：分区字体大小（workspace 列表、对话流、输入框、Git 面板）、百分比缩放、持久化。
 - `docs/design/plan.md`：测试、MVP 范围、后续、非目标、待定问题、参考链接。
 
 ## 铁律

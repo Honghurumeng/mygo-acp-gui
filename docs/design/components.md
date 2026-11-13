@@ -48,7 +48,8 @@
   与 MyGo 自带 `PrimaryButton` 行为一致。`Send`、`Save`、`Apply`、`Commit` 用它。
 - `dangerButton(c, label)`：破坏性操作，`quietButton` 形状 + `t.Danger` 文字颜色（`Delete`、`Stop`、拒绝授权）。
 - `chipBase(c)`：composer 的模型/模式/用量/分支胶囊，与按钮同形状、无边框，padding 收紧为 `3, 8`。
-- `menuTrigger(c, label, background)`：行尾「⋯」菜单按钮；label 供无障碍与 `Tester` 使用，背景跟随所在行。
+- `App.composerControl(e)`：把按钮/胶囊放进 composer 动作行，高度随 `fonts.composer` 缩放（默认 22 DIP），并去掉控件自身的纵向 padding。
+- `menuTrigger(c, label, background, size)`：行尾「⋯」菜单按钮；label 供无障碍与 `Tester` 使用，背景跟随所在行，size 让分区字号缩放按钮本身。
 
 约定：
 

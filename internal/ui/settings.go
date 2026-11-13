@@ -10,6 +10,7 @@ import (
 
 const (
 	settingsSectionAppearance    = "appearance"
+	settingsSectionFonts         = "fonts"
 	settingsSectionNotifications = "notifications"
 )
 
@@ -105,12 +106,15 @@ func (a *App) settingsDialog(c *mui.Context) {
 					Background(t.Surface).BorderWidth(0, 1, 0, 0).BorderColor(t.Border).
 					Children(func() {
 						a.settingsCategory(c, settingsSectionAppearance, "Appearance")
+						a.settingsCategory(c, settingsSectionFonts, "Fonts")
 						a.settingsCategory(c, settingsSectionNotifications, "Notifications")
 					})
 				mui.Column(c).Grow(1).FillHeight().Padding(18).Children(func() {
 					switch a.SettingsSection {
 					case settingsSectionAppearance:
 						a.appearanceSettings(c)
+					case settingsSectionFonts:
+						a.fontSettings(c)
 					case settingsSectionNotifications:
 						a.notificationSettings(c)
 					}
@@ -162,6 +166,58 @@ func (a *App) appearanceSettings(c *mui.Context) {
 				a.themeChoice(c, family, dark)
 			}
 		})
+	})
+}
+
+// fontSettings scales four regions independently. A percentage keeps every
+// region's internal hierarchy (titles, rows and captions) and its existing
+// layout intact while making the change easy to read in the settings file.
+func (a *App) fontSettings(c *mui.Context) {
+	mui.Column(c).Gap(8).Children(func() {
+		mui.Text(c, "Fonts").FontSize(15).Bold()
+		mutedText(c, "Scale text in each area from 80% to 150%. Changes apply immediately and are saved.", 10)
+		a.fontScaleRow(c, "Workspace list",
+			"Groups, conversations and saved sessions in the sidebar.",
+			&a.Fonts.WorkspaceList)
+		a.fontScaleRow(c, "Conversation",
+			"Messages, tool calls and Markdown in the chat.",
+			&a.Fonts.Chat)
+		a.fontScaleRow(c, "Input box",
+			"The message box, its chips and its menus.",
+			&a.Fonts.Composer)
+		a.fontScaleRow(c, "Git panel",
+			"Changes, history, commit details and the diff card.",
+			&a.Fonts.Git)
+		if quietButton(c, "Reset font sizes").FontSize(10).Clicked() {
+			a.Fonts = defaultFontScales()
+			a.persistSettings()
+		}
+	})
+}
+
+func (a *App) fontScaleRow(c *mui.Context, title, note string, value *int) {
+	t := c.Theme()
+	*value = normalizeFontScale(*value)
+	mui.Row(c).Gap(10).AlignItems(mui.Center).Padding(8, 12).Radius(8).
+		Background(t.Surface).Children(func() {
+		mui.Column(c).Gap(2).Grow(1).Children(func() {
+			mui.Text(c, title).FontSize(12)
+			mutedText(c, note, 10)
+		})
+		smaller := quietButton(c, "−").Label("Decrease " + title + " font size").FontSize(11)
+		smaller.Disabled(*value <= minFontScale)
+		if smaller.Clicked() && *value > minFontScale {
+			*value = normalizeFontScale(*value - fontScaleStep)
+			a.persistSettings()
+		}
+		mui.Text(c, fmt.Sprintf("%d%%", *value)).FontSize(11).
+			Width(42).TextAlign(mui.Center).Shrink(0)
+		larger := quietButton(c, "+").Label("Increase " + title + " font size").FontSize(11)
+		larger.Disabled(*value >= maxFontScale)
+		if larger.Clicked() && *value < maxFontScale {
+			*value = normalizeFontScale(*value + fontScaleStep)
+			a.persistSettings()
+		}
 	})
 }
 

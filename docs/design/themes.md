@@ -6,6 +6,7 @@
 - 内置 `Default`、`Nord`、`Solarized`、`Catppuccin`、`Claude` 五个配色家族，每个都有浅色和深色版本。
 - 不引入 UI/主题库：全部基于 MyGo 的 `mui.Theme`，配色目录在 `internal/ui/theme.go`。
 - 不做用户自定义 JSON 主题、在线主题目录和按主题的代码高亮；新配色走代码 + 发版。
+- 分区字体大小是独立设置，不随主题变化；见 [fonts.md](fonts.md)。
 
 ## 设置与持久化
 

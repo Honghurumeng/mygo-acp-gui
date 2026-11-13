@@ -175,7 +175,7 @@ func (a *App) attachmentPicker(c *mui.Context, chat *Chat) {
 				if attachment.Bitmap != nil {
 					a.clickableImage(c, attachment, 48, 48, mui.Cover, 5, "View attached image")
 				}
-				if quietButton(c, "×").Label("Remove image").Clicked() {
+				if quietButton(c, "×").Label("Remove image").FontSize(a.composerFont(c.Theme().FontSize)).Clicked() {
 					a.removeAttachment(chat, i)
 				}
 			})
@@ -259,8 +259,8 @@ func (a *App) messageFiles(c *mui.Context, files []FileRef) {
 	mui.Row(c).Gap(6).Wrap().Children(func() {
 		for _, ref := range files {
 			surfaceCard(c, mui.Row(c).Gap(4).AlignItems(mui.Center).Padding(3, 8)).Children(func() {
-				mutedText(c, "@", 10)
-				mui.Text(c, truncate(ref.Name, 48)).FontSize(10).SingleLine()
+				mutedText(c, "@", a.chatFont(10))
+				mui.Text(c, truncate(ref.Name, 48)).FontSize(a.chatFont(10)).SingleLine()
 			})
 		}
 	})

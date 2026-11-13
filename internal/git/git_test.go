@@ -282,7 +282,7 @@ func samePath(a, b string) bool {
 func initRepo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	runTestGit(t, dir, "init", "-q")
+	runTestGit(t, dir, "init", "-q", "-b", "master")
 	runTestGit(t, dir, "config", "user.email", "test@example.com")
 	runTestGit(t, dir, "config", "user.name", "Test User")
 	return dir

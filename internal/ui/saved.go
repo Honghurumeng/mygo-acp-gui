@@ -306,11 +306,11 @@ func (a *App) savedSessionRow(c *mui.Context, item savedSession) {
 			if hidden {
 				icon = "⌫"
 			}
-			mutedText(c, icon, 9)
+			mutedText(c, icon, a.workspaceFont(9))
 			agentBadge(c, item.AgentID, 10)
-			mui.Text(c, truncate(display, 60)).FontSize(11).Grow(1).SingleLine()
+			mui.Text(c, truncate(display, 60)).FontSize(a.workspaceFont(11)).Grow(1).SingleLine()
 			if stamp := savedTimeLabel(item.UpdatedAt); stamp != "" {
-				mutedText(c, stamp, 8)
+				mutedText(c, stamp, a.workspaceFont(8))
 			}
 		})
 		if button.Clicked() {
@@ -318,7 +318,7 @@ func (a *App) savedSessionRow(c *mui.Context, item savedSession) {
 			a.openSavedSession(item)
 		}
 
-		menu := menuTrigger(c, "Saved session actions for "+title, t.Background)
+		menu := menuTrigger(c, "Saved session actions for "+title, t.Background, a.workspaceFont(11))
 		if menu.Clicked() {
 			if a.SavedMenuOpen == rowKey {
 				a.SavedMenuOpen = ""
@@ -329,18 +329,18 @@ func (a *App) savedSessionRow(c *mui.Context, item savedSession) {
 		open := a.SavedMenuOpen == rowKey
 		mui.Popover(c, menu, &open, func() {
 			mui.Column(c).Width(132).Gap(2).Children(func() {
-				if quietButton(c, "Rename").FillWidth().FontSize(11).Clicked() {
+				if quietButton(c, "Rename").FillWidth().FontSize(a.workspaceFont(11)).Clicked() {
 					open = false
 					a.SavedMenuOpen = ""
 					a.openSavedRename(item)
 				}
 				if hidden {
-					if quietButton(c, "Restore").FillWidth().FontSize(11).Clicked() {
+					if quietButton(c, "Restore").FillWidth().FontSize(a.workspaceFont(11)).Clicked() {
 						open = false
 						a.SavedMenuOpen = ""
 						a.setArchivedShow(item.AgentID, item.SessionID, true)
 					}
-				} else if quietButton(c, "Delete").FillWidth().FontSize(11).TextColor(t.Danger).Clicked() {
+				} else if quietButton(c, "Delete").FillWidth().FontSize(a.workspaceFont(11)).TextColor(t.Danger).Clicked() {
 					open = false
 					a.SavedMenuOpen = ""
 					a.hideArchivedRecord(item.AgentID, item.SessionID, item.Cwd, item.Title)

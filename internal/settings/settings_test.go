@@ -26,6 +26,9 @@ func TestLoadMissingFileReturnsDefaults(t *testing.T) {
 	if !file.DockBadge {
 		t.Error("the Dock badge should default to on")
 	}
+	if file.Fonts != DefaultFonts() {
+		t.Errorf("fonts = %+v, want %+v", file.Fonts, DefaultFonts())
+	}
 }
 
 func TestSaveLoadRoundTrip(t *testing.T) {
@@ -45,6 +48,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		Paths:         Paths{Shell: "/bin/zsh", Node: "/usr/local/bin/node"},
 		Appearance:    "dark",
 		Theme:         "solarized",
+		Fonts:         Fonts{WorkspaceList: 110, Chat: 125, Composer: 90, Git: 140},
 		Notifications: true,
 		DockBadge:     true,
 	}
@@ -100,6 +104,36 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if !got.DockBadge {
 		t.Error("the Dock badge was not restored")
+	}
+	if got.Fonts != want.Fonts {
+		t.Errorf("fonts = %+v, want %+v", got.Fonts, want.Fonts)
+	}
+}
+
+func TestFontsDefaultForOlderFilesAndRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	store := Open(path)
+	if err := os.WriteFile(path, []byte(`{"version": 1, "lastAgent": "pi"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if file.Fonts != DefaultFonts() {
+		t.Fatalf("a file without fonts should default to 100%%: %+v", file.Fonts)
+	}
+
+	file.Fonts = Fonts{WorkspaceList: 120, Chat: 130, Composer: 80, Git: 150}
+	if err := store.Save(file); err != nil {
+		t.Fatal(err)
+	}
+	file, err = store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if file.Fonts != (Fonts{WorkspaceList: 120, Chat: 130, Composer: 80, Git: 150}) {
+		t.Fatalf("fonts did not round trip: %+v", file.Fonts)
 	}
 }
 

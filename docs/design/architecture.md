@@ -64,7 +64,7 @@ MyGo 原生窗口 (Go + ui)
 
 ```
 启动 app
-  → internal/settings 读取 PathUserData/settings.json（上次 agent/工作区/MCP、外观/主题、路径覆盖）
+  → internal/settings 读取 PathUserData/settings.json（上次 agent/工作区/MCP、外观/主题、分区字号、路径覆盖）
   → internal/archive 读取 PathUserData/sessions.json，立即按 cwd 展示已保存会话（不等 agent）
   → internal/agent.ResolveEnvironment（环境变量 > settings paths > 登录 shell；node/pi/command-code 绝对路径）
   → internal/agent.BuiltinLaunchResults

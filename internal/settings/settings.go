@@ -19,6 +19,48 @@ import (
 // CurrentVersion is the schema version this build writes.
 const CurrentVersion = 1
 
+// DefaultFontScale is the percentage at which every area starts. Fonts are
+// stored as percentages of the app's built-in sizes so the settings file
+// stays independent of the layout metrics.
+const DefaultFontScale = 100
+
+// Fonts holds the text scale of each UI area as a percentage. A missing
+// field means DefaultFontScale, so older files keep their previous sizes.
+type Fonts struct {
+	// WorkspaceList scales the sidebar's groups, conversations and saved
+	// sessions, together with its status area.
+	WorkspaceList int `json:"workspaceList,omitempty"`
+	// Chat scales the conversation: messages, tool cards and Markdown.
+	Chat int `json:"chat,omitempty"`
+	// Composer scales the message box and its chips, menus and buttons.
+	Composer int `json:"composer,omitempty"`
+	// Git scales the Git panel, its history and the diff card.
+	Git int `json:"git,omitempty"`
+}
+
+// DefaultFonts returns the font scales of a new settings file.
+func DefaultFonts() Fonts {
+	return Fonts{}.withDefaults()
+}
+
+// withDefaults fills every missing scale. A zero cannot be a valid percentage,
+// so it means the field was absent in an older file.
+func (f Fonts) withDefaults() Fonts {
+	if f.WorkspaceList <= 0 {
+		f.WorkspaceList = DefaultFontScale
+	}
+	if f.Chat <= 0 {
+		f.Chat = DefaultFontScale
+	}
+	if f.Composer <= 0 {
+		f.Composer = DefaultFontScale
+	}
+	if f.Git <= 0 {
+		f.Git = DefaultFontScale
+	}
+	return f
+}
+
 // Paths are explicit tool overrides. Node, Pi and CommandCode must be
 // absolute paths; Shell may be a name resolved from PATH.
 type Paths struct {
@@ -55,6 +97,9 @@ type File struct {
 	// Like Notifications, it defaults to true for older files and is written
 	// even when false.
 	DockBadge bool `json:"dockBadge"`
+	// Fonts scales the four text areas. A missing object keeps the default
+	// 100% everywhere.
+	Fonts Fonts `json:"fonts"`
 }
 
 // Store reads and writes one settings file. A nil Store or an empty path is
@@ -81,7 +126,12 @@ func (s *Store) Path() string {
 // at the current version. Other problems are returned together with whatever
 // fields could be decoded, so the caller can warn and continue.
 func defaults() File {
-	return File{Version: CurrentVersion, Notifications: true, DockBadge: true}
+	return File{
+		Version:       CurrentVersion,
+		Notifications: true,
+		DockBadge:     true,
+		Fonts:         DefaultFonts(),
+	}
 }
 
 func (s *Store) Load() (File, error) {
@@ -112,6 +162,7 @@ func (s *Store) Save(file File) error {
 	if file.Version <= 0 {
 		file.Version = CurrentVersion
 	}
+	file.Fonts = file.Fonts.withDefaults()
 	data, err := json.MarshalIndent(file, "", "  ")
 	if err != nil {
 		return fmt.Errorf("settings: encode: %w", err)
@@ -171,6 +222,9 @@ type rawFile struct {
 	// from an explicit false.
 	Notifications *bool `json:"notifications"`
 	DockBadge     *bool `json:"dockBadge"`
+	// A pointer tells an older file without fonts apart from an explicit
+	// object whose fields are still defaults.
+	Fonts *Fonts `json:"fonts"`
 }
 
 func decode(data []byte) (File, error) {
@@ -209,6 +263,9 @@ func decode(data []byte) (File, error) {
 	}
 	if raw.DockBadge != nil {
 		file.DockBadge = *raw.DockBadge
+	}
+	if raw.Fonts != nil {
+		file.Fonts = raw.Fonts.withDefaults()
 	}
 	return file, errors.Join(problems...)
 }
