@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync"
 
@@ -186,10 +187,20 @@ func (a *App) permissionDialog(c *mui.Context) {
 				mutedText(c, "Chat: "+p.Chat.name(), 11)
 			}
 			title := req.ToolCall.Title
-			if title == "" {
-				title = "The agent wants to use a tool."
+			description := toolDescription(req.ToolCall.RawInput)
+			if description != "" {
+				// The description says what the call does; the title often
+				// repeats the raw command, so it stays a muted subtitle.
+				mui.Text(c, description).FontSize(14)
+				if toolTitleAddsInfo(title, description) {
+					mutedText(c, title, 11)
+				}
+			} else {
+				if title == "" {
+					title = "The agent wants to use a tool."
+				}
+				mui.Text(c, title).FontSize(14)
 			}
-			mui.Text(c, title).FontSize(14)
 			if req.ToolCall.Kind != "" || req.ToolCall.Status != "" {
 				mutedText(c, strings.TrimSpace(req.ToolCall.Kind+" · "+req.ToolCall.Status), 11)
 			}
@@ -229,4 +240,32 @@ func (a *App) permissionDialog(c *mui.Context) {
 	if !answered && !a.PermissionOpen {
 		a.finishPermission(p, acp.CancelledPermission())
 	}
+}
+
+// toolDescription returns the agent's short explanation of a tool call.
+// Command Code puts it in rawInput.description for shell-like tools.
+func toolDescription(raw json.RawMessage) string {
+	var input struct {
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal(raw, &input); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(input.Description)
+}
+
+// toolTitleAddsInfo reports whether the title still carries information once
+// the description is the headline. Titles like "Agent: <description>" only
+// repeat it, while "Shell: <command>" stays useful.
+func toolTitleAddsInfo(title, description string) bool {
+	if title == "" || title == description {
+		return false
+	}
+	if _, detail, ok := strings.Cut(title, ": "); ok {
+		detail = strings.TrimSuffix(detail, "...")
+		if detail != "" && strings.HasPrefix(description, detail) {
+			return false
+		}
+	}
+	return true
 }

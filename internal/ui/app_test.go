@@ -81,6 +81,19 @@ func TestChatWithFakeAgent(t *testing.T) {
 	if !tt.HasText("Permission required") || !tt.HasText("Allow once") {
 		t.Fatalf("permission dialog missing; texts: %q", tt.Texts())
 	}
+	texts := tt.Texts()
+	descAt, inputAt := -1, -1
+	for i, text := range texts {
+		if text == "Echo a fake tool command" {
+			descAt = i
+		}
+		if text == "Input" {
+			inputAt = i
+		}
+	}
+	if descAt < 0 || inputAt < 0 || descAt > inputAt {
+		t.Fatalf("tool description is not above the input; texts: %q", texts)
+	}
 	if err := tt.Click("Allow once"); err != nil {
 		t.Fatal(err)
 	}

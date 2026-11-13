@@ -183,6 +183,7 @@ function requestPermission(turn) {
         title: 'Fake tool needs approval',
         kind: 'execute',
         status: 'pending',
+        rawInput: { command: 'echo fake', description: 'Echo a fake tool command' },
       },
       options: [
         { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' },
