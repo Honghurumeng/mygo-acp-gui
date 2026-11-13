@@ -17,6 +17,8 @@ func (a *App) persistSettings() {
 	file := settings.File{
 		Version:       settings.CurrentVersion,
 		Paths:         a.settingsPaths,
+		Appearance:    a.Appearance,
+		Theme:         a.Theme,
 		Notifications: a.NotificationsEnabled,
 		DockBadge:     a.DockBadgeEnabled,
 	}

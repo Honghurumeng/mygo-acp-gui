@@ -204,6 +204,11 @@ type App struct {
 	// category in its left column.
 	SettingsOpen    bool
 	SettingsSection string
+	// Appearance is the light/dark choice (system, light or dark). Theme names
+	// the colors (default, nord, solarized, catppuccin or claude). Both are
+	// persisted in settings.json and applied in View.
+	Appearance string
+	Theme      string
 	// NotificationsEnabled gates desktop notifications. It defaults to on and
 	// is persisted in settings.json.
 	NotificationsEnabled bool
@@ -354,6 +359,8 @@ func New(opts Options) *App {
 		RemovedWorkspaces:  make(map[string]bool),
 		savedSynced:        make(map[string]bool),
 
+		Appearance:           AppearanceSystem,
+		Theme:                ThemeDefault,
 		NotificationsEnabled: true,
 		DockBadgeEnabled:     true,
 		dockBadgeCount:       -1,
@@ -432,6 +439,8 @@ func (a *App) loadSettings(dataDir string, workspaceDefault bool) {
 	}
 	a.settingsPaths = file.Paths
 	a.preferredAgentID = file.LastAgent
+	a.Appearance = normalizeAppearance(file.Appearance)
+	a.Theme = normalizeTheme(file.Theme)
 	a.NotificationsEnabled = file.Notifications
 	a.DockBadgeEnabled = file.DockBadge
 	for _, workspace := range file.Workspaces {
@@ -623,6 +632,7 @@ func (a *App) nextChatID() int {
 // View builds the window: a collapsible workspace sidebar, a title bar, the
 // conversation with its composer, and the collapsible Git panel.
 func (a *App) View(c *mui.Context) {
+	a.applyTheme(c)
 	a.syncWorkspaces()
 	chat := a.activeChat()
 	if chat != nil {

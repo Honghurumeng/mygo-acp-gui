@@ -5,8 +5,8 @@
 当前实现是仓库根目录的 Go + MyGo 工程。
 
 ## 文档规则
-- 本文件最多 30 行，只放目标、铁律和文档索引。
-- 其余设计必须写进 `docs/design/` 下的单独文档；只要会超过 30 行，绝对改用单独文档记录。
+- 本文件最多 40 行，只放目标、铁律和文档索引。
+- 其余设计必须写进 `docs/design/` 下的单独文档；只要会超过 40 行，绝对改用单独文档记录。
 - 新增或修改设计后，同步更新下面的索引和对应文档。
 
 ## 设计文档
@@ -19,6 +19,7 @@
 - `docs/design/multi-session.md`：pi / Command Code 单进程多会话能力调查与结论。
 - `docs/design/git.md`：右侧 Git 面板、仓库探测、状态/图表、提交与 fetch/pull/push、异步与安全。
 - `docs/design/components.md`：本地 UI 组件层（widgets.go 样式、components.go 有状态组件、图标子集）、交互约定。
+- `docs/design/themes.md`：外观（system/light/dark）、主题目录（default/nord/solarized/catppuccin/claude）、持久化、原生外观同步。
 - `docs/design/plan.md`：测试、MVP 范围、后续、非目标、待定问题、参考链接。
 
 ## 铁律

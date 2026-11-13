@@ -95,6 +95,71 @@ func TestSettingsGearOpensPanelAndNotificationsPersist(t *testing.T) {
 	}
 }
 
+func TestSettingsAppearancePersists(t *testing.T) {
+	dataDir := t.TempDir()
+	app, tt := newSettingsApp(t, dataDir, t.TempDir())
+	tt.Frame()
+	if app.Appearance != AppearanceSystem || app.Theme != ThemeDefault {
+		t.Fatalf("defaults = %q/%q, want system/default", app.Appearance, app.Theme)
+	}
+
+	if err := tt.Click("Settings"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if err := tt.Click("Appearance"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	for _, want := range []string{"System", "Light", "Dark", "Default", "Nord", "Solarized", "Catppuccin", "Claude"} {
+		if !tt.HasText(want) {
+			t.Errorf("appearance settings missing %q; texts: %q", want, tt.Texts())
+		}
+	}
+
+	if err := tt.Click("Dark"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if app.Appearance != AppearanceDark {
+		t.Fatalf("appearance = %q, want dark", app.Appearance)
+	}
+	for _, choice := range []struct {
+		label string
+		want  string
+	}{
+		{"Theme: Solarized", ThemeSolarized},
+		{"Theme: Claude", ThemeClaude},
+	} {
+		if err := tt.Click(choice.label); err != nil {
+			t.Fatal(err)
+		}
+		tt.Frame()
+		if app.Theme != choice.want {
+			t.Fatalf("theme = %q, want %q", app.Theme, choice.want)
+		}
+	}
+
+	file := loadPersistedSettings(t, dataDir)
+	if file.Appearance != AppearanceDark || file.Theme != ThemeClaude {
+		t.Fatalf("persisted appearance/theme = %q/%q, want dark/claude", file.Appearance, file.Theme)
+	}
+
+	restarted := New(Options{
+		Version:   "test",
+		Workspace: app.Workspace,
+		DataDir:   dataDir,
+		Agents:    app.Agents,
+	})
+	t.Cleanup(func() {
+		restarted.Shutdown()
+		restarted.Flush()
+	})
+	if restarted.Appearance != AppearanceDark || restarted.Theme != ThemeClaude {
+		t.Fatalf("restored appearance/theme = %q/%q, want dark/claude", restarted.Appearance, restarted.Theme)
+	}
+}
+
 func TestSettingsTestNotification(t *testing.T) {
 	app, tt := newSettingsApp(t, t.TempDir(), t.TempDir())
 	notes := recordNotifications(app)

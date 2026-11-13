@@ -41,6 +41,12 @@ type File struct {
 	CollapsedWorkspaces []string `json:"collapsedWorkspaces,omitempty"`
 	MCPServers          []any    `json:"mcpServers,omitempty"`
 	Paths               Paths    `json:"paths,omitempty"`
+	// Appearance is the light/dark choice: system, light or dark. An empty
+	// value means system, so older files keep following the desktop.
+	Appearance string `json:"appearance,omitempty"`
+	// Theme names the colors: default, nord, solarized, catppuccin or claude.
+	// An empty value means default.
+	Theme string `json:"theme,omitempty"`
 	// Notifications enables desktop notifications. It defaults to true so
 	// older files without the field keep the previous behavior; the field is
 	// written even when false so turning notifications off survives a restart.
@@ -159,6 +165,8 @@ type rawFile struct {
 	CollapsedWorkspaces json.RawMessage `json:"collapsedWorkspaces"`
 	MCPServers          json.RawMessage `json:"mcpServers"`
 	Paths               Paths           `json:"paths"`
+	Appearance          string          `json:"appearance"`
+	Theme               string          `json:"theme"`
 	// Pointers distinguish an older file without the setting (default on)
 	// from an explicit false.
 	Notifications *bool `json:"notifications"`
@@ -194,6 +202,8 @@ func decode(data []byte) (File, error) {
 		}
 	}
 	file.Paths = sanitizePaths(raw.Paths, &problems)
+	file.Appearance = strings.TrimSpace(raw.Appearance)
+	file.Theme = strings.TrimSpace(raw.Theme)
 	if raw.Notifications != nil {
 		file.Notifications = *raw.Notifications
 	}

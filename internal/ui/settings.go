@@ -8,7 +8,10 @@ import (
 	mui "github.com/egoist/mygo/ui"
 )
 
-const settingsSectionNotifications = "notifications"
+const (
+	settingsSectionAppearance    = "appearance"
+	settingsSectionNotifications = "notifications"
+)
 
 const mcpExample = `[
   {
@@ -101,10 +104,13 @@ func (a *App) settingsDialog(c *mui.Context) {
 				mui.Column(c).Width(176).FillHeight().Gap(2).Padding(8).
 					Background(t.Surface).BorderWidth(0, 1, 0, 0).BorderColor(t.Border).
 					Children(func() {
+						a.settingsCategory(c, settingsSectionAppearance, "Appearance")
 						a.settingsCategory(c, settingsSectionNotifications, "Notifications")
 					})
 				mui.Column(c).Grow(1).FillHeight().Padding(18).Children(func() {
 					switch a.SettingsSection {
+					case settingsSectionAppearance:
+						a.appearanceSettings(c)
 					case settingsSectionNotifications:
 						a.notificationSettings(c)
 					}
@@ -135,6 +141,80 @@ func (a *App) settingsCategory(c *mui.Context, id, label string) {
 		a.SettingsSection = id
 		a.NotificationTestNotice = ""
 	}
+}
+
+func (a *App) appearanceSettings(c *mui.Context) {
+	dark := a.effectiveDark(c)
+	mui.Column(c).Gap(8).Children(func() {
+		mui.Text(c, "Appearance").FontSize(15).Bold()
+		mutedText(c, "System follows the desktop. Theme picks the colors used in light and dark.", 10)
+		mui.Row(c).Gap(6).Children(func() {
+			a.appearanceChoice(c, AppearanceSystem, "System")
+			a.appearanceChoice(c, AppearanceLight, "Light")
+			a.appearanceChoice(c, AppearanceDark, "Dark")
+		})
+		mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
+			mui.Text(c, "Theme").FontSize(12).Bold()
+			caption(c, "Previewed in the current appearance")
+		})
+		mui.Column(c).Gap(3).Children(func() {
+			for _, family := range themeFamilies {
+				a.themeChoice(c, family, dark)
+			}
+		})
+	})
+}
+
+func (a *App) appearanceChoice(c *mui.Context, value, label string) {
+	t := c.Theme()
+	selected := normalizeAppearance(a.Appearance) == value
+	choice := quietButton(c, label).FontSize(11).Role(mui.RoleRadio).AccessSelected(selected)
+	if selected {
+		choice.Background(t.Accent).TextColor(t.AccentText)
+	} else {
+		choice.Border(1, t.Border)
+	}
+	if choice.Clicked() {
+		a.setAppearance(value)
+	}
+}
+
+func (a *App) themeChoice(c *mui.Context, family themeFamily, dark bool) {
+	t := c.Theme()
+	selected := normalizeTheme(a.Theme) == family.id
+	row := mui.ButtonBase(c).FillWidth().Gap(8).Padding(4, 6).Radius(6).
+		Role(mui.RoleRadio).Label("Theme: " + family.name).AccessSelected(selected)
+	switch {
+	case selected:
+		row.Background(t.Accent.Alpha(0.14))
+	case row.Hovered():
+		row.Background(t.SurfaceHover)
+	}
+	row.Children(func() {
+		preview := themePreview(family, dark)
+		mui.Row(c).Gap(3).Shrink(0).Children(func() {
+			themeSwatch(c, preview.Background, preview.Border)
+			themeSwatch(c, preview.Surface, preview.Border)
+			themeSwatch(c, preview.Accent, preview.Accent)
+			themeSwatch(c, preview.Text, preview.Text)
+		})
+		mui.Column(c).Gap(0).Grow(1).MinWidth(0).Children(func() {
+			mui.Row(c).Gap(5).AlignItems(mui.Center).Children(func() {
+				mui.Text(c, family.name).FontSize(11).Bold()
+				if selected {
+					mui.Text(c, "✓").FontSize(9).TextColor(t.Accent)
+				}
+			})
+			mutedText(c, family.note, 9).SingleLine()
+		})
+	})
+	if row.Clicked() {
+		a.setTheme(family.id)
+	}
+}
+
+func themeSwatch(c *mui.Context, fill, border mui.Color) {
+	mui.Box(c).Size(12, 12).Radius(3).Background(fill).Border(1, border)
 }
 
 func (a *App) notificationSettings(c *mui.Context) {

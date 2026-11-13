@@ -43,6 +43,8 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 			map[string]any{"name": "demo", "command": "true"},
 		},
 		Paths:         Paths{Shell: "/bin/zsh", Node: "/usr/local/bin/node"},
+		Appearance:    "dark",
+		Theme:         "solarized",
 		Notifications: true,
 		DockBadge:     true,
 	}
@@ -89,6 +91,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if got.Paths != want.Paths {
 		t.Errorf("paths = %+v, want %+v", got.Paths, want.Paths)
+	}
+	if got.Appearance != want.Appearance || got.Theme != want.Theme {
+		t.Errorf("appearance/theme = %q/%q, want %q/%q", got.Appearance, got.Theme, want.Appearance, want.Theme)
 	}
 	if !got.Notifications {
 		t.Error("notifications were not restored")

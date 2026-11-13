@@ -78,7 +78,7 @@
   - 代码体：`editor.LanguageNamed(lang)` 取 tokenizer，`editor.DefaultTheme(c.Theme())` 取颜色，逐行
     `Tokenize` 后转成 `mui.Span` 用 `RichText` 画；等宽 `t.Rem(0.8)`、行高 1.6、带行号、长行 `Wrap`。
   - 复制：`c.WriteClipboard(code)`，`mui.Local` 记 2 秒「已复制」，期间图标换成 `check`；不播声音。
-- 所有组件从 `c.Theme()` 取色，不硬编码颜色，也不判断深浅色。
+- 所有组件从 `c.Theme()` 取色，不硬编码颜色，也不判断深浅色。唯一例外是阴影的黑色 alpha；主题目录和外观切换见 [themes.md](themes.md)。
 
 ## 使用位置
 
@@ -118,4 +118,4 @@ go test ./internal/ui -count=5
 ```
 
 再跑一次真实界面：空状态四种、权限弹窗（遮罩/Esc 不关闭、`Input` 在 description 之后、复制）、
-Git diff 四态（加载、错误、两边相同、正常），深浅色各看一遍（组件按 `c.Theme()` 取色，主题由 MyGo 提供）。
+Git diff 四态（加载、错误、两边相同、正常），每个外观和配色各看一遍（组件按 `c.Theme()` 取色，主题目录见 [themes.md](themes.md)）。

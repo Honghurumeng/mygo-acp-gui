@@ -58,7 +58,8 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 
 ## 设置面板
 
-- 侧栏左下角 agent 状态（名称、CLI 版本、ready 等状态）右侧的齿轮按钮打开设置面板；也可以从代码调用 `openSettings`。面板左侧是分类列表，右侧是选中分类的内容，当前只有 `Notifications`，后续分类在同一 `SettingsSection` 切换。
+- 侧栏左下角 agent 状态（名称、CLI 版本、ready 等状态）右侧的齿轮按钮打开设置面板；也可以从代码调用 `openSettings`。面板左侧是分类列表，右侧是选中分类的内容，当前有 `Appearance` 和 `Notifications`，后续分类在同一 `SettingsSection` 切换。
+- `Appearance` 分类提供 `System`/`Light`/`Dark` 外观和 `Default`/`Nord`/`Solarized`/`Catppuccin`/`Claude` 配色，改动立即生效并写入 `settings.json`；详见 [themes.md](themes.md)。
 - 开关改动立即生效并写入 `settings.json`；测试按钮发送一条标题为 `ACP GUI` 的桌面通知，不依赖窗口焦点，用于检查系统通知权限。通知关闭时测试按钮禁用，并提示先开启。
 - `Dock badge` 开关与系统通知开关并列，独立持久化；切换后立即重算或清空角标。默认开启，不依赖通知开关。
 - MCP 编辑仍走顶部 `MCP…` 的独立模态，因为它修改的是当前会话的服务器列表，不放进通用设置分类。

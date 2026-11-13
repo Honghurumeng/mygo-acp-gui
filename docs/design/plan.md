@@ -124,11 +124,12 @@ scripts/vendor-pi-acp.sh             # 仅在升级 pi-acp 时运行
 - [x] 系统 Node / pi / command-code 定位（登录 shell + 绝对路径覆盖）+ 登录指引（只展示，不代登录）
 - [x] Command Code 启动与完整聊天流程：initialize、session/new、流式、权限、取消、退出清理
 - [x] 退出清理（Setpgid + 进程组 SIGTERM/SIGKILL）
-- [x] settings.json 持久化（上次 agent/工作区、侧栏工作区列表 + `removedWorkspaces` 软删除、MCP 默认值、paths 覆盖；原子写入 + 容错加载）
+- [x] settings.json 持久化（上次 agent/工作区、侧栏工作区列表 + `removedWorkspaces` 软删除、MCP 默认值、paths 覆盖、外观/主题；原子写入 + 容错加载）
 - [x] 错误诊断面板、stderr 日志滚动（Diagnostics 模态 + `logs/<agent>.log`，1 MiB 滚动）
 - [x] 基础测试：framing、launch spec、登录 shell 解析、fake agent 会话、UI 发送/流式/停止/权限、进程组清理
 - [x] 新能力测试：probe、config/mode、list/load/close、侧栏已保存会话 UI、图片 prompt、MCP 校验、命令面板、图片发送 UI、设置持久化、诊断面板与日志滚动
 - [x] 存档测试：文件读写/容错、重命名与软删除跨重启、删除后同步不复活、按记录的 agent load、工作区软删除/恢复跨重启
+- [x] 主题系统：System/Light/Dark 外观 + Default/Nord/Solarized/Catppuccin/Claude 配色，设置面板切换、跨重启恢复、原生窗口外观同步（见 [themes.md](themes.md)）
 
 ## 后续
 
@@ -153,6 +154,7 @@ scripts/vendor-pi-acp.sh             # 仅在升级 pi-acp 时运行
 - 不声明 `fs` / `terminal` 能力
 - 不捆绑、不安装、不升级 Node；默认用户电脑上已有 Node 22+
 - 不实现登录流程、不内嵌终端；模型凭据/可用性由用户自理
+- 不做用户 JSON 主题、在线主题库或逐主题代码高亮（当前 token 色仍由 GitHub 浅/深色板提供）
 
 ## 待定问题
 

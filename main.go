@@ -32,6 +32,9 @@ func main() {
 			win.Focus()
 			return
 		}
+		// Set the native chrome before the first frame so a forced light or
+		// dark appearance does not flash the desktop's opposite.
+		gui.ApplyAppearance()
 		window := mygo.NewWindow(mygo.WindowOptions{
 			Title:     "ACP GUI",
 			Width:     1240,
