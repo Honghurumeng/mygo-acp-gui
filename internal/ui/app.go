@@ -937,6 +937,11 @@ func (a *App) planPanel(c *mui.Context, chat *Chat) {
 	})
 }
 
+// chatMaxWidth is the measure of a conversation row: replies (including the
+// thinking block), tool cards and notices stop at the same width instead of
+// stretching across a wide window.
+const chatMaxWidth float32 = 960
+
 func (a *App) message(c *mui.Context, m *Message) {
 	t := c.Theme()
 	switch m.Role {
@@ -957,7 +962,7 @@ func (a *App) message(c *mui.Context, m *Message) {
 			})
 		})
 	case RoleAssistant:
-		mui.Column(c).MaxWidth(760).Children(func() {
+		mui.Column(c).MaxWidth(chatMaxWidth).Children(func() {
 			if m.Thought != "" {
 				mui.Collapsible(c, "Thinking", &m.ShowThought, func() {
 					mutedText(c, m.Thought, a.chatFont(12)).Selectable()
@@ -979,7 +984,8 @@ func (a *App) message(c *mui.Context, m *Message) {
 	case RoleTool:
 		a.toolMessage(c, m)
 	case RoleError:
-		mui.Text(c, "⚠ "+m.Text).FontSize(a.chatBodyFont(c)).TextColor(t.Danger).Selectable()
+		mui.Text(c, "⚠ "+m.Text).MaxWidth(chatMaxWidth).FontSize(a.chatBodyFont(c)).
+			TextColor(t.Danger).Selectable()
 	case RoleSystem:
 		color := t.TextMuted
 		switch m.NoticeLevel {
@@ -988,10 +994,11 @@ func (a *App) message(c *mui.Context, m *Message) {
 		case "error":
 			color = t.Danger
 		}
-		mui.Text(c, m.Text).FontSize(a.chatBodyFont(c)).TextColor(color).TextAlign(mui.Center)
+		mui.Text(c, m.Text).MaxWidth(chatMaxWidth).FontSize(a.chatBodyFont(c)).
+			TextColor(color).TextAlign(mui.Center)
 	case RoleTurn:
 		if m.Elapsed > 0 {
-			mui.Row(c).Children(func() {
+			mui.Row(c).MaxWidth(chatMaxWidth).Children(func() {
 				mui.Spacer(c)
 				mutedText(c, "Took "+formatElapsed(m.Elapsed), a.chatFont(9)).Shrink(0).Tooltip("Runtime of this turn")
 			})
@@ -1014,7 +1021,7 @@ func (a *App) toolMessage(c *mui.Context, m *Message) {
 	case "in_progress", "pending":
 		statusColor = t.Warning
 	}
-	surfaceCard(c, mui.Column(c).Gap(3).Padding(8, 10)).Children(func() {
+	surfaceCard(c, mui.Column(c).Gap(3).MaxWidth(chatMaxWidth).Padding(8, 10)).Children(func() {
 		// Created inside the card: nodes join their parent as they are built,
 		// so a trigger built before it would sit outside the card's surface.
 		parts := mui.CollapsibleBase(c, &m.DetailOpen)
