@@ -6,7 +6,7 @@ pi-acp 已按「单文件 bundle」方式 vendor 到仓库，构建一次后固�
 
 ```
 resources/agents/pi-acp/
-  pi-acp.bundle.mjs      唯一运行时入口（~456 KiB）
+  pi-acp.bundle.mjs      唯一运行时入口（~462 KiB）
   package.json           生成的元数据，仅供 agentInfo 读取（不要删）
   VERSION                0.4.0
   LICENSE                pi-acp 的 MIT 协议
@@ -27,9 +27,9 @@ resources/agents/pi-acp/
 | esbuild（仅构建期） | `0.28.2` | — |
 
 `pi-acp.bundle.mjs` 的 sha256：
-`61f648af1c1a4365904ce076ac78c4bb582db566d106ac59a2a93990c25bb8ee`
+`34302d3b79903cca3ae2cfa42e732d6e561ad49e599b34cfea14f251c7b18058`
 
-当前 bundle 来自本地 fork（`pi-acp-main`，上游 0.4.0 + usage/推理强度/thinking/图片回放/会话标题/工具标题补丁），不是 npm 上的原版 0.4.0；差异和重打步骤见 [pi-fork.md](pi-fork.md)。
+当前 bundle 来自本地 fork（`pi-acp-main`，上游 0.4.0 + usage/推理强度/thinking/图片/失败轮次与消息时间回放/会话标题/工具标题补丁），不是 npm 上的原版 0.4.0；差异和重打步骤见 [pi-fork.md](pi-fork.md)。
 
 应用启动时直接执行这个文件：
 
@@ -45,7 +45,7 @@ cmd := exec.Command(nodePath, bundle)
 
 - 只拷 `dist/index.js` 不够：它仍 `import "@agentclientprotocol/sdk"`，而 SDK 依赖 `zod`；完整依赖树约 7.1 MB。
 - 不走 npx：npx 需要联网、版本漂移、启动慢，且从 Finder 启动时 PATH 不可靠。
-- 单文件 bundle：离线可用、启动确定、体积小（456 KiB）；代价只是升级时要跑一次脚本，已自动化。
+- 单文件 bundle：离线可用、启动确定、体积小（462 KiB）；代价只是升级时要跑一次脚本，已自动化。
 
 ## 构建 / 升级
 

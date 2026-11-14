@@ -59,6 +59,21 @@ func TestParseEventPiAcpMeta(t *testing.T) {
 	}
 }
 
+func TestParseEventReplayMeta(t *testing.T) {
+	update := `{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"hi"},` +
+		`"_meta":{"piAcp":{"replay":{"key":"replay-3","timestamp":1700000000000}}}}`
+	ev := parseEvent(nil, json.RawMessage(`{"sessionId":"s","update":`+update+`}`))
+	if ev == nil || ev.Replay == nil {
+		t.Fatalf("replay meta not parsed: %+v", ev)
+	}
+	if ev.Replay.Key != "replay-3" {
+		t.Errorf("key = %q", ev.Replay.Key)
+	}
+	if got, want := ev.Replay.Timestamp.UnixMilli(), int64(1700000000000); got != want {
+		t.Errorf("timestamp = %d, want %d", got, want)
+	}
+}
+
 func TestParseEventKeepsImageContentBlocks(t *testing.T) {
 	update := `{"sessionUpdate":"user_message_chunk","content":{"type":"image","mimeType":"image/png","data":"aGVsbG8="}}`
 	ev := parseEvent(nil, json.RawMessage(`{"sessionId":"s","update":`+update+`}`))

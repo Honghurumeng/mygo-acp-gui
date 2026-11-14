@@ -723,6 +723,7 @@ func (a *App) resetConversation(chat *Chat) {
 	chat.Title = ""
 	chat.Unread = false
 	chat.replaying = false
+	chat.replayKey = ""
 	chat.ModelOpen = false
 	chat.ModeOpen = false
 	chat.MenuOpen = false
@@ -1084,6 +1085,7 @@ func (a *App) finishReplay(chat *Chat) {
 	}
 	chat.turn = nil
 	chat.replaying = false
+	chat.replayKey = ""
 }
 
 func (a *App) applyUpdate(chat *Chat, ev session.Event) {
@@ -1171,14 +1173,31 @@ func (a *App) applyUpdate(chat *Chat, ev session.Event) {
 	if ev.Kind == session.UpdateMessageChunk || ev.Kind == session.UpdateUserChunk || ev.Kind == session.UpdateThoughtChunk {
 		hasImages := hasImageContent(ev.Content)
 		if ev.Text == "" && !hasImages {
-			return
+			// An empty user chunk still marks a persisted turn, so a new replay
+			// key must create its row instead of being dropped.
+			newUserMessage := chat.replaying && ev.Kind == session.UpdateUserChunk &&
+				ev.Replay != nil && ev.Replay.Key != "" && ev.Replay.Key != chat.replayKey
+			if !newUserMessage {
+				return
+			}
 		}
 		if chat.replaying {
 			role := RoleAssistant
 			if ev.Kind == session.UpdateUserChunk {
 				role = RoleUser
 			}
-			msg := a.replayMessage(chat, role)
+			newRow := false
+			if ev.Replay != nil && ev.Replay.Key != "" && ev.Replay.Key != chat.replayKey {
+				// An empty assistant message (a failed turn) produces no chunk
+				// between two user prompts. The persisted-message key keeps
+				// those prompts from merging into one row.
+				newRow = true
+				chat.replayKey = ev.Replay.Key
+			}
+			msg := a.replayMessage(chat, role, newRow)
+			if role == RoleUser && msg.SentAt.IsZero() && ev.Replay != nil && !ev.Replay.Timestamp.IsZero() {
+				msg.SentAt = ev.Replay.Timestamp
+			}
 			if ev.Kind == session.UpdateThoughtChunk {
 				msg.Thought += ev.Text
 			} else {
@@ -1197,7 +1216,7 @@ func (a *App) applyUpdate(chat *Chat, ev session.Event) {
 		turn.assistant.Text += ev.Text
 		a.addMessageImages(chat, turn.assistant, ev.Content)
 	case session.UpdateUserChunk:
-		msg := a.replayMessage(chat, RoleUser)
+		msg := a.replayMessage(chat, RoleUser, false)
 		msg.Text += ev.Text
 		a.addMessageImages(chat, msg, ev.Content)
 	case session.UpdateThoughtChunk:
@@ -1316,10 +1335,12 @@ func (a *App) ensureTurn(chat *Chat, needAssistant bool) *turnState {
 }
 
 // replayMessage appends to the current row of role, or starts a new row.
-func (a *App) replayMessage(chat *Chat, role MessageRole) *Message {
+// forceNew starts a row even when the previous row has the same role; replay
+// uses it when the agent reports a new persisted message.
+func (a *App) replayMessage(chat *Chat, role MessageRole, forceNew bool) *Message {
 	if n := len(chat.Messages); n > 0 {
 		last := chat.Messages[n-1]
-		if last.Role == role && !last.Done {
+		if !forceNew && last.Role == role && !last.Done {
 			return last
 		}
 		last.Done = true
@@ -1392,6 +1413,7 @@ func (a *App) applyExit(chat *Chat, exit session.Exit) {
 	chat.Cancelling = false
 	chat.Info = session.Info{}
 	chat.replaying = false
+	chat.replayKey = ""
 	if chat.turn != nil {
 		if chat.turn.assistant != nil {
 			chat.turn.assistant.Done = true

@@ -1,11 +1,11 @@
 # pi-acp fork 修改清单
 
-目标：fork `https://github.com/georgeharker/pi-acp`（vendored 0.4.0 的来源），让 pi 通过 ACP 发出上下文用量、单轮用量，正确暴露当前模型的推理强度，在历史回放里保留 thinking 和图片，并让工具调用标题带上具体目标。客户端仍然只运行 vendored bundle，不引入运行时 npm/npx。
+目标：fork `https://github.com/georgeharker/pi-acp`（vendored 0.4.0 的来源），让 pi 通过 ACP 发出上下文用量、单轮用量，正确暴露当前模型的推理强度，在历史回放里保留 thinking、图片、失败轮次和消息边界/时间，并让工具调用标题带上具体目标。客户端仍然只运行 vendored bundle，不引入运行时 npm/npx。
 
 状态：已实施。本地源码在仓库根目录的 `pi-acp-main/`（被 `.gitignore` 忽略，不随主仓库提交），产物已重新打包到 `resources/agents/pi-acp/`。
 
-- bundle sha256：`61f648af1c1a4365904ce076ac78c4bb582db566d106ac59a2a93990c25bb8ee`
-- 体积：460 KiB
+- bundle sha256：`34302d3b79903cca3ae2cfa42e732d6e561ad49e599b34cfea14f251c7b18058`
+- 体积：462 KiB
 - 上游基线：`@geohar/pi-acp@0.4.0`
 
 ## 1. fork 源码
@@ -112,6 +112,24 @@ fork 改动：
 - 测试：`test/unit/pi-messages.test.ts`、`test/component/session-load-images.test.ts`。
 
 GUI 侧 `internal/session/events.go` 保留消息块的完整 `Content`，`internal/ui/attachments.go` 在 replay 时按 ACP image 块异步解码成缩略图，因此图片与文本顺序一致，且和 Command Code 的回放行为一致。
+
+### 历史回放的消息边界、时间与失败轮次
+
+pi 把请求失败持久化成 assistant 消息：`content: []`、`stopReason: "error"`、`errorMessage: "..."`。上游 `loadSession` 只为 text/thinking 块发 chunk，因此失败轮次在回放里完全消失。GUI 过去按角色合并连续 chunk；两个相邻 user 消息（中间只有失败轮次）会被并成一条，用户轮次序号随之减少，`sessions.json` 里按序号匹配的 `sentAt` / `durationMs` 全部错位。真实会话里连续三次 `hello` 请求失败，重载后曾显示成一条消息且三组时间互相错位。
+
+fork 改动（`src/acp/agent.ts` 的 `loadSession`）：
+
+- 每条回放的 user / assistant chunk 带 `_meta.piAcp.replay = { key: "replay-<index>", timestamp: <pi message.timestamp, ms> }`。`key` 是本次回放内持久化消息的稳定标识，客户端据此换行，不再依赖角色变化。
+- 空内容的 user 消息也发一个空 text chunk，保留轮次计数。
+- `content` 为空且 `stopReason` 为 `error` / `aborted` 时，发一条 `agent_message_chunk`：正文为 `Turn failed: <errorMessage>` 或 `Turn aborted.`，带 `_meta.piAcp.notice = { kind: "turn_error", level: "error" | "warning" }`，让失败轮次在恢复后可见。
+- 测试：`test/component/session-load-failed-turn.test.ts`。
+
+GUI 侧：
+
+- `internal/session/events.go` 解析 `_meta.piAcp.replay` 为 `Event.Replay{Key, Timestamp}`。
+- `internal/ui/session.go` 在 replay 时按 `Key` 强制新行；用户消息直接用 pi 的 `timestamp` 填 `Message.SentAt`，比按本地序号匹配更可靠。
+- `sessions.json` 的 `durationMs` 仍按用户轮次恢复；因为边界不再丢失，`Took …` 行会回到正确位置。
+- 测试：`internal/ui/replay_test.go`、`internal/session/events_test.go`。
 
 ### ACP 状态文本
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/reed/acp-gui/internal/acp"
 )
@@ -44,6 +45,11 @@ type Event struct {
 	// Notice marks adapter status text (retry, compaction, queue, extension
 	// notification) that must not be appended to the assistant message.
 	Notice *Notice
+	// Replay identifies one persisted message during session/load. Chunks of
+	// the same message share Key; a different Key starts a new row even when
+	// the previous persisted message produced no visible chunk (for example a
+	// failed turn with empty content). Timestamp is the agent's send time.
+	Replay *Replay
 	// Content holds the message chunk's blocks. Text is their concatenated
 	// text; images and resource blocks are kept so replay can render them
 	// instead of dropping everything but text.
@@ -55,6 +61,12 @@ type Event struct {
 type Notice struct {
 	Kind  string
 	Level string
+}
+
+// Replay is the per-message metadata pi-acp attaches to session/load chunks.
+type Replay struct {
+	Key       string
+	Timestamp time.Time
 }
 
 // ToolCall is the common shape of tool_call and tool_call_update.
@@ -187,6 +199,10 @@ func parseEvent(s *Session, params json.RawMessage) *Event {
 				Notify *struct {
 					Level string `json:"level"`
 				} `json:"notify"`
+				Replay *struct {
+					Key       string          `json:"key"`
+					Timestamp json.RawMessage `json:"timestamp"`
+				} `json:"replay"`
 			} `json:"piAcp"`
 		} `json:"_meta"`
 	}
@@ -197,6 +213,12 @@ func parseEvent(s *Session, params json.RawMessage) *Event {
 			ev.Notice = &Notice{Kind: pi.Notice.Kind, Level: pi.Notice.Level}
 		} else if pi.Notify != nil {
 			ev.Notice = &Notice{Kind: "extension", Level: pi.Notify.Level}
+		}
+		if pi.Replay != nil {
+			ev.Replay = &Replay{Key: strings.TrimSpace(pi.Replay.Key)}
+			if at, ok := replayTimestamp(pi.Replay.Timestamp); ok {
+				ev.Replay.Timestamp = at
+			}
 		}
 	}
 	switch head.Kind {
@@ -291,6 +313,25 @@ func blocksText(blocks []acp.ContentBlock) string {
 		}
 	}
 	return text.String()
+}
+
+// replayTimestamp accepts the millisecond number pi-acp sends for a persisted
+// message. An RFC3339 string is tolerated for forward compatibility.
+func replayTimestamp(raw json.RawMessage) (time.Time, bool) {
+	if len(raw) == 0 {
+		return time.Time{}, false
+	}
+	var ms int64
+	if json.Unmarshal(raw, &ms) == nil && ms > 0 {
+		return time.UnixMilli(ms), true
+	}
+	var text string
+	if json.Unmarshal(raw, &text) == nil {
+		if at, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(text)); err == nil {
+			return at, true
+		}
+	}
+	return time.Time{}, false
 }
 
 func parseToolCall(raw json.RawMessage) ToolCall {

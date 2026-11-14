@@ -89,7 +89,7 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 
 - `show`：`true` 正常显示；`false` 表示用户删除，只从侧栏隐藏，记录不删。
 - `showName`：用户重命名后的显示名，优先于 agent 返回的 `title`。
-- `userTurns`：用户每条消息的本地发送时间和该轮运行时间，形如 `[{number, sentAt, durationMs}]`；`number` 是会话中从 1 开始的用户轮次。ACP 历史本身没有时间或耗时，Jump 弹窗用 `sentAt` 在重启后显示发送时间，会话流用 `durationMs` 在重放后重现 `Took …`。
+- `userTurns`：用户每条消息的本地发送时间和该轮运行时间，形如 `[{number, sentAt, durationMs}]`；`number` 是会话中从 1 开始的用户轮次。pi 的 fork 在回放里自带每条消息的时间，Command Code 没有；没有 agent 时间时 Jump 弹窗用这里的 `sentAt`，会话流用 `durationMs` 在重放后重现 `Took …`。
 
 记录结构：`{agentId, sessionId, cwd, title, showName, createdAt, updatedAt, userTurns, show}`；`userTurns` 条目为 `{number, sentAt, durationMs}`；`(agentId, sessionId)` 唯一，这样不同 agent 的相同 session ID 不会互相覆盖。
 
@@ -97,8 +97,8 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 
 - 启动时先读存档并立即按 `cwd` 分组展示，不等 agent 发现，也不自动调 `session/list`。已打开会话不重复显示。
 - session/new / load 成功、标题更新和一轮结束后，自动把 session ID、agent、cwd、agent title 和 `updatedAt` 写进存档；不覆盖 `show/showName`。
-- App 不在本地保存消息正文，只保存用户消息的发送时间和每轮运行时间；右侧历史正文仍只能由 agent 重放。点击存档行按记录中的 `agentId` 启动/复用对应 agent，并执行 `session/load` 重放历史；当前会话已有消息、流式、目标 agent 与当前进程不同，或 `cwd` 与当前进程工作区不同时，在新标签页用该会话的 `cwd` 新建进程（Command Code 的 ACP 进程只服务启动时的工作区）。重放时按用户轮次把 `userTurns` 里的时间贴回对应消息；没有本地记录的历史消息显示 `—`，不借用相邻消息的时间。
-- 一轮结束后，从 prompt 发送到结果返回的耗时写入该轮 `durationMs`，并在会话流末尾追加一行右对齐的 muted `Took 1m 23s`；取消和错误也计算到结束为止。`session/load` 重放时按轮次把同样的行插到下一轮用户消息之前（最后一轮放在历史末尾）；没有本地记录的历史轮次不显示，也不猜测耗时。
+- App 不在本地保存消息正文，只保存用户消息的发送时间和每轮运行时间；右侧历史正文仍只能由 agent 重放。点击存档行按记录中的 `agentId` 启动/复用对应 agent，并执行 `session/load` 重放历史；当前会话已有消息、流式、目标 agent 与当前进程不同，或 `cwd` 与当前进程工作区不同时，在新标签页用该会话的 `cwd` 新建进程（Command Code 的 ACP 进程只服务启动时的工作区）。pi 回放时优先用 agent 给出的每条消息时间；其他 agent 或没有 replay 元数据时，按用户轮次把 `userTurns` 里的时间贴回对应消息。两者都没有的历史消息显示 `—`，不借用相邻消息的时间。
+- 一轮结束后，从 prompt 发送到结果返回的耗时写入该轮 `durationMs`，并在会话流末尾追加一行右对齐的 muted `Took 1m 23s`；取消和错误也计算到结束为止。`session/load` 重放时按轮次把同样的行插到下一轮用户消息之前（最后一轮放在历史末尾）；没有本地记录的历史轮次不显示，也不猜测耗时。失败轮次也占一个用户轮次，不能被下一条用户消息吞并，否则后续时间和 `Took` 行会整体错位。
 - 行尾 `⋯` 只提供 Rename、Delete；打开存档一律走 load。Rename 写 `showName`；Delete 只写 `show=false`，不关 agent 的外部历史。
 - 默认不显示 `show=false` 的行；侧栏 “Show deleted (N)” 展开，`⋯` → Restore 恢复。
 - discovery 完成后，每个 ready agent 会在后台自动拉一次 `session/list` 合并进存档；即使从未连接过该 agent，新增工作区也能看到它的历史。之后该 agent 首次连接成功时再同步一次，用来重试启动时失败的导入。请求显式发送 `cwd: null`（不是省略字段）表示全部工作区，并跟随 `nextCursor` 取完所有分页；否则 pi-acp 会回退到当前进程工作区，只导入一个工作区的历史。有该 agent 的已连接进程（后台标签页也算）时直接复用，否则临时 spawn 一次。同步失败（超时、进程退出）会清除该 agent 的已同步标记，下次连接重试。
@@ -107,7 +107,8 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 - 从其他工作区打开时，把存档里的 `cwd` 传给 load、加入侧栏工作区列表；路径比较解析 symlink，避免同一目录出现两个分组。
 - 存档写入是原子的（同目录临时文件 + rename，0600）。文件缺失视为空；损坏 JSON、未来版本、缺少 agentId/sessionId 或重复记录只产生侧栏警告，其余记录照常展示，不阻塞启动。
 - 历史重放事件在 `Start` 阶段缓冲，UI 安装好 Session 后调用 `Activate` 按顺序消费，避免丢失。`user_message_chunk` 的 image 内容块按顺序解码成消息缩略图：pi 和 Command Code 的 `session/load` 都会回放用户图片，不再只保留文本。
-- 重放中的 `user_message_chunk`、`agent_message_chunk` 和 `agent_thought_chunk` 合并成连续的用户/助手行，结束后统一标记 Done。
+- 重放中的 `user_message_chunk`、`agent_message_chunk` 和 `agent_thought_chunk` 合并成连续的用户/助手行，结束后统一标记 Done。pi-acp 给每条持久化消息带 `_meta.piAcp.replay.key`；key 变化时强制新行，因此失败 assistant（空内容、无 chunk）两侧的 user 消息不会粘连。空的 user 消息也会保留一行，保证轮次计数。
+- pi 的失败轮次回放成居中的 `Turn failed: …` / `Turn aborted.` 系统行，不再从恢复后的历史里消失。
 - `agent_thought_chunk`（实时 `thinking_delta` 和历史回放都走这个类型）累积到当前助手行的 `Thought`，渲染为回答上方的「Thinking」折叠块，默认收起；只有推理没有正文的空行不会画出来。
 
 ## 图片
@@ -174,7 +175,7 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 
 - composer 底栏左下角（附件 `＋` 右侧）的 `Jump` 打开“Jump to a message”弹窗；当前会话还没有用户发言时按钮禁用。
 - 列表直接读 `Chat.Messages` 里的 `RoleUser` 行，包括 `session/load` 重放的发言和正在回答的 prompt；助手、工具、系统提示和错误不进列表。
-- 按时间正序显示（旧的在上、新的在下），序号按用户自己的发言轮次从 1 递增；每条显示单行预览（超过 180 个字符按 rune 截断）和发送时间，只有图片的发言显示图片数量。发送时间在今天就只显示 `15:04`，同年显示 `Jan 2 15:04`，跨年显示 `Jan 2, 2006 15:04`；没有本地记录的历史消息显示 `—`（tooltip 说明来源），不猜测时间。点条目或打开弹窗不会重发 prompt、不改变会话。
+- 按时间正序显示（旧的在上、新的在下），序号按用户自己的发言轮次从 1 递增；每条显示单行预览（超过 180 个字符按 rune 截断）和发送时间，只有图片的发言显示图片数量。发送时间在今天就只显示 `15:04`，同年显示 `Jan 2 15:04`，跨年显示 `Jan 2, 2006 15:04`；没有 agent 时间或本地记录的历史消息显示 `—`（tooltip 说明来源），不猜测时间。点条目或打开弹窗不会重发 prompt、不改变会话。
 - 列表区域最大高度 380 DIP，并按窗口高度收缩；超出时在弹窗内滚动。弹窗打开时先滚到最新一条（底部），再向上翻看旧发言。
 - 点击条目关闭弹窗并调用 `chat.list.ScrollTo(row, Start)`，把该发言滚到消息区顶部；只影响当前会话的滚动位置。
 

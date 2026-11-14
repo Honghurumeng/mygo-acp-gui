@@ -108,6 +108,10 @@ type Chat struct {
 	pendingSessionAction string
 	pendingSessionTitle  string
 	replaying            bool
+	// replayKey is the persisted message the current replay chunks belong
+	// to. pi-acp tags each chunk, so a new key starts a new row even when
+	// the preceding message produced no visible chunk (a failed turn).
+	replayKey string
 
 	Closed bool
 
@@ -307,6 +311,7 @@ func (c *Chat) restore(state conversationState) {
 	c.FileRefs = state.files
 	c.LastStop = state.lastStop
 	c.replaying = false
+	c.replayKey = ""
 	c.Streaming = false
 	c.Cancelling = false
 }
