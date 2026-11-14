@@ -43,6 +43,8 @@ a.gitFont(size)       // Git 面板
   这样 MyGo 的系统字号缩放不会被覆盖。
 - Git 面板例外：commit message 输入框与 Staged/Changes 行同为内置 10 DIP 基准，只乘 Git 百分比，
   一个设置管住整个面板的正文。
+- 右侧 `Tasks` tab 与 Git 共用同一个 `gitFont` 缩放，包括任务行、Run/Stop 按钮和 Markdown / Diff
+  总结卡片；任务编辑/删除模态沿用全局模态字号。仍只有四个设置项，不新增第五个区域。
 - Markdown 只设置 `a.MD.Theme = &markdown.Theme{FontSize: ...}`，颜色和间距仍由当前主题的
   `markdown.DefaultTheme` 解析；标题和代码块按 em 跟随正文字号。
 - 区域内的 `mutedText` / `caption` / `sectionLabel` 用 `workspaceFont`、`chatFont`、

@@ -98,6 +98,18 @@ type Chat struct {
 	// Connect runs first, then the prompt is sent.
 	pendingSend bool
 
+	// TaskTitle labels a chat created by the serial task runner. It stays
+	// after completion so the conversation is still identifiable in the
+	// sidebar. taskActive locks the composer and session switching while
+	// the runner owns this chat.
+	TaskTitle  string
+	taskActive bool
+	// onConnect receives a task runner's connect result; onTurnEnd receives
+	// each finished prompt exactly once, including an agent exit during the
+	// turn. Both run on the UI thread and are nil for normal chats.
+	onConnect func(error)
+	onTurnEnd func(*turnState, acp.PromptResult, error)
+
 	gitWorkspace  string
 	gitBranchName string
 
@@ -130,6 +142,9 @@ type Chat struct {
 func (c *Chat) name() string {
 	if c == nil {
 		return ""
+	}
+	if title := strings.TrimSpace(c.TaskTitle); title != "" {
+		return "Task: " + singleLine(title)
 	}
 	if title := strings.TrimSpace(c.Title); title != "" {
 		// Views give the full label a SingleLine text, which layout cuts to
@@ -456,6 +471,9 @@ func (a *App) removeChat(chat *Chat) {
 	index := a.chatIndex(chat)
 	if index < 0 || chat.Closed {
 		return
+	}
+	if chat.taskActive {
+		a.stopTaskRun("The task conversation was closed.")
 	}
 	chat.Closed = true
 	chat.cancelConnect()

@@ -5,7 +5,7 @@
 ## 布局
 
 - 窗口右侧固定宽 300 的可折叠面板，跟随当前会话的 workspace；没有会话时跟随草稿 workspace。
-- 顶部标题栏（MCP 左侧）的 `Git` 按钮显示/隐藏面板；面板打开时按钮为主色（蓝色），关闭后恢复普通样式。
+- 顶部标题栏（MCP 左侧）的 `Git` 按钮打开/切换到 Git tab；右侧列与 Tasks tab 共用开关，面板打开且 Git 为当前 tab 时按钮为主色（蓝色）。切换只由顶部按钮完成；面板内只显示当前面板名称。
 - 初始打开。面板不被持久化，重启后恢复默认打开。
 - 有仓库时从上到下：带边框的 commit message 输入框、Commit 按钮、错误/成功提示、暂存/更改列表、Git 图表和功能按钮；输入框和按钮之间不再放常驻状态条。
   commit message 输入框的正文与 Staged/Changes 行同为 10 DIP 基准，只受 Git 面板字号设置缩放。
@@ -69,6 +69,7 @@
 - Pull：`git pull --no-edit`，并设置 `GIT_MERGE_AUTOEDIT=no` 防止等待编辑器。
 - Push：`git push`，只推当前分支已配置的 upstream；没有 upstream 时显示 git 错误。
 - Refresh：重新执行状态和图表读取。
+- 任务 runner 成功完成一个任务后会执行一次 `git add -A` + `git commit -m "task: <title>"`，不 push；失败任务不 commit，而是恢复到任务开始前的 work tree 快照（任务外的用户改动会保留）。提交或回滚后若 Git 面板正在显示同一 workspace 会自动刷新。详见 [tasks.md](tasks.md)。
 - 一轮对话结束时（`session/prompt` 返回或报错）自动重读一次，agent 刚写入的文件立即出现在列表里。
   只刷新当前会话所在的 workspace；面板隐藏时只把状态标记为待刷新（下次打开再读），正在读取或操作进行中时跳过，
   与窗口获得焦点时的规则一致。

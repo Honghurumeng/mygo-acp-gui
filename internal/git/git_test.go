@@ -297,3 +297,53 @@ func runTestGit(t *testing.T, dir string, args ...string) {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
 }
+
+func TestCommitAllStagesAndCommitsOnlyWhenDirty(t *testing.T) {
+	if !Available() {
+		t.Skip("git not installed")
+	}
+	dir := initRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "first.txt"), []byte("one\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	committed, err := CommitAll(context.Background(), dir, "task: first")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !committed {
+		t.Fatal("first CommitAll skipped an untracked file")
+	}
+	state, err := Load(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasCommitMessage(state.Commits, "task: first") {
+		t.Fatalf("commits = %+v", state.Commits)
+	}
+
+	committed, err = CommitAll(context.Background(), dir, "task: empty")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if committed {
+		t.Fatal("CommitAll committed a clean work tree")
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "new.txt"), []byte("one\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	committed, err = CommitAll(context.Background(), dir, "task: second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !committed {
+		t.Fatal("second CommitAll skipped a new file")
+	}
+	state, err = Load(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasCommitMessage(state.Commits, "task: second") {
+		t.Fatalf("commits = %+v", state.Commits)
+	}
+}

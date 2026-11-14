@@ -195,7 +195,7 @@ func (a *App) modeChip(c *mui.Context, chat *Chat) {
 		mui.Text(c, current).FontSize(a.composerFont(9)).SingleLine()
 	})
 	chip.Tooltip("Session mode")
-	chip.Disabled(chat.ConfigBusy != "" || chat.Connecting || chat.Streaming || chat.Busy != "" || (chat.Session != nil && chat.Info.SessionID == ""))
+	chip.Disabled(chat.taskActive || chat.ConfigBusy != "" || chat.Connecting || chat.Streaming || chat.Busy != "" || (chat.Session != nil && chat.Info.SessionID == ""))
 	if chip.Clicked() {
 		chat.ModeOpen = !chat.ModeOpen
 	}
@@ -291,6 +291,7 @@ func (a *App) modelChip(c *mui.Context, chat *Chat) {
 		}
 	})
 	chip.Tooltip("Agent, provider, model and thinking")
+	chip.Disabled(chat.taskActive)
 	if chip.Clicked() {
 		chat.ModelOpen = !chat.ModelOpen
 		if chat.ModelOpen {
@@ -321,7 +322,7 @@ func (a *App) modelPanel(c *mui.Context, chat *Chat) {
 	options := a.chatConfigOptions(chat)
 	option := modelOptionOf(options)
 	thinking := thinkingOptionOf(options)
-	locked := chat.ConfigBusy != "" || chat.Connecting || chat.Streaming || chat.Busy != ""
+	locked := chat.taskActive || chat.ConfigBusy != "" || chat.Connecting || chat.Streaming || chat.Busy != ""
 	configLocked := locked
 
 	mui.Row(c).Height(252).Gap(1).Children(func() {
@@ -330,7 +331,7 @@ func (a *App) modelPanel(c *mui.Context, chat *Chat) {
 				a.composerCaption(inner, "No agents")
 				return
 			}
-			agentLocked := chat.Session != nil || chat.Connecting
+			agentLocked := chat.taskActive || chat.Session != nil || chat.Connecting
 			for i, spec := range a.Agents {
 				i, spec := i, spec
 				selected := spec.ID == chat.Agent.ID
@@ -801,7 +802,7 @@ func containsString(values []string, want string) bool {
 
 // canAttach reports whether images can be added to the draft.
 func (c *Chat) canAttach() bool {
-	if c == nil || c.Closed || c.Connecting || c.Busy != "" {
+	if c == nil || c.Closed || c.Connecting || c.Busy != "" || c.taskActive {
 		return false
 	}
 	if c.Session == nil {
@@ -814,10 +815,19 @@ func (c *Chat) canAttach() bool {
 // canType reports whether the composer accepts text. Drafts type before
 // their first connect; sending connects and then submits.
 func (c *Chat) canType() bool {
-	return c != nil && !c.Closed && !c.Connecting && c.Busy == ""
+	return c != nil && !c.Closed && !c.Connecting && c.Busy == "" && !c.taskActive
 }
 
 func (c *Chat) canSend() bool {
+	if c != nil && c.taskActive {
+		return false
+	}
+	return c.canSubmit()
+}
+
+// canSubmit is the session-state part of canSend. The task runner calls it
+// directly so its own prompts can run while the composer stays locked.
+func (c *Chat) canSubmit() bool {
 	if c == nil || c.Closed || c.Connecting || c.Streaming || c.Busy != "" || c.ConfigBusy != "" {
 		return false
 	}

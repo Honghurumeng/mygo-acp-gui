@@ -2,7 +2,7 @@
   "name": "ACP GUI",
   "slug": "acp-gui",
   "identifier": "dev.reed.acp-gui",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "out": "build",
   "linux": {
     "webview": false

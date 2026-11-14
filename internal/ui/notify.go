@@ -114,6 +114,11 @@ func (a *App) notifyPermission(p *permissionPrompt) {
 // notifyTurnFinished announces a completed turn outside the app. A turn the
 // user cancelled themselves is not news, so it stays silent.
 func (a *App) notifyTurnFinished(chat *Chat, elapsed time.Duration, stopReason string, err error) {
+	if chat != nil && chat.taskActive {
+		// A task turn is not a finished user request; the task runner sends
+		// one notification when the whole task completes.
+		return
+	}
 	if stopReason == "cancelled" || errors.Is(err, acp.ErrClosed) || !a.canNotify(chat) {
 		return
 	}

@@ -1,6 +1,6 @@
 # 会话能力与 UI
 
-本文记录除基础聊天之外的 ACP 能力：多会话、发现探测、配置/模式、已保存会话、图片、MCP、命令面板、计划与用量。
+本文记录除基础聊天之外的 ACP 能力：多会话、发现探测、配置/模式、已保存会话、图片、MCP、命令面板、计划与用量、Git 与 Tasks 面板。
 
 ## 发现与状态
 
@@ -27,7 +27,7 @@
 - 会话右侧 `⋯` 打开重命名/删除；删除会关闭该会话的进程，并把对应存档记录标为 `show=false`。工作区上的 `＋` 在该目录下新建独立会话。
 - 启动时默认创建一个草稿会话；在草稿里输入第一条消息时自动连接，成功后立即发送。
 - 每个会话保留自己的消息列表滚动位置、输入草稿、图片附件、配置选择和计划面板。
-- 顶部工具栏只保留 `Logs` 和 `MCP…`（连接中显示 `Cancel`）；会话由工作区上的 `＋` 创建。
+- 顶部工具栏除 `Git` / `Tasks` 右侧面板按钮外，只保留 `Logs` 和 `MCP…`（连接中显示 `Cancel`）；会话由工作区上的 `＋` 创建。
 - 关闭窗口只是关闭窗口：应用留在后台，所有会话（包括流式中的回复）继续运行；macOS 再点 Dock 图标会按当前状态重新开窗。只有退出（⌘Q / Quit）才取消连接并关闭进程组。
 - 应用退出时取消所有正在连接的会话，并关闭所有已登记 session 的进程组。
 
@@ -42,7 +42,7 @@ pi-acp 的启动信息（pi 版本、Extensions、Skills 等）、重试、自�
 权限请求和一轮回答结束时会发系统通知（`internal/ui/notify.go`，`mygo.NewNotification`），只在用户看不到应用内提示时才发：窗口已关闭/失去焦点，或事件发生在非当前会话。当前会话 + 前台窗口里，权限弹窗、侧栏标记和 `Took` 行已经足够。
 
 - 权限：标题 `Permission needed`，副标题是会话名，正文优先用工具的 `rawInput.description`，其次 `title`；同一会话复用通知 ID，后来的请求替换前者。
-- 完成：标题 `Task complete`，失败为 `Task failed`；正文是最后一条 assistant 回答压成单行并截断，没有正文时显示 `Finished in …`。用户自己 Stop 的 `cancelled` 回合不发通知。
+- 完成：标题 `Task complete`，失败为 `Task failed`；正文是最后一条 assistant 回答压成单行并截断，没有正文时显示 `Finished in …`。用户自己 Stop 的 `cancelled` 回合不发通知。任务 executor 的中间回合不发通知，整个任务结束（pass 或 failure）时按任务 ID 发一次通知（副标题是任务标题）。
 - `Group` 按 agent + ACP session ID（草稿按 chat ID）分会话，完成和权限各自用稳定 ID，重复事件不会堆叠同一类通知。
 - 通知在后台 goroutine 调 `Show`，不阻塞 UI；macOS 需要打包应用（`mygo dev` / `mygo build`），Linux 走 D-Bus，Windows 是通知气球；`NotificationsSupported` 为 false 时静默跳过。点击通知会打开/聚焦窗口，应用变为 active 时 `ClearNotifications` 清掉已看过的通知。
 - 测试通过 `App.notify` 注入记录器，不启动桌面后端。
@@ -145,6 +145,16 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 - 有仓库时显示 commit message、Staged / Changes 列表、分支状态和提交图（`internal/ui/gitgraph.go` 自绘，结构化 log + lane，行高 22 DIP）；文件可逐项 stage/unstage，也可 Stage all / Unstage all。点文件名可打开 diff 预览，点提交行可展开该提交改动的文件列表，列表里的文件可打开该提交的 diff。提交行不再显示短 hash；hover 350 ms 弹出详情卡（subject、作者、时间、refs、修改文件数/代码增删行数（单行）、完整 hash），卡片位于图表左侧，卡内可复制完整 hash。
 - Commit 只提交暂存内容；Fetch/Pull/Push 不等待凭据终端，Undo 用 soft reset 保留改动；所有命令有超时和 generation 校验，切换会话不会串仓库。
 - 详细设计见 [git.md](git.md)。
+
+## Tasks 面板
+
+- 右侧与 Git 面板共用 300 DIP 列，顶部 `Git` / `Tasks` 按钮打开、切换或关闭；面板内只显示当前面板名称，不再有内建 tab 条。Tasks 跟随当前会话 / 草稿的 workspace。
+- 每个 workspace 有有序任务；状态只有 `pending`、`ongoing`、`complete`，complete 带 `pass` / `failure`。`Run pending` 串行跑完所有 pending，`Stop` 把当前任务退回 pending 并停止队列；失败任务留在 complete(failure)，但队列继续执行剩余 pending。
+- 每个任务新建独立 executor Chat / agent 进程 / ACP 会话；回合结束后取最后一段 assistant 文本，另起隔离 checker 进程和新会话判断。checker 收到任务文本、本轮最后一段以及之前每轮的总结 + feedback，没有工具；返回严格 JSON。
+- incomplete 时把 checker reason 发回同一个 executor 会话继续；complete 时写 `<workspace>/tasks/<id>-<slug>.md`，执行一次 `git add -A` + commit（不 push），再开始下一个任务。
+- 失败时先恢复任务开始前的 work tree 快照（丢弃本次成果），再写总结并标记 complete(failure)，不 commit，然后继续执行剩余 pending；只有用户 Stop 才停队列。非 Git 仓库或快照失败时在 note 里说明无法回滚。
+- 任务索引保存在 `<data>/tasks.json`，任务记录、result、轮次、note、summaryPath 跨重启恢复；上次退出遗留的 ongoing 自动改回 pending。只有 pending 可编辑 / 排序；删除任务保留已写出的 Markdown。
+- complete 任务可打开浮动总结卡片：默认 Markdown 渲染，标题栏 `Diff` 切换成 all-additions 的 Git diff 视图；failure 行显示 `✗ failure`，卡片标题显示 `Task failure`。详细设计见 [tasks.md](tasks.md)。
 
 ## 设置持久化
 

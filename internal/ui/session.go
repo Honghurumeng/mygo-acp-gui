@@ -362,12 +362,18 @@ func (a *App) retryDiscovery() {
 // Connect validates the active chat's workspace and starts initialize plus
 // session/new or session/load in a goroutine. Other chats keep running.
 func (a *App) Connect() {
-	if a.closed.Load() {
-		return
-	}
 	chat := a.activeChat()
 	if chat == nil {
 		chat = a.ensureChat()
+	}
+	a.connectChat(chat)
+}
+
+// connectChat is Connect for one specific chat. The task runner uses it so a
+// background task conversation can connect without changing the active tab.
+func (a *App) connectChat(chat *Chat) {
+	if a.closed.Load() || chat == nil {
+		return
 	}
 	if chat.Connecting || chat.Session != nil {
 		return
@@ -379,6 +385,9 @@ func (a *App) Connect() {
 			chat.ConnectError = "No agent selected."
 			chat.clearPendingSession()
 			chat.pendingSend = false
+			if chat.onConnect != nil {
+				chat.onConnect(errors.New(chat.ConnectError))
+			}
 			return
 		}
 		spec = selected
@@ -398,6 +407,9 @@ func (a *App) Connect() {
 		chat.WorkspaceError = err.Error()
 		chat.clearPendingSession()
 		chat.pendingSend = false
+		if chat.onConnect != nil {
+			chat.onConnect(err)
+		}
 		return
 	}
 	chat.Workspace = workspace
@@ -490,6 +502,9 @@ func (a *App) Connect() {
 				chat.pendingSend = false
 				a.markAgentAuth(spec.ID, err)
 				chat.clearConnect(gen)
+				if chat.onConnect != nil {
+					chat.onConnect(err)
+				}
 			})
 			return
 		}
@@ -515,6 +530,10 @@ func (a *App) Connect() {
 				chat.Connecting = false
 				chat.Busy = ""
 				chat.ConnectError = "The agent exited immediately after creating the session."
+				chat.clearConnect(gen)
+				if chat.onConnect != nil {
+					chat.onConnect(errors.New(chat.ConnectError))
+				}
 				return
 			default:
 			}
@@ -549,6 +568,9 @@ func (a *App) Connect() {
 			}
 			a.markAgentReady(spec.ID)
 			chat.clearConnect(gen)
+			if chat.onConnect != nil {
+				chat.onConnect(nil)
+			}
 
 			// Flush history and available_commands_update buffered during
 			// initialize/session setup after the UI state is installed.
@@ -559,7 +581,7 @@ func (a *App) Connect() {
 			}
 			if pendingSend {
 				chat.pendingSend = false
-				a.send()
+				a.sendChat(chat)
 			}
 		})
 	}()
@@ -658,7 +680,7 @@ func (a *App) setAgentStatus(id, status, detail string) {
 // Disconnect closes the active chat's process but keeps its tab as a draft.
 func (a *App) Disconnect() {
 	chat := a.activeChat()
-	if chat == nil {
+	if chat == nil || chat.taskActive {
 		return
 	}
 	chat.cancelConnect()
@@ -733,8 +755,21 @@ func (a *App) resetConversation(chat *Chat) {
 }
 
 func (a *App) send() bool {
-	chat := a.activeChat()
-	if chat == nil || !chat.canSend() {
+	return a.sendChat(a.activeChat())
+}
+
+// sendChat sends one chat's composer. Task execution calls it directly so a
+// user switching tabs cannot redirect a queued prompt to another conversation.
+func (a *App) sendChat(chat *Chat) bool {
+	if chat == nil {
+		return false
+	}
+	taskPrompt := chat.taskActive && a.TaskRun.Active && a.TaskRun.Chat == chat
+	if taskPrompt {
+		if !chat.canSubmit() {
+			return false
+		}
+	} else if !chat.canSend() {
 		return false
 	}
 	text := strings.TrimSpace(chat.Input)
@@ -748,7 +783,7 @@ func (a *App) send() bool {
 		// successful connect callback.
 		if !chat.Connecting {
 			chat.pendingSend = true
-			a.Connect()
+			a.connectChat(chat)
 		}
 		if !chat.Connecting {
 			chat.pendingSend = false
@@ -771,6 +806,7 @@ func (a *App) send() bool {
 	chat.TurnUsage = nil
 
 	sentAt := time.Now()
+	turnStart := len(chat.Messages)
 	a.addMessage(chat, &Message{
 		ID:          a.nextID(),
 		Role:        RoleUser,
@@ -787,10 +823,11 @@ func (a *App) send() bool {
 		Role: RoleAssistant,
 	})
 	turn := &turnState{
-		assistant: assistant,
-		tools:     make(map[string]*Message),
-		number:    number,
-		startedAt: sentAt,
+		assistant:    assistant,
+		tools:        make(map[string]*Message),
+		number:       number,
+		startedAt:    sentAt,
+		startMessage: turnStart,
 	}
 	chat.turn = turn
 	chat.Streaming = true
@@ -843,7 +880,7 @@ func (a *App) stop() {
 
 func (a *App) setConfigOption(id, value string) {
 	chat := a.activeChat()
-	if chat == nil || chat.ConfigBusy != "" || chat.Connecting || chat.Streaming || chat.Busy != "" {
+	if chat == nil || chat.taskActive || chat.ConfigBusy != "" || chat.Connecting || chat.Streaming || chat.Busy != "" {
 		return
 	}
 	if chat.Session == nil {
@@ -899,7 +936,7 @@ func (a *App) setConfigOption(id, value string) {
 
 func (a *App) setMode(modeID string) {
 	chat := a.activeChat()
-	if chat == nil || chat.ConfigBusy != "" || chat.Connecting || chat.Streaming || chat.Busy != "" {
+	if chat == nil || chat.taskActive || chat.ConfigBusy != "" || chat.Connecting || chat.Streaming || chat.Busy != "" {
 		return
 	}
 	if chat.Session == nil {
@@ -936,7 +973,7 @@ func (a *App) setMode(modeID string) {
 // leaving other chats untouched.
 func (a *App) newSession() {
 	chat := a.activeChat()
-	if chat == nil || chat.Session == nil || chat.Busy != "" || chat.Streaming {
+	if chat == nil || chat.taskActive || chat.Session == nil || chat.Busy != "" || chat.Streaming {
 		return
 	}
 	s := chat.Session
@@ -979,7 +1016,7 @@ func (a *App) newSession() {
 
 func (a *App) closeActiveSession() {
 	chat := a.activeChat()
-	if chat == nil || chat.Session == nil || chat.Busy != "" || chat.Info.SessionID == "" {
+	if chat == nil || chat.taskActive || chat.Session == nil || chat.Busy != "" || chat.Info.SessionID == "" {
 		return
 	}
 	s := chat.Session
@@ -1006,7 +1043,7 @@ func (a *App) closeActiveSession() {
 // loadHistory opens a saved session in the active chat, replaying history.
 func (a *App) loadHistory(sessionID, title, cwd string) {
 	chat := a.activeChat()
-	if chat == nil || chat.Session == nil || chat.Busy != "" || chat.Streaming {
+	if chat == nil || chat.taskActive || chat.Session == nil || chat.Busy != "" || chat.Streaming {
 		return
 	}
 	s := chat.Session
@@ -1377,6 +1414,7 @@ func (a *App) applyPromptResult(chat *Chat, turn *turnState, res acp.PromptResul
 	}
 	a.markChatUnread(chat)
 	a.notifyTurnFinished(chat, elapsed, res.StopReason, err)
+	a.notifyTurnEnd(chat, turn, res, err)
 }
 
 // finishTurnRuntime records the runtime of a live turn once and clears its
@@ -1418,6 +1456,11 @@ func (a *App) applyExit(chat *Chat, exit session.Exit) {
 		if chat.turn.assistant != nil {
 			chat.turn.assistant.Done = true
 		}
+		exitErr := exit.Err
+		if exitErr == nil {
+			exitErr = errors.New("agent exited")
+		}
+		a.notifyTurnEnd(chat, chat.turn, acp.PromptResult{}, exitErr)
 		chat.turn = nil
 	}
 	a.cancelPermissionsFor(chat)

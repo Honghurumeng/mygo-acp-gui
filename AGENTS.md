@@ -18,6 +18,7 @@
 - `docs/design/features.md`：多会话、发现探测、配置/模式、历史、图片、MCP、命令面板、消息跳转、计划/用量。
 - `docs/design/multi-session.md`：pi / Command Code 单进程多会话能力调查与结论。
 - `docs/design/git.md`：右侧 Git 面板、仓库探测、状态/图表、提交与 fetch/pull/push、异步与安全。
+- `docs/design/tasks.md`：右侧 Tasks 面板、任务持久化、串行执行/检查双 agent、成功提交与失败回滚。
 - `docs/design/components.md`：本地 UI 组件层（widgets.go 样式、components.go 有状态组件、图标子集）、交互约定。
 - `docs/design/themes.md`：外观（system/light/dark）、主题目录（default/nord/solarized/catppuccin/claude）、持久化、原生外观同步。
 - `docs/design/fonts.md`：分区字体大小（workspace 列表、对话流、输入框、Git 面板）、百分比缩放、持久化。
@@ -29,4 +30,5 @@
 - 退出清理 agent 进程组；initialize 探测 5 秒超时，配置探测异步执行，失败不阻塞启动。
 - 不做 registry 全量发现/在线目录/自动安装；只支持内置表，新 agent 走代码 + 发版。
 - pi 不走 npx；直接用 `resources/agents/pi-acp/pi-acp.bundle.mjs`，不在启动时打包；重打走 `scripts/vendor-pi-acp-local.sh`（本地 fork）或 `scripts/vendor-pi-acp.sh`（上游）。
-- 每次打包发版前先升级 `mygo.json` 的 `version`（semver，当前从 0.2.0 起），并同步 `docs/design/architecture.md` 的版本号，再执行 `go tool mygo build`。
+- 任务串行执行；每个任务新建 executor 会话，判断另起隔离 checker 进程并携带前几轮上下文；成功只 commit 一次，失败回滚改动并标记 complete/failure，不 push。
+- 每次打包发版前先升级 `mygo.json` 的 `version`（semver，当前从 0.3.0 起），并同步 `docs/design/architecture.md` 的版本号，再执行 `go tool mygo build`。

@@ -24,6 +24,7 @@ import (
 	"github.com/reed/acp-gui/internal/modelconfig"
 	"github.com/reed/acp-gui/internal/session"
 	"github.com/reed/acp-gui/internal/settings"
+	taskstore "github.com/reed/acp-gui/internal/tasks"
 )
 
 // Options configures the app. A non-nil Agents slice skips discovery, which
@@ -136,6 +137,12 @@ type turnState struct {
 	// is when it was sent. Both stay zero for replayed history.
 	number    int
 	startedAt time.Time
+	// startMessage is the first chat row of this turn, so a task runner reads
+	// only the summary the current turn produced.
+	startMessage int
+	// endNotified keeps a task runner from receiving the same turn's end
+	// twice when both the prompt result and the process exit arrive.
+	endNotified bool
 }
 
 // App is the root UI state.
@@ -183,7 +190,43 @@ type App struct {
 	WorkspaceMenuOpen     string
 	SidebarOpen           bool
 	GitPanelOpen          bool
-	Git                   gitPanelState
+	// RightTab selects the right column: "git" or "tasks". The panel width
+	// and open/closed state are shared, so the two tabs never stack.
+	RightTab string
+	Git      gitPanelState
+
+	// Tasks is the ordered task index. It is loaded before the first frame
+	// and persisted in <data>/tasks.json; summaries go to the task
+	// workspace's tasks/ folder. TaskRun owns the single serial runner.
+	Tasks      []taskstore.Task
+	TaskRun    taskRunState
+	taskStore  *taskstore.Store
+	TaskError  string
+	TaskNotice string
+
+	// Task editor and delete confirmation are tied to the workspace they
+	// were opened in, so switching groups cannot save into another folder.
+	TaskEditorOpen    bool
+	TaskEditID        string
+	TaskEditWorkspace string
+	TaskEditTitle     string
+	TaskEditText      string
+	TaskEditorError   string
+	TaskDeleteOpen    bool
+	TaskDeleteID      string
+
+	// TaskSummary is the floating Markdown card opened from a complete task.
+	TaskSummaryOpen   bool
+	TaskSummaryTaskID string
+	TaskSummaryTitle  string
+	TaskSummaryPath   string
+	TaskSummaryBody   string
+	TaskSummaryBusy   bool
+	TaskSummaryErr    string
+	TaskSummaryGen    int
+	// TaskSummaryDiff shows the Markdown as an all-additions diff instead of
+	// rendered text, matching the Git panel's diff viewer.
+	TaskSummaryDiff bool
 
 	Chats  []*Chat
 	Active int
@@ -256,6 +299,10 @@ type App struct {
 	permissionQueue []*permissionPrompt
 
 	MD markdown.Options
+	// TaskMD renders task summaries with the right panel's font scale. It is
+	// a separate Options value because markdown.Options contains a sync.Map
+	// and must not be copied.
+	TaskMD markdown.Options
 
 	chatsMu  sync.Mutex
 	nextChat int
@@ -347,6 +394,7 @@ func New(opts Options) *App {
 		Active:             -1,
 		SidebarOpen:        true,
 		GitPanelOpen:       true,
+		RightTab:           rightTabGit,
 		Git:                gitPanelState{ChangesHeight: defaultGitChangesHeight},
 		MD:                 markdown.Options{},
 		sessions:           make(map[*session.Session]struct{}),
@@ -404,6 +452,7 @@ func New(opts Options) *App {
 	a.MCPText = "[]"
 	a.loadSettings(opts.DataDir, strings.TrimSpace(opts.Workspace) == "")
 	a.loadSessionArchive(opts.DataDir)
+	a.loadTaskStore(opts.DataDir)
 	a.loadModelConfigs(opts.DataDir)
 	a.ensureWorkspace(a.Workspace)
 	if opts.Agents != nil {
@@ -649,6 +698,7 @@ func (a *App) View(c *mui.Context) {
 	// Markdown headings and code are sized in ems of this body size, so one
 	// value scales the whole message while keeping its hierarchy.
 	a.MD.Theme = &markdown.Theme{FontSize: a.chatBodyFont(c)}
+	a.TaskMD.Theme = &markdown.Theme{FontSize: a.gitFont(c.Theme().FontSize)}
 	a.syncWorkspaces()
 	chat := a.activeChat()
 	if chat != nil {
@@ -663,9 +713,14 @@ func (a *App) View(c *mui.Context) {
 		}
 		a.conversation(c, chat)
 		if a.GitPanelOpen {
-			// The diff floats over the conversation with its right edge on
-			// the panel's left edge, so the panel stays visible and usable.
-			a.gitDiffPopover(c, a.gitPanel(c))
+			switch a.RightTab {
+			case rightTabTasks:
+				a.taskSummaryPopover(c, a.taskPanel(c))
+			default:
+				// The diff floats over the conversation with its right edge on
+				// the panel's left edge, so the panel stays visible and usable.
+				a.gitDiffPopover(c, a.gitPanel(c))
+			}
 		}
 	})
 
@@ -678,6 +733,8 @@ func (a *App) View(c *mui.Context) {
 	a.mcpDialog(c)
 	a.diagnosticsDialog(c)
 	a.renameDialog(c)
+	a.taskEditorDialog(c)
+	a.taskDeleteDialog(c)
 	a.imagePreviewDialog(c)
 }
 
@@ -756,7 +813,7 @@ func (a *App) headerActions(c *mui.Context, chat *Chat) {
 	}
 	gitLabel := "Show Git panel"
 	var gitButton mui.Element
-	if a.GitPanelOpen {
+	if a.GitPanelOpen && a.RightTab == rightTabGit {
 		gitLabel = "Hide Git panel"
 		gitButton = primaryButton(c, "Git")
 	} else {
@@ -764,12 +821,19 @@ func (a *App) headerActions(c *mui.Context, chat *Chat) {
 	}
 	gitButton.Label(gitLabel).FontSize(11)
 	if gitButton.Clicked() {
-		a.GitPanelOpen = !a.GitPanelOpen
-		if !a.GitPanelOpen {
-			a.Git.DiscardOpen = false
-			a.closeCommitHover()
-			a.closeGitPreview()
-		}
+		a.toggleRightPanel(rightTabGit)
+	}
+	taskLabel := "Show task panel"
+	var taskButton mui.Element
+	if a.GitPanelOpen && a.RightTab == rightTabTasks {
+		taskLabel = "Hide task panel"
+		taskButton = primaryButton(c, "Tasks")
+	} else {
+		taskButton = quietButton(c, "Tasks")
+	}
+	taskButton.Label(taskLabel).FontSize(11)
+	if taskButton.Clicked() {
+		a.toggleRightPanel(rightTabTasks)
 	}
 	if chat == nil {
 		return
@@ -777,7 +841,11 @@ func (a *App) headerActions(c *mui.Context, chat *Chat) {
 	if chat.Connecting {
 		mutedText(c, "Connecting…", 11)
 		if action("Cancel", "Cancel connecting").Clicked() {
-			a.Disconnect()
+			if chat.taskActive {
+				a.stopTaskRun("Stopped while starting.")
+			} else {
+				a.Disconnect()
+			}
 		}
 		return
 	}

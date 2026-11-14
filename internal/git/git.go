@@ -322,6 +322,26 @@ func Commit(ctx context.Context, root, message string) error {
 	return err
 }
 
+// CommitAll stages every change and commits it in one call. It reports false
+// when the work tree was already clean, so the task runner can skip an empty
+// commit without treating it as an error.
+func CommitAll(ctx context.Context, root, message string) (bool, error) {
+	out, err := run(ctx, root, []string{"GIT_OPTIONAL_LOCKS=0"}, "status", "--porcelain")
+	if err != nil {
+		return false, err
+	}
+	if len(bytes.TrimSpace(out)) == 0 {
+		return false, nil
+	}
+	if err := StageAll(ctx, root); err != nil {
+		return false, err
+	}
+	if err := Commit(ctx, root, message); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // Fetch downloads remote refs and prunes stale remote-tracking branches.
 func Fetch(ctx context.Context, root string) error {
 	_, err := run(ctx, root, nil, "fetch", "--prune")

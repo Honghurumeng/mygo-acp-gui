@@ -12,6 +12,10 @@
  *   /turnusage    不发 usage_update，只在 prompt 结果里返回 usage
  *   /tinyusage    发一个小于 1% 的 usage_update
  *   /notice       先发 startup / auto_retry 状态块，再正常回复
+ *   /writefile p  任务 executor 在当前目录写一个文件（用于失败回滚测试）
+ *   /refuse       任务 executor 写完文件后以 refusal 结束
+ *   /eventually   配合 FAKE_TASK_CHECK_STATE：checker 先 incomplete 再 complete
+ *   /alwaysincomplete  任务 checker 永远拒绝
  *
  * 环境变量：
  *   FAKE_AGENT_CHILD_PID_FILE  启动一个子进程并把 pid 写入该文件，
@@ -19,7 +23,7 @@
  *   FAKE_AGENT_NO_SESSION      让 session/new 返回 -32000，模拟需要登录的 agent。
  */
 import { spawn } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import readline from 'node:readline';
 
 const MODELS = ['demo/small', 'demo/large', 'demo/reasoning'];
@@ -207,7 +211,9 @@ function requestPermission(turn) {
 
 function startTurn(turn, text, images = 0, mcpCount = 0, files = 0, embedded = 0) {
   const slow = text.includes('/slow');
-  const permission = text.includes('/permission');
+  const taskCheck = text.includes('TASK_COMPLETION_CHECK');
+  const taskExec = text.includes('TASK_EXECUTION');
+  const permission = text.includes('/permission') && !taskCheck;
   const thought = text.includes('/thought');
   const plan = text.includes('/plan');
   const turnUsage = text.includes('/turnusage');
@@ -268,7 +274,52 @@ function startTurn(turn, text, images = 0, mcpCount = 0, files = 0, embedded = 0
     return;
   }
 
-  const reply = `收到：${text}\n\n当前模型 \`${currentModel}\`，思考强度 \`${currentThinking}\`，模式 \`${currentMode}\`。\nimages=${images} files=${files} embedded=${embedded} mcp=${mcpCount}`;
+  if (taskExec) {
+    // Deterministic task-runner fixture: let the executor create a file so
+    // tests can verify that a failed run is discarded again.
+    const write = text.match(/\/writefile\s+(\S+)/);
+    if (write && !write[1].startsWith('/') && !write[1].includes('..')) {
+      writeFileSync(write[1], 'task result\n');
+    }
+  }
+  if (taskExec && text.includes('/refuse')) {
+    sendChunk(turn, 'I cannot complete this task.');
+    finishTurn(turn, 'refusal');
+    return;
+  }
+
+  let reply;
+  if (taskCheck) {
+    // A deterministic checker for task-runner tests. The task text decides
+    // whether the first judgment is incomplete; a state file counts attempts
+    // across the fresh checker processes the runner starts.
+    let complete = true;
+    let reason = 'The summary covers the requested task.';
+    let summary = '# Task complete\n\n- The requested change was implemented.';
+    const stateFile = process.env.FAKE_TASK_CHECK_STATE;
+    if (stateFile && text.includes('/eventually')) {
+      let attempt = 0;
+      try {
+        attempt = Number(readFileSync(stateFile, 'utf8')) || 0;
+      } catch {
+        attempt = 0;
+      }
+      attempt += 1;
+      writeFileSync(stateFile, String(attempt));
+      complete = attempt >= 2;
+      reason = complete ? 'The second pass covers the task.' : 'The first pass is only partial.';
+      summary = complete ? summary : '';
+    } else if (text.includes('/alwaysincomplete')) {
+      complete = false;
+      reason = 'The task is still incomplete.';
+      summary = '';
+    }
+    reply = JSON.stringify({ complete, reason, summary });
+  } else if (taskExec) {
+    reply = `Working on the task…\n\nDone: implemented the requested change${text.includes('/eventually') ? ' (first pass)' : ''}.`;
+  } else {
+    reply = `收到：${text}\n\n当前模型 \`${currentModel}\`，思考强度 \`${currentThinking}\`，模式 \`${currentMode}\`。\nimages=${images} files=${files} embedded=${embedded} mcp=${mcpCount}`;
+  }
   const chars = Array.from(reply);
   const chunkSize = slow ? 2 : Math.max(1, Math.ceil(chars.length / 8));
   let offset = 0;

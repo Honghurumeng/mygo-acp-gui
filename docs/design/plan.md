@@ -18,6 +18,8 @@
 - `/slow` 放慢输出，用于测 Stop / `session/cancel`；
 - `/permission` 先发 `tool_call`，再发 `session/request_permission`；
 - `/thought` 先发 `agent_thought_chunk`；
+- `TASK_EXECUTION` 返回任务执行总结，`TASK_COMPLETION_CHECK` 返回 `{complete, reason, summary}` 供任务 runner 测试；`/refuse` 让 executor 以 refusal 结束，`/writefile <path>` 让 executor 在 workspace 写一个文件，用于验证失败回滚；
+- `FAKE_TASK_CHECK_STATE` + 任务文本里的 `/eventually` 让连续 checker 第一次 incomplete、第二次 complete；`/alwaysincomplete` 让 checker 一直拒绝，用于测 8 轮失败；
 - `FAKE_AGENT_CHILD_PID_FILE` 启动一个子进程，验证关闭时整个进程组都被清理。
 
 对应测试：
@@ -68,6 +70,7 @@ Feature tests:
 ```bash
 go test ./internal/ui -run 'TestSessionConfig|TestSaved|TestCloseChat|TestSendImage|TestMCP|TestPromptUsageFallback|TestGitPanel' -v
 go test ./internal/git -v
+go test ./internal/tasks -v
 go test ./internal/settings -v
 go test ./internal/logs -v
 go test ./internal/ui -run 'TestSettings|TestShutdownPersists|TestCorruptSettings|TestExplicitWorkspace|TestDiagnostics' -v
@@ -92,6 +95,7 @@ go test ./internal/ui -run 'TestSettings|TestShutdownPersists|TestCorruptSetting
 13. 设置持久化：改 agent/工作区/MCP/model/thinking/mode 后退出，再启动应恢复（模型面板与草稿都停在原选择）；手改 `lastSelections` 成已下架的 model 或 mode 后重启，Connect 应跳过并保持 agent 默认，不报错；手工损坏 `settings.json` 或写入相对路径，应正常启动并在工具栏显示警告。
 14. 诊断：点顶部 “Logs” 能看到当前会话的 stderr；`logs/<agent>.log` 有连接头和 stderr，超过 1 MiB 后生成 `.1` 备份。
 15. Git：打开非仓库 workspace，右侧提示 “Not a Git repository” 并可 `git init`；PATH 中无 git 时提示安装；仓库内可 stage/commit、查看提交图、切换 workspace 后不串仓库。
+16. Tasks：创建两个任务并 Run pending；每个任务应新建会话，checker 先拒绝再通过时同一 executor 会话继续，第二次 checker 应能看到第一轮总结和反馈；完成后 `tasks/` 有 Markdown、每个任务各一次 commit、没有 push；失败任务应回滚 executor 文件、保留用户已有改动、写 failure 总结且不 commit；Stop 后任务回 pending，重启后仍未完成的任务仍可编辑。
 
 ### 常用命令
 
@@ -120,6 +124,7 @@ scripts/vendor-pi-acp.sh             # 仅在升级 pi-acp 时运行
 - [x] 本地 `sessions.json` 会话存档：agent/session 关联、启动直接展示、show 软删除、showName 重命名、点击 load 重放历史
 - [x] composer：可拖动高度、附件/git/mode/上下文环/模型面板/thinking/发送；首条消息自动连接
 - [x] 右侧 Git 面板：可折叠、无 git/无仓库提示、status、紧凑可展开提交图、逐文件 diff 预览、stage/commit/fetch/pull/push/undo soft reset
+- [x] 右侧 Tasks 面板：任务创建/排序/删除、pending/ongoing/complete + pass/failure、串行 executor + 隔离 checker（多轮上下文）、成功 Markdown 总结 + 每任务一次 commit（不 push）、失败回滚 + 无 commit
 - [x] pi-acp 单文件 bundle vendored（`resources/agents/pi-acp/`）
 - [x] 系统 Node / pi / command-code 定位（登录 shell + 绝对路径覆盖）+ 登录指引（只展示，不代登录）
 - [x] Command Code 启动与完整聊天流程：initialize、session/new、流式、权限、取消、退出清理

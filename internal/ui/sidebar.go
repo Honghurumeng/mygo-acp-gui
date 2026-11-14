@@ -344,6 +344,9 @@ func (a *App) renameDialog(c *mui.Context) {
 							a.setArchivedShowName(a.RenameAgentID, a.RenameSessionID, title)
 						case chat != nil:
 							chat.Title = title
+							if strings.TrimSpace(chat.TaskTitle) != "" {
+								chat.TaskTitle = title
+							}
 							if strings.TrimSpace(chat.Info.SessionID) != "" {
 								a.setArchivedShowName(chat.Agent.ID, chat.Info.SessionID, title)
 							}

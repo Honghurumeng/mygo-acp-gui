@@ -2,7 +2,7 @@
 
 ## 目标
 
-原生桌面 ACP GUI：Go + [MyGo](https://github.com/egoist/mygo) 写界面，检测内置 agent（目前 pi、command-code）是否可用，选择 agent 和工作区后聊天。
+原生桌面 ACP GUI：Go + [MyGo](https://github.com/egoist/mygo) 写界面，检测内置 agent（目前 pi、command-code）是否可用，选择 agent 和工作区后聊天；右侧还有 Git 与串行 Tasks 面板。
 
 早期 Node 原型（`server/` + `public/`）已移除，只保留在 git 历史中；当前实现是仓库根目录的 Go + MyGo 工程。
 
@@ -15,7 +15,9 @@ MyGo 原生窗口 (Go + ui)
   ├─ 消息区 + 可拖动高度的 composer
   ├─ composer 底栏：附件、Jump、git 分支、mode、上下文环、agent/model/thinking、发送
   ├─ @ 文件面板：workspace 索引 → 只把 @相对路径 文本写进 prompt（agent 自读）
-  ├─ 右侧 Git 面板（可折叠）：提交、暂存/更改、分支图与 fetch/pull/push
+  ├─ 右侧面板（可折叠，Git / Tasks 两个 tab）
+  │    ├─ Git：提交、暂存/更改、分支图与 fetch/pull/push
+  │    └─ Tasks：任务队列、executor / checker 双 agent、成功总结 + 每任务一次 commit、失败回滚
   ├─ ui/markdown.Stream / View      ← agent_message_chunk
   ├─ ui.List(FollowEnd)             ← 消息列表
   ├─ ui.Collapsible                 ← thought / tool_call
@@ -39,8 +41,9 @@ MyGo 原生窗口 (Go + ui)
   internal/session/        进程组 + ACP 会话生命周期 + update/permission 分发（已实现）
   internal/settings/       settings.json 读写、容错与原子落盘（已实现）
   internal/archive/        sessions.json 本地会话存档（agent/session 关系、show/showName）
+  internal/tasks/          tasks.json 任务索引 + workspace/tasks/*.md 总结读写
   internal/logs/           每个 agent 的滚动日志文件（已实现）
-  internal/git/            Git 探测、status 解析、提交与远端操作（不经过 shell）
+  internal/git/            Git 探测、status 解析、提交与远端操作、任务失败回滚快照（不经过 shell）
   internal/ui/             多会话侧栏、聊天、流式 Markdown、权限队列、系统通知、Dock 角标、Git 面板、主题系统、窗口更新（已实现）
   internal/ui/icons/       pi / Command Code 品牌图标（SVG，侧栏 + 标题栏）
   resources/
@@ -56,7 +59,7 @@ MyGo 原生窗口 (Go + ui)
 - `go.mod`：module `github.com/reed/acp-gui`，Go 1.27.3（`GOTOOLCHAIN=auto` 会自动拉取）。
 - MyGo CLI 通过 `tool github.com/egoist/mygo/cmd/mygo` 固定在 `go.mod`，统一用 `go tool mygo`。
 - 无前端构建：原生 UI，入口 `main.go`，配置在 `mygo.json`。
-- App：name `ACP GUI`、slug `acp-gui`、identifier `dev.reed.acp-gui`、version `0.2.0`。
+- App：name `ACP GUI`、slug `acp-gui`、identifier `dev.reed.acp-gui`、version `0.3.0`。
 - `go tool mygo build` 产物在 `build/<os>-<arch>/`（已 gitignore）；`resources/` 整目录进 `.app`。
 - 当前已实现 `internal/acp`、`internal/agent`、`internal/session`、`internal/archive`、`internal/ui` 的 MVP 链路（见下方“当前链路”）。
 
@@ -78,6 +81,9 @@ MyGo 原生窗口 (Go + ui)
   → session/set_config_option / set_mode
   → 点击存档行 → 按记录里的 agent + sessionId 执行 session/load 重放历史；cwd 不同则新建进程
   → 右侧 Git 面板 → 异步探测 workspace 仓库 → status/log 展示与 stage/commit/fetch/pull/push
+  → 右侧 Tasks 面板 → 串行任务：新 executor 会话 → 回合结束取最后一段 → 隔离 checker 进程携带前几轮上下文判定
+      → incomplete 回复继续；complete 写 tasks/<id>-<slug>.md → git add -A + commit（不 push）→ 下一个
+      → 失败 / 8 轮未过 → 恢复任务快照丢弃成果 → 写总结并标记 complete/failure，不 commit → 继续下一个 pending
   → 首次连接成功 → session/list 合并进存档（保留 show/showName）
   → Stop → session/cancel
   → 删除会话 → 存档 show=false（软删除）+ Session.Close → kill(-pgid)
@@ -90,7 +96,7 @@ MyGo 原生窗口 (Go + ui)
 - UI 状态只在主线程修改。session 回调通过 `Window.Update`（测试中通过队列）提交，不直接改状态。
 - 每个会话是一个 `ui.Chat`，保存自己的 Session、Info、消息、输入草稿、配置、附件和连接代数；App 持有 `Chats`、`Active`、工作区列表和侧栏折叠状态。回调捕获 chat 指针，因此后台会话仍能流式更新。
 - `App.Archived` 是本地会话索引，按 `(agentId, sessionId)` 去重；`SavedSessions` 只是它排序后的 UI 视图。启动时侧栏不调用 `session/list`，因此 agent 慢、未登录或未安装不影响历史列表。
-- 测试用 `scripts/fake-agent.mjs`：prompt 流式输出、`/slow` + cancel、`/permission`、config/mode、list/load/close、图片/MCP 计数、命令/plan/usage、子进程清理。
+- 测试用 `scripts/fake-agent.mjs`：prompt 流式输出、`/slow` + cancel、`/permission`、config/mode、list/load/close、图片/MCP 计数、命令/plan/usage、任务 executor/checker 标记、子进程清理。
 
 ## ACP 客户端
 
@@ -153,6 +159,7 @@ pi 自己的工具在工作区内读写执行；客户端只负责展示和审�
 - 历史：启动直接从 `sessions.json` 展示；点击存档行按记录的 agent + sessionId 执行 `session/load` 重放历史。已打开会话不重复显示，当前会话已有消息或流式时在新标签页打开。`⋯` 可重命名（showName）或软删除（show=false），删除项通过 “Show deleted” 恢复。
 - MCP：JSON 模态，校验后传给 new/load；输入 `/` 时 composer 上方出现命令面板，解析 `available_commands_update`。
 - Git 面板：右侧 300 DIP、可折叠，跟随当前会话 workspace；`internal/git` 异步执行 status/log 与 stage/commit/fetch/pull/push，无 git 或非仓库时只显示安装/`git init` 提示（见 [git.md](git.md)）。
+- Tasks 面板与 Git 共用右侧列：同一时间一个串行 runner；每个任务新建 executor Chat/session，回合结束后另起隔离 checker 进程，只按任务文本、本轮最后一段和此前轮次上下文判断。checker 通过后写 `tasks/<id>-<slug>.md`、执行一次 `git add -A` + commit（不 push），再开始下一个 pending；失败恢复任务开始前的 work tree 快照、写总结并标记 complete/failure（不 commit），然后继续下一个 pending；只有 Stop 会停队列并退回 pending；支持 pending 编辑/排序/删除和跨重启持久化（见 [tasks.md](tasks.md)）。
 - 诊断：顶部 “Logs” 打开 `Diagnostics`，显示发现状态、当前会话的 stderr 尾部、日志路径与 Reveal；stderr 同时写入滚动日志文件。
 - 计划/用量：composer 上方 plan；上下文环形进度、turn token 用量和会话标题在 composer/标题栏显示。
 - 跨 goroutine 改状态：`win.Update(func(){ ... })`；没有窗口的测试用 `App.Flush` 排队应用。
@@ -167,6 +174,8 @@ pi 自己的工具在工作区内读写执行；客户端只负责展示和审�
 ```
 settings.json        lastAgent、lastWorkspace、workspaces、removedWorkspaces、mcpServers、lastSelections（每个 agent 的模型/thinking/mode）、appearance、theme、notifications、paths 覆盖
 sessions.json        本地会话存档：agentId、sessionId、cwd、title、showName、show、会话时间、用户消息发送时间与每轮运行时间
+tasks.json           任务索引：workspace、title/text、pending/ongoing/complete、result、顺序、session、轮次、note、summaryPath
+<workspace>/tasks/   每个完成任务一份 Markdown 总结（tasks/<id>-<slug>.md）；成功的随任务 commit，失败的只保留文件
 logs/                每个 agent 的 stderr / 协议日志（1 MiB 滚动，保留一个 .1 备份）
 ```
 
@@ -179,6 +188,7 @@ logs/                每个 agent 的 stderr / 协议日志（1 MiB 滚动，保
 - 保存最后一次状态（当前会话的 agent/工作区/MCP）、每个 agent 的模型/thinking/mode、侧栏工作区列表和每个工作区的折叠状态；不保存会话布局、图片草稿或消息。
 - 会话索引单独放在 `sessions.json`，由 `internal/archive` 读写：`{version, sessions:[{agentId,sessionId,cwd,title,showName,createdAt,updatedAt,userTurns:[{number,sentAt,durationMs}],show}]}`。`(agentId, sessionId)` 唯一；`show=false` 是软删除，`showName` 是本地重命名；`userTurns` 按用户轮次保存本地发送时间和该轮运行时间（prompt 发送到结果返回），供 Jump 和会话流在 `session/load` 重放后显示。pi 的 fork 回放会带每条消息的发送时间；Command Code 和旧 bundle 没有时间元数据，退回本地 `userTurns`（ACP 本身不提供消息时间或耗时）。
 - 存档写入时机：session/new、load 成功，标题/轮次更新，重命名、删除/恢复。启动只读存档，且不会从存档补建 workspace；discovery 完成后，每个 ready agent 在后台自动调一次 `session/list` 合并（`cwd: null` 表示全部工作区并走完分页；有已连接进程时复用，否则临时 spawn；失败下次连接重试），之后该 agent 连接成功时再补一次。合并只保留 cwd 属于已添加 workspace 的会话，且绝不覆盖 `show/showName`。`session_info_update.title` 会立即写入存档；启动读存档时会把旧版本用首条 user 消息生成的图片临时路径标题清洗成正文或 `[Image]`（`internal/ui/title.go`），避免侧栏先显示路径再等同步。新增 workspace 时按该 cwd 过滤同步一次。文件为原子写入、0600；损坏 JSON 只在侧栏提示，不阻塞启动。
+- 任务索引单独放在 `tasks.json`，由 `internal/tasks` 读写：任务按 workspace 归属，状态固定为 `pending` / `ongoing` / `complete`，complete 带 `pass` / `failure` result；`summaryPath` 是 `tasks/<id>-<slug>.md` 的相对路径。创建、编辑、排序、删除和每次状态变化都原子落盘；启动时把遗留的 ongoing 改回 pending，旧的 complete 行补成 pass。成功总结会随任务 commit 提交；失败总结留在 workspace 但不提交。任务记录删除不删总结文件。
 - 不存 registry 快照，也不缓存探测结果：启动时重新检测。
 
 `main.go` 把 `mygo.App.Path(mygo.PathUserData)` 传给 `ui.Options.DataDir`；`DataDir` 为空时完全不落盘（测试、便携运行）。
@@ -201,6 +211,7 @@ logs/                每个 agent 的 stderr / 协议日志（1 MiB 滚动，保
 - 本地存档含 cwd 和 session id，只写用户数据目录（0600），不上传、不跨设备同步。
 - 不管登录与模型可用性：不检测凭据/配额，不代跑登录命令，不在应用内打开终端。
 - 不管理 Node 运行时（不捆绑、不安装、不升级），只定位用户已有的 Node。
+- 任务 runner 成功时只执行 `git add -A` + commit，不 push、不 force；失败时用任务开始前的 work tree 快照回滚本次改动（不 reset 到 HEAD），不 commit。任务提交会把当时工作区的全部改动一起提交。
 - Git 面板只调用用户已有的 git，不经过 shell、不代登录、不弹出凭据提示；不执行 force push / hard reset / clean。
 - vendored pi-acp 固定版本并附 LICENSE；更新走显式脚本，不自动跟随 npm。
 
@@ -212,4 +223,5 @@ logs/                每个 agent 的 stderr / 协议日志（1 MiB 滚动，保
 - [会话能力与 UI](features.md)
 - [UI 组件库](components.md)
 - [右侧 Git 面板](git.md)
+- [右侧任务面板与串行 runner](tasks.md)
 - [测试与计划](plan.md)

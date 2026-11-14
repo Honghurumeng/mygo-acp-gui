@@ -132,7 +132,7 @@ func (a *App) ensureGitPanel() {
 // load or an action already running alone, and only reads while the panel is
 // open.
 func (a *App) refreshGitOnFocus() {
-	if a.closed.Load() || !a.GitPanelOpen {
+	if a.closed.Load() || !a.GitPanelOpen || a.RightTab != rightTabGit {
 		return
 	}
 	workspace := a.activeGitWorkspace()
@@ -161,7 +161,7 @@ func (a *App) refreshGitAfterTurn(chat *Chat) {
 	if workspace == "" || !filepath.IsAbs(workspace) {
 		return
 	}
-	if !a.GitPanelOpen {
+	if !a.GitPanelOpen || a.RightTab != rightTabGit {
 		if a.Git.Workspace == workspace {
 			a.Git.Checked = false
 		}
@@ -368,7 +368,7 @@ func (a *App) gitPanelHeader(c *mui.Context) {
 		BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
 		mui.Column(c).Gap(1).Grow(1).Children(func() {
 			mui.Row(c).Gap(5).AlignItems(mui.Center).Children(func() {
-				mui.Text(c, "Git").FontSize(a.gitFont(14)).Bold()
+				a.rightPanelName(c, "Git")
 				if a.Git.Loading {
 					mui.Spinner(c)
 				}
