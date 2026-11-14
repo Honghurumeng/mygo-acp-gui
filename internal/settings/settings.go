@@ -61,13 +61,14 @@ func (f Fonts) withDefaults() Fonts {
 	return f
 }
 
-// Paths are explicit tool overrides. Node, Pi and CommandCode must be
+// Paths are explicit tool overrides. Node, Pi, CommandCode and Codex must be
 // absolute paths; Shell may be a name resolved from PATH.
 type Paths struct {
 	Shell       string `json:"shell,omitempty"`
 	Node        string `json:"node,omitempty"`
 	Pi          string `json:"pi,omitempty"`
 	CommandCode string `json:"commandCode,omitempty"`
+	Codex       string `json:"codex,omitempty"`
 }
 
 // Selection is the last model-panel choice for one agent: the current value
@@ -385,5 +386,6 @@ func sanitizePaths(paths Paths, problems *[]error) Paths {
 		Node:        clean("node", paths.Node),
 		Pi:          clean("pi", paths.Pi),
 		CommandCode: clean("commandCode", paths.CommandCode),
+		Codex:       clean("codex", paths.Codex),
 	}
 }

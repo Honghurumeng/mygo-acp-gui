@@ -24,11 +24,12 @@ type ResolveOptions struct {
 	// Shell is the login shell to ask, usually $SHELL. Empty picks zsh,
 	// bash or sh.
 	Shell string
-	// NodePath, PiPath and CommandCodePath override the shell's answers.
-	// They must be absolute paths.
+	// NodePath, PiPath, CommandCodePath and CodexPath override the shell's
+	// answers. They must be absolute paths.
 	NodePath        string
 	PiPath          string
 	CommandCodePath string
+	CodexPath       string
 	// Env is the base environment. Nil inherits the app's environment.
 	Env []string
 	// Timeout bounds each shell call. Zero uses 5 seconds.
@@ -44,9 +45,11 @@ type Environment struct {
 	NodePath           string
 	PiPath             string
 	CommandCodePath    string
+	CodexPath          string
 	NodeVersion        string
 	PiVersion          string
 	CommandCodeVersion string
+	CodexVersion       string
 	NodeMajor          int
 	Warnings           []string
 }
@@ -54,7 +57,8 @@ type Environment struct {
 // Summary is a short line for the UI.
 func (e Environment) Summary() string {
 	if e.NodePath == "" && e.PiPath == "" && e.NodeVersion == "" && e.PiVersion == "" &&
-		e.CommandCodePath == "" && e.CommandCodeVersion == "" {
+		e.CommandCodePath == "" && e.CommandCodeVersion == "" &&
+		e.CodexPath == "" && e.CodexVersion == "" {
 		return ""
 	}
 	var parts []string
@@ -79,11 +83,18 @@ func (e Environment) Summary() string {
 			parts = append(parts, "command-code "+e.CommandCodePath)
 		}
 	}
+	if e.CodexPath != "" {
+		if e.CodexVersion != "" {
+			parts = append(parts, "codex "+e.CodexVersion)
+		} else {
+			parts = append(parts, "codex "+e.CodexPath)
+		}
+	}
 	return strings.Join(parts, " · ")
 }
 
 // ResolveEnvironment asks the user's login shell for its environment and
-// for node/pi/command-code, so a Finder-launched app sees the same PATH as
+// for node/pi/command-code/codex, so a Finder-launched app sees the same PATH as
 // a terminal. If PATH comes only from an interactive rc file (common with
 // nvm and custom npm prefixes), it retries with an interactive login shell,
 // then checks common install locations. Explicit absolute overrides win.
@@ -103,6 +114,7 @@ func ResolveEnvironment(ctx context.Context, opts ResolveOptions) Environment {
 		env.NodePath = findExecutable("node", env.Path)
 		env.PiPath = findExecutable("pi", env.Path)
 		env.CommandCodePath = findExecutable("command-code", env.Path)
+		env.CodexPath = findExecutable("codex", env.Path)
 	} else {
 		shell, warning := resolveShell(opts.Shell)
 		env.Shell = shell
@@ -111,13 +123,14 @@ func ResolveEnvironment(ctx context.Context, opts ResolveOptions) Environment {
 		}
 		if shell != "" {
 			result := shellEnvDump(ctx, shell, base, timeout, "-lc")
-			if result.node == "" || result.pi == "" || result.commandCode == "" {
+			if result.node == "" || result.pi == "" || result.commandCode == "" || result.codex == "" {
 				// Some PATHs live only in .zshrc/.bashrc, which a
 				// non-interactive login shell does not source.
 				alt := shellEnvDump(ctx, shell, base, timeout, "-ilc")
 				useAlternative := (result.node == "" && alt.node != "") ||
 					(result.pi == "" && alt.pi != "") ||
-					(result.commandCode == "" && alt.commandCode != "")
+					(result.commandCode == "" && alt.commandCode != "") ||
+					(result.codex == "" && alt.codex != "")
 				if useAlternative {
 					if result.node == "" {
 						result.node = alt.node
@@ -127,6 +140,9 @@ func ResolveEnvironment(ctx context.Context, opts ResolveOptions) Environment {
 					}
 					if result.commandCode == "" {
 						result.commandCode = alt.commandCode
+					}
+					if result.codex == "" {
+						result.codex = alt.codex
 					}
 					if alt.env != nil {
 						result.env = alt.env
@@ -143,6 +159,7 @@ func ResolveEnvironment(ctx context.Context, opts ResolveOptions) Environment {
 			env.NodePath = result.node
 			env.PiPath = result.pi
 			env.CommandCodePath = result.commandCode
+			env.CodexPath = result.codex
 		}
 		env.Path = envValue(env.Env, "PATH")
 		if env.NodePath == "" {
@@ -153,6 +170,9 @@ func ResolveEnvironment(ctx context.Context, opts ResolveOptions) Environment {
 		}
 		if env.CommandCodePath == "" {
 			env.CommandCodePath = fallbackTool(ctx, "command-code", env.Env)
+		}
+		if env.CodexPath == "" {
+			env.CodexPath = fallbackTool(ctx, "codex", env.Env)
 		}
 	}
 
@@ -192,8 +212,20 @@ func ResolveEnvironment(ctx context.Context, opts ResolveOptions) Environment {
 			env.CommandCodePath = path
 		}
 	}
+	if opts.CodexPath != "" {
+		path, err := absoluteExecutable(opts.CodexPath, "codex")
+		if err != nil {
+			warning := err.Error()
+			if env.CodexPath != "" {
+				warning += "; using " + env.CodexPath
+			}
+			env.Warnings = append(env.Warnings, warning)
+		} else {
+			env.CodexPath = path
+		}
+	}
 
-	env.Env = ensurePath(env.Env, dirsOf(env.NodePath, env.PiPath, env.CommandCodePath)...)
+	env.Env = ensurePath(env.Env, dirsOf(env.NodePath, env.PiPath, env.CommandCodePath, env.CodexPath)...)
 	env.Path = envValue(env.Env, "PATH")
 
 	if env.NodePath != "" {
@@ -219,6 +251,14 @@ func ResolveEnvironment(ctx context.Context, opts ResolveOptions) Environment {
 			env.Warnings = append(env.Warnings, "command-code --version: "+err.Error())
 		} else {
 			env.CommandCodeVersion = version
+		}
+	}
+	if env.CodexPath != "" {
+		version, err := toolVersion(ctx, env.CodexPath, env.Env)
+		if err != nil {
+			env.Warnings = append(env.Warnings, "codex --version: "+err.Error())
+		} else {
+			env.CodexVersion = codexVersion(version)
 		}
 	}
 	return env
@@ -258,11 +298,12 @@ type shellDump struct {
 	node        string
 	pi          string
 	commandCode string
+	codex       string
 	warning     string
 }
 
 // shellEnvDump dumps the shell's environment as NUL-separated entries, then
-// asks command -v where node, pi and command-code are. The dump goes to a
+// asks command -v where node, pi, command-code and codex are. The dump goes to a
 // temporary file so that noisy shell startup scripts cannot corrupt it.
 func shellEnvDump(ctx context.Context, shell string, base []string, timeout time.Duration, flags ...string) shellDump {
 	f, err := os.CreateTemp("", "acp-gui-env-*")
@@ -277,6 +318,7 @@ func shellEnvDump(ctx context.Context, shell string, base []string, timeout time
 printf '\001NODE=%s\0' "$(command -v node 2>/dev/null)" >> "$ACP_GUI_ENV_FILE"
 printf '\001PI=%s\0' "$(command -v pi 2>/dev/null)" >> "$ACP_GUI_ENV_FILE"
 printf '\001COMMAND_CODE=%s\0' "$(command -v command-code 2>/dev/null)" >> "$ACP_GUI_ENV_FILE"
+printf '\001CODEX=%s\0' "$(command -v codex 2>/dev/null)" >> "$ACP_GUI_ENV_FILE"
 `
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -293,8 +335,8 @@ printf '\001COMMAND_CODE=%s\0' "$(command -v command-code 2>/dev/null)" >> "$ACP
 		}
 		return shellDump{warning: msg}
 	}
-	env, node, pi, commandCode := parseEnvDump(data)
-	result := shellDump{env: env, node: node, pi: pi, commandCode: commandCode}
+	env, node, pi, commandCode, codex := parseEnvDump(data)
+	result := shellDump{env: env, node: node, pi: pi, commandCode: commandCode, codex: codex}
 	if runCtx.Err() != nil {
 		result.warning = "login shell timed out"
 	}
@@ -307,7 +349,7 @@ printf '\001COMMAND_CODE=%s\0' "$(command -v command-code 2>/dev/null)" >> "$ACP
 // parseEnvDump reads the NUL-separated output. Entries starting with 0x01
 // are our markers; everything else is an environment entry. Shell startup
 // noise before the first NUL would be ignored safely.
-func parseEnvDump(data []byte) (env []string, node, pi, commandCode string) {
+func parseEnvDump(data []byte) (env []string, node, pi, commandCode, codex string) {
 	const marker = 0x01
 	for _, entry := range bytes.Split(data, []byte{0}) {
 		if len(entry) == 0 {
@@ -325,6 +367,8 @@ func parseEnvDump(data []byte) (env []string, node, pi, commandCode string) {
 				pi = string(value)
 			case "COMMAND_CODE":
 				commandCode = string(value)
+			case "CODEX":
+				codex = string(value)
 			}
 			continue
 		}
@@ -337,7 +381,7 @@ func parseEnvDump(data []byte) (env []string, node, pi, commandCode string) {
 		}
 		env = append(env, text)
 	}
-	return env, absoluteOrEmpty(node), absoluteOrEmpty(pi), absoluteOrEmpty(commandCode)
+	return env, absoluteOrEmpty(node), absoluteOrEmpty(pi), absoluteOrEmpty(commandCode), absoluteOrEmpty(codex)
 }
 
 func absoluteOrEmpty(path string) string {
@@ -376,6 +420,19 @@ func toolVersion(ctx context.Context, path string, env []string) (string, error)
 	return line, nil
 }
 
+// codexVersion trims the CLI's "codex-cli " prefix. The UI and sidebar
+// version labels show a plain semver like the other agents.
+func codexVersion(version string) string {
+	fields := strings.Fields(strings.TrimSpace(version))
+	if len(fields) > 1 {
+		return fields[len(fields)-1]
+	}
+	if len(fields) == 1 {
+		return fields[0]
+	}
+	return strings.TrimSpace(version)
+}
+
 func majorVersion(version string) int {
 	version = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(version), "v"))
 	if i := strings.IndexAny(version, ".-+ "); i >= 0 {
@@ -398,6 +455,7 @@ func fallbackTool(ctx context.Context, name string, env []string) string {
 			filepath.Join(home, ".npm-global", "bin"),
 			filepath.Join(home, ".local", "bin"),
 			filepath.Join(home, ".bun", "bin"),
+			filepath.Join(home, ".codex", "bin"),
 			filepath.Join(home, "Library", "pnpm"),
 			filepath.Join(home, ".local", "share", "pnpm"),
 			filepath.Join(home, ".volta", "bin"),
@@ -405,7 +463,7 @@ func fallbackTool(ctx context.Context, name string, env []string) string {
 		)
 	}
 	dirs = append(dirs, "/opt/homebrew/bin", "/usr/local/bin")
-	if name == "pi" || name == "command-code" {
+	if name == "pi" || name == "command-code" || name == "codex" {
 		if bin := npmGlobalBin(ctx, env); bin != "" {
 			dirs = append([]string{bin}, dirs...)
 		}

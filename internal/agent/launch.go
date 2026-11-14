@@ -1,7 +1,7 @@
 // Package agent resolves the executables and launch descriptions of the
 // agents this app can start.
 //
-// The GUI starts vendored pi-acp itself, with an absolute Node path. It
+// The GUI starts vendored pi-acp / codex-acp itself, with an absolute Node path. It
 // never relies on the PATH a Finder-launched app inherits, and never runs
 // npm/npx at startup.
 package agent
@@ -19,7 +19,7 @@ import (
 type Source string
 
 const (
-	// SourceVendored is a bundle shipped inside the app, such as pi-acp.
+	// SourceVendored is a bundle shipped inside the app, such as pi-acp or codex-acp.
 	SourceVendored Source = "vendored"
 	// SourceBuiltin is a hand-maintained app agent.
 	SourceBuiltin Source = "builtin"

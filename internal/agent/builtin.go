@@ -22,6 +22,21 @@ var Builtins = []BuiltinAgent{
 		Name:        "Command Code",
 		InstallHint: "Install command-code with Node.js 22+, then run: command-code login",
 	},
+	{
+		ID:          CodexID,
+		Name:        "Codex",
+		InstallHint: "Install Node.js 22+ and the Codex CLI, then run: codex login (see docs/design/codex.md).",
+	},
+}
+
+// IsBuiltinID reports whether id belongs to the hand-maintained table.
+func IsBuiltinID(id string) bool {
+	for _, builtin := range Builtins {
+		if builtin.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 // LaunchResult is one builtin agent's resolved launch spec or the reason it
@@ -44,6 +59,8 @@ func BuiltinLaunchResults(resourcesDir string, env Environment) []LaunchResult {
 			spec, err = PiLaunchSpec(resourcesDir, env)
 		case CommandCodeID:
 			spec, err = CommandCodeLaunchSpec(env)
+		case CodexID:
+			spec, err = CodexLaunchSpec(resourcesDir, env)
 		default:
 			err = fmt.Errorf("unknown builtin agent: %s", builtin.ID)
 		}

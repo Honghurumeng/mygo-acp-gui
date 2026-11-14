@@ -17,12 +17,12 @@
 
 每个会话是一个独立的 `Chat`：拥有自己的 agent 进程、ACP session、工作区、MCP 列表、消息、配置、草稿和权限请求。会话之间并行运行，切换只改变显示，不会暂停后台流式回复。
 
-选择“每会话独立进程”而不是共享进程里的多个 ACP session：进程级隔离让 cwd、取消、权限和崩溃互不影响，代价是每个会话各有一套 agent 运行时资源。agent 侧的单进程多会话能力并不一致：Command Code 可同进程多会话但必须共用 cwd，pi-acp 当前只保留最新一个活会话，见 [multi-session.md](multi-session.md)。
+选择“每会话独立进程”而不是共享进程里的多个 ACP session：进程级隔离让 cwd、取消、权限和崩溃互不影响，代价是每个会话各有一套 agent 运行时资源。agent 侧的单进程多会话能力并不一致：Command Code 可同进程多会话但必须共用 cwd，pi-acp 当前只保留最新一个活会话；codex-acp 由应用按会话独立进程启动，见 [multi-session.md](multi-session.md) 与 [codex.md](codex.md)。
 
 - `App` 只保存全局状态（内置 agent、发现结果、工作区列表、MCP 默认值、会话列表、当前会话）和 `[]*Chat`。
 - session 回调在创建时捕获所属 `*Chat`，按 session 指针路由，不读取“当前会话”，所以后台会话的 `session/update`、退出和权限都能落到正确位置。
 - 左侧工作区栏按 `Chat.Workspace` 分组：先显示打开会话，再显示该目录的已保存会话。打开会话的状态用行背景表达（`internal/ui/chatstatus.go`）：流式中是自左向右移动的绿色斜线，其他会话结束/报错是绿色底，当前会话结束是蓝色选区底，等待权限是蓝/白（深色主题为蓝/背景色）交替闪烁。两者合并计算，默认只显示前 5 条，超过时显示 `Show N more` 展开全部，展开后可 `Show less` 收回；展开状态只存在内存里，下次启动恢复为默认折叠。
-- 会话名前的内联图标是 agent 标记：pi 用 `pi.dev` 的方块 mark，Command Code 用其扩展里的 `#` 徽标（`internal/ui/icons/*.svg`，`//go:embed` 进二进制）。`mui.Icon` 以文字颜色绘制，所以跟随主题；未知 agent（如测试的 fake）不画图标。已保存会话按存档 `agentId` 画图标，标题栏也显示当前会话的 agent 图标，hover 提示 “pi agent” / “Command Code agent”。
+- 会话名前的内联图标是 agent 标记：pi 用 `pi.dev` 的方块 mark，Command Code 用其扩展里的 `#` 徽标，Codex 用终端 mark（`internal/ui/icons/*.svg`，`//go:embed` 进二进制）。`mui.Icon` 以文字颜色绘制，所以跟随主题；未知 agent（如测试的 fake）不画图标。已保存会话按存档 `agentId` 画图标，标题栏也显示当前会话的 agent 图标，hover 提示 “pi agent” / “Command Code agent” / “Codex agent”。
 - 工作区头部右侧 `⋯` 提供 `Remove workspace`：软删除只隐藏该分组，已打开会话、已保存会话和目录本身都不动，记录仍在 `workspaces` 里。移除后侧栏出现 “Show removed (N)”，展开后分组显示为 `[removed]`，同一菜单可 `Restore workspace`；重新通过 `＋` 添加或打开该目录下的存档也会恢复。
 - 会话右侧 `⋯` 打开重命名/删除；`Close process` 只关闭该会话的 agent 进程，标签页保留为草稿并回到存档列表，没有已连接或连接中的进程时该项显示为不可用。删除会关闭该会话的进程，并把对应存档记录标为 `show=false`。工作区上的 `＋` 在该目录下新建独立会话。
 - 启动时默认创建一个草稿会话；在草稿里输入第一条消息时自动连接，成功后立即发送。
@@ -81,7 +81,7 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 - 模式 chip 显示当前 mode；连接后点击调用 `session/set_mode` `{sessionId, modeId}`，草稿中点击只记录 `PendingMode`，由 Connect 在 `session/new` 之后统一应用。mode 只来自真实的 `modes`（或未来的 mode config option）；pi-acp v1 的 thinking 兼容块会被过滤，不会渲染成 mode。
 - 两者都更新 `Info`，并接收 agent 的 `config_option_update` / `current_mode_update` 通知。pi-acp 的 `current_mode_update` 在承载 thinking level 时，如果该值属于 thinking 选项，就不写入 `CurrentModeID`；真正的 thinking 当前值以 `thought_level.currentValue` 为准。
 - 流式回合、连接中或即将切换会话时禁用，避免 agent 返回 `-32600`。
-- Command Code 的 `effort` 可能随模型变化；选项一律以 agent 返回为准，不硬编码。
+- Command Code 的 `effort` 和 Codex 的 `reasoning_effort` 可能随模型变化；选项一律以 agent 返回为准，不硬编码。
 
 ## 已保存会话与本地存档
 
@@ -106,7 +106,7 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 - 合并只补 `cwd/title/updatedAt` 和新记录，不改变 `show/showName`，所以已删除/已重命名的会话不会在同步后复活或改名。合并不会用 `[Image]` 这种纯图片兜底覆盖已有的更具体标题。
 - 从其他工作区打开时，把存档里的 `cwd` 传给 load、加入侧栏工作区列表；路径比较解析 symlink，避免同一目录出现两个分组。
 - 存档写入是原子的（同目录临时文件 + rename，0600）。文件缺失视为空；损坏 JSON、未来版本、缺少 agentId/sessionId 或重复记录只产生侧栏警告，其余记录照常展示，不阻塞启动。
-- 历史重放事件在 `Start` 阶段缓冲，UI 安装好 Session 后调用 `Activate` 按顺序消费，避免丢失。`user_message_chunk` 的 image 内容块按顺序解码成消息缩略图：pi 和 Command Code 的 `session/load` 都会回放用户图片，不再只保留文本。
+- 历史重放事件在 `Start` 阶段缓冲，UI 安装好 Session 后调用 `Activate` 按顺序消费，避免丢失。`user_message_chunk` 的 image 内容块按顺序解码成消息缩略图：pi、Command Code 和 codex 的 `session/load` 都会回放用户图片，不再只保留文本。
 - 重放中的 `user_message_chunk`、`agent_message_chunk` 和 `agent_thought_chunk` 合并成连续的用户/助手行，结束后统一标记 Done。pi-acp 给每条持久化消息带 `_meta.piAcp.replay.key`；key 变化时强制新行，因此失败 assistant（空内容、无 chunk）两侧的 user 消息不会粘连。空的 user 消息也会保留一行，保证轮次计数。
 - pi 的失败轮次回放成居中的 `Turn failed: …` / `Turn aborted.` 系统行，不再从恢复后的历史里消失。
 - `agent_thought_chunk`（实时 `thinking_delta` 和历史回放都走这个类型）累积到当前助手行的 `Thought`，渲染为回答上方的「Thinking」折叠块，默认收起；只有推理没有正文的空行不会画出来。

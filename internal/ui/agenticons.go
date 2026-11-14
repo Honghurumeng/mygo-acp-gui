@@ -9,7 +9,8 @@ import (
 )
 
 // Agent brand marks, drawn in the text color so they follow light/dark themes.
-// Sources: https://pi.dev/logo-auto.svg and the commandcode-vscode extension.
+// Sources: https://pi.dev/logo-auto.svg, the commandcode-vscode extension and
+// Lucide's square-terminal for Codex.
 //
 //go:embed icons/pi.svg
 var piIconSVG []byte
@@ -17,9 +18,13 @@ var piIconSVG []byte
 //go:embed icons/command-code.svg
 var commandCodeIconSVG []byte
 
+//go:embed icons/codex.svg
+var codexIconSVG []byte
+
 var (
 	piIcon          = mui.MustParseSVG(piIconSVG)
 	commandCodeIcon = mui.MustParseSVG(commandCodeIconSVG)
+	codexIcon       = mui.MustParseSVG(codexIconSVG)
 )
 
 // agentIcon returns the brand mark for a built-in agent. Custom or test
@@ -30,6 +35,8 @@ func agentIcon(agentID string) *mui.SVG {
 		return piIcon
 	case agent.CommandCodeID:
 		return commandCodeIcon
+	case agent.CodexID:
+		return codexIcon
 	}
 	return nil
 }
@@ -41,6 +48,8 @@ func agentIconName(agentID string) string {
 		return "pi"
 	case agent.CommandCodeID:
 		return "Command Code"
+	case agent.CodexID:
+		return "Codex"
 	}
 	return ""
 }

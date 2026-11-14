@@ -14,6 +14,7 @@ func TestSidebarShowsAgentCLIVersions(t *testing.T) {
 		Agents: []agent.LaunchSpec{
 			{ID: agent.PiID, Name: "pi", Version: "0.81.0"},
 			{ID: agent.CommandCodeID, Name: "Command Code", Version: "1.88.5"},
+			{ID: agent.CodexID, Name: "Codex", Version: "0.169.0"},
 		},
 	})
 	tt := mui.NewTester(app.View, 1060, 760)
@@ -23,7 +24,7 @@ func TestSidebarShowsAgentCLIVersions(t *testing.T) {
 	})
 	tt.Frame()
 
-	for _, want := range []string{"pi v0.81.0", "Command Code v1.88.5"} {
+	for _, want := range []string{"pi v0.81.0", "Command Code v1.88.5", "Codex v0.169.0"} {
 		if !tt.HasText(want) {
 			t.Errorf("sidebar missing %q; texts: %q", want, tt.Texts())
 		}

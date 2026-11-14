@@ -2,19 +2,20 @@
 
 ## 范围
 
-**不做 ACP registry 全量发现**，也不扫描本机所有可能的 agent。应用只支持**内置表**里的 agent，目前两个：
+**不做 ACP registry 全量发现**，也不扫描本机所有可能的 agent。应用只支持**内置表**里的 agent，目前三个：
 
 | id | 名称 | 启动方式 |
 | --- | --- | --- |
 | `pi` | pi | vendored `pi-acp` bundle；需要系统 Node 22+ 和 PATH 上的 `pi`（见 [pi.md](pi.md)） |
 | `command-code` | Command Code | `command-code acp` |
+| `codex` | Codex | vendored `codex-acp` bundle + `CODEX_PATH` 指向系统 `codex`；需要 Node 22+（见 [codex.md](codex.md)） |
 
 - 不联网拉取/刷新 agent 目录，不内置 `registry.json`。
 - 不扫描 npm / pnpm / bun / uv 全局包，不导入 Zed `agent_servers`。
 - 不自动安装 agent；未安装时只显示安装提示。
 - 新增 agent = 修改内置表 + 测试 + 发版；运行时不会发现表外的 agent。
 
-`command-code` 是本机已验证的第二个 agent；其余 agent 不进入默认实现范围。
+`command-code` 和 `codex` 是本机已验证的另外两个 agent；其余 agent 不进入默认实现范围。
 
 ## 内置表
 
@@ -28,28 +29,29 @@ type BuiltinAgent struct {
 }
 ```
 
-具体 command/args/version 在 `BuiltinLaunchResults` 里按 ID 分派（pi 是 vendored 特例）。示意：
+具体 command/args/version 在 `BuiltinLaunchResults` 里按 ID 分派（pi / codex 是 vendored 特例）。示意：
 
 | id | command | args | versionArgs | installHint |
 | --- | --- | --- | --- | --- |
 | `pi` | （vendored，不走 command） | — | `pi --version` / `node --version` | 见 pi.md |
 | `command-code` | `command-code` | `acp` | `--version` | 以官方安装文档为准；需要 Node 22+ |
+| `codex` | （vendored，不走 command） | — | `codex --version` / `node --version` | 安装 Node 22+ 和 Codex CLI，然后 `codex login`；见 codex.md |
 
-pi 是特例：命令由解析后的 `node` + `resources/agents/pi-acp/pi-acp.bundle.mjs` 拼成，不使用 `Command` 字段；Node/pi 的定位与版本要求见 [pi.md](pi.md)。
+pi / codex 是特例：命令由解析后的 `node` + 各自的 vendored bundle 拼成，不使用 `Command` 字段；codex 还要把系统 `codex` 的绝对路径写进 `CODEX_PATH`。Node/pi 的定位与版本要求见 [pi.md](pi.md)，Codex 见 [codex.md](codex.md)。
 
-只有两个 agent，所以表保持手写、可读；不引入 JSON 目录、registry 解析或 catalog 包。
+只有三个 agent，所以表保持手写、可读；不引入 JSON 目录、registry 解析或 catalog 包。
 
 ## 启动检测
 
 对内置表逐条执行：
 
-1. 解析绝对路径：继承登录 shell 环境；pi 需要 node、bundle 和 `pi`，command-code 用 `command -v command-code`。
+1. 解析绝对路径：继承登录 shell 环境；pi 需要 node、bundle 和 `pi`，command-code 用 `command -v command-code`，codex 需要 node、bundle 和 `codex`。
 2. 版本：跑 `versionArgs`，5 秒超时；失败只影响版本显示。
 3. `initialize` 探测（5 秒），确认它真的是 ACP agent。
 4. 结果写入内存状态；启动异步执行，不阻塞窗口。
 5. “重新检测”重跑以上流程。
 
-当前实现：`agent.BuiltinLaunchResults` 解析 pi 和 command-code 的路径/版本；对每个成功的 spec 并行执行 `session.Probe`（仅 `initialize`，5 秒）。单个 agent 失败只记录状态，不隐藏另一个。侧栏状态行显示 agent 名称、CLI 版本和 `ready` / `not-installed` / `installed-not-acp` / `needs-auth` / `error`；pi 用 `pi --version`，不显示 vendored pi-acp 的 `VERSION`（`initialize.agentInfo.version` 是适配器版本）。状态行右侧的齿轮打开设置面板。
+当前实现：`agent.BuiltinLaunchResults` 解析 pi、command-code 和 codex 的路径/版本；对每个成功的 spec 并行执行 `session.Probe`（仅 `initialize`，5 秒）。单个 agent 失败只记录状态，不隐藏另一个。侧栏状态行显示 agent 名称、CLI 版本和 `ready` / `not-installed` / `installed-not-acp` / `needs-auth` / `error`；pi 用 `pi --version`，codex 用 `codex --version`，不显示 vendored bundle 的 `VERSION`（`initialize.agentInfo.version` 是适配器版本）。状态行右侧的齿轮打开设置面板。
 
 状态定下之后再跑一轮**配置探测**（`session.ProbeConfigModels`）：用临时工作区做 `initialize` + 一次用完即弃的 `session/new`，把 `configOptions` 和 `modes` 分别缓存到内存的 `AgentConfigs[agentID]` / `AgentModes[agentID]`，让输入框在连接前就能选 provider / model / thinking / mode。`session/new` 一返回就先发布模型列表和当前模型的档位，同一个进程再继续扫其余模型。这一轮 30 秒总预算（`session/new` 12 秒、每次模型切换 5 秒）、异步执行，失败只丢缓存，既不延迟启动也不改变状态。
 
@@ -59,7 +61,7 @@ ACP 没有独立的 provider 可用性查询；`session/new` 返回的 model `co
 
 草稿切到另一个 model 时，优先用 `model-config.json` 里该模型的快照渲染 thinking 和其他随模型变化的选项；模型列表本身仍取最新一次 `session/new` 的结果（新模型可能刚出现）。只有快照缺失（首次启动还没扫到、或切换失败）时才隐藏旧档位并提示 `Connect to load levels`，同时清掉该 model 的 thinking 草稿；Connect 后由真实 session 的 `config_option_update` 给出新档位。已连接会话每次 `set_config_option` / `config_option_update` 也把结果写回这张表，所以手动切过一次的模型不必等下一次启动。
 
-路径覆盖：`ACP_GUI_NODE`、`ACP_GUI_PI`、`ACP_GUI_COMMAND_CODE` 必须是绝对路径；`ACP_GUI_SHELL` 可换登录 shell。优先级为环境变量 > `settings.json` 的 `paths` > 登录 shell 解析；无效覆盖保留 shell 结果并警告。
+路径覆盖：`ACP_GUI_NODE`、`ACP_GUI_PI`、`ACP_GUI_COMMAND_CODE`、`ACP_GUI_CODEX` 必须是绝对路径；`ACP_GUI_SHELL` 可换登录 shell。优先级为环境变量 > `settings.json` 的 `paths` > 登录 shell 解析；无效覆盖保留 shell 结果并警告。
 
 ## 探测（probe）
 
@@ -114,6 +116,11 @@ printf '%s\n' \
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false}}}' \
   | timeout 5 node resources/agents/pi-acp/pi-acp.bundle.mjs
+
+# codex（CODEX_PATH 指向本机 Codex CLI；需要保持 stdin 打开才能收到 initialize 响应）
+{ printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false}}}'; sleep 5; } \
+  | CODEX_PATH="$(command -v codex)" timeout 10 node resources/agents/codex-acp/codex-acp.bundle.mjs
 ```
 
 Windows PowerShell：
@@ -129,13 +136,19 @@ Windows PowerShell：
 {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentInfo":{"name":"Command Code","version":"1.88.5"},"agentCapabilities":{"loadSession":true,"promptCapabilities":{"audio":false,"image":true,"embeddedContext":true}},"authMethods":[{"id":"command-code-cli","name":"Command Code CLI login","description":"Sign in once with `cmd login` in a terminal; this session reuses that account."}]}}
 ```
 
-`command-code` 会把 `[acp] initialize: ...` 写到 stderr。stdout 必须只有协议 JSON；探测时 stderr 单独收集，不能当作响应。Command Code 的完整实测流程、权限选项、未登录错误与测试命令见 [command-code.md](command-code.md)。
+Codex 的响应（`codex-acp@2.6.0` + `codex-cli 0.169.0`，可能先多一行 `_auth/status_update` 通知）：
 
-跨平台探测已由 `internal/session.Probe` 提供：发送 `initialize`、5 秒超时、收集 stderr、关闭进程组；UI 在发现阶段并行调用。
+```json
+{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentInfo":{"name":"@agentclientprotocol/codex-acp","title":"Codex","version":"2.6.0"},"agentCapabilities":{"auth":{"logout":{}},"providers":{},"loadSession":true,"promptCapabilities":{"embeddedContext":true,"image":true},"sessionCapabilities":{"resume":{},"list":{},"close":{},"delete":{},"fork":{},"title":{},"additionalDirectories":{},"subagents":{},"systemPrompt":{}},"mcpCapabilities":{"acp":false,"http":true,"sse":false}},"authMethods":[{"id":"api-key","name":"API Key"},{"id":"chat-gpt","name":"ChatGPT"}]}}
+```
+
+`command-code` 会把 `[acp] initialize: ...` 写到 stderr。stdout 必须只有协议 JSON；探测时 stderr 单独收集，不能当作响应。Codex 会先启动 `codex app-server`，响应前可能推送 `_auth/status_update` 通知。Command Code 的完整实测流程见 [command-code.md](command-code.md)，Codex 的 bundle、`CODEX_PATH` 和登录说明见 [codex.md](codex.md)。
+
+跨平台探测已由 `internal/session.Probe` 提供：发送 `initialize`、5 秒超时、收集 stderr、关闭进程组；UI 在发现阶段并行调用。Codex 的 initialize 需要启动 `codex app-server`，本机实测在 5 秒内完成；若机器较慢会显示 `error`，可点侧栏 `Refresh agents` 重试。
 
 ## 安全
 
-- 只探测内置表里的两个 agent，不遍历全盘，不接受运行时的表外 agent。
+- 只探测内置表里的三个 agent，不遍历全盘，不接受运行时的表外 agent。
 - 每次探测都必须能杀掉进程组。
 - 不自动安装 agent；MVP 只展示安装提示/命令。
 - 不把 API key 写入应用配置或日志。

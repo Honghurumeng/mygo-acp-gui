@@ -30,6 +30,7 @@ func TestAgentBadgesOnConversations(t *testing.T) {
 		Agents: []agent.LaunchSpec{
 			{ID: agent.PiID, Name: "pi"},
 			{ID: agent.CommandCodeID, Name: "Command Code"},
+			{ID: agent.CodexID, Name: "Codex"},
 		},
 	})
 	app.MD.Reveal = &markdown.Reveal{Unit: markdown.AtOnce}
@@ -38,13 +39,16 @@ func TestAgentBadgesOnConversations(t *testing.T) {
 	codeChat := app.newChatTabIn(workspace)
 	codeChat.Agent = app.Agents[1]
 	codeChat.Title = "Command Code chat"
+	codexChat := app.newChatTabIn(workspace)
+	codexChat.Agent = app.Agents[2]
+	codexChat.Title = "Codex chat"
 	tt := mui.NewTester(app.View, 1060, 760)
 	t.Cleanup(func() {
 		app.Shutdown()
 		app.Flush()
 	})
 	tt.Frame()
-	for _, label := range []string{"pi agent", "Command Code agent"} {
+	for _, label := range []string{"pi agent", "Command Code agent", "Codex agent"} {
 		if _, ok := tt.Find(label); !ok {
 			t.Errorf("missing %q badge; labels: %q", label, tt.Texts())
 		}

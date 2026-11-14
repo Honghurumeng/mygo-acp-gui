@@ -27,6 +27,6 @@ coverage.out
 # 本地设计稿
 docs/*.png
 
-# 注意：resources/agents/pi-acp/ 是 vendored bundle，必须提交，不要忽略
+# 注意：resources/agents/pi-acp/ 与 codex-acp/ 是 vendored bundle，必须提交，不要忽略
 
 pi-acp-main

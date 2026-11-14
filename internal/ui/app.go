@@ -470,6 +470,9 @@ func New(opts Options) *App {
 	if a.resolveOpts.CommandCodePath == "" {
 		a.resolveOpts.CommandCodePath = firstNonEmpty(os.Getenv("ACP_GUI_COMMAND_CODE"), a.settingsPaths.CommandCode)
 	}
+	if a.resolveOpts.CodexPath == "" {
+		a.resolveOpts.CodexPath = firstNonEmpty(os.Getenv("ACP_GUI_CODEX"), a.settingsPaths.Codex)
+	}
 	// Start with a draft conversation so the compose box and its controls are
 	// visible; the first message connects it.
 	// The initial draft expands its group. Capture the persisted state first
@@ -895,17 +898,17 @@ func (a *App) statusLine() string {
 		name := chat.agentName()
 		version := strings.TrimSpace(chat.Agent.Version)
 		if chat.Info.AgentInfo != nil {
-			if chat.Agent.ID != agent.PiID && chat.Agent.ID != agent.CommandCodeID {
+			if !agent.IsBuiltinID(chat.Agent.ID) {
 				// Custom agents report their own display name. Builtins use
-				// their CLI name and version instead: pi-acp's agentInfo version
-				// is the adapter version, not the installed pi version.
+				// their CLI name and version instead: the adapter's
+				// agentInfo.version is not the installed CLI version.
 				if chat.Info.AgentInfo.Title != "" {
 					name = chat.Info.AgentInfo.Title
 				} else if chat.Info.AgentInfo.Name != "" {
 					name = chat.Info.AgentInfo.Name
 				}
 				version = chat.Info.AgentInfo.Version
-			} else if version == "" && chat.Agent.ID != agent.PiID {
+			} else if version == "" && chat.Agent.ID == agent.CommandCodeID {
 				version = chat.Info.AgentInfo.Version
 			}
 		}
@@ -952,7 +955,7 @@ func (a *App) emptyState(c *mui.Context) {
 		})
 	case a.Resolving:
 		centered(c, func() {
-			busyLine(c, "Probing pi and Command Code…")
+			busyLine(c, "Probing pi, Command Code and Codex…")
 		})
 	default:
 		glyph, title, text := emptyStateCopy(chat, len(a.Agents))
@@ -970,7 +973,7 @@ func emptyStateCopy(chat *Chat, agents int) (glyph *mui.SVG, title, text string)
 	case chat != nil && chat.Session != nil:
 		return messagesSquareIcon, "Connected. Send a message to start.", "Agent updates stream into this list."
 	case agents == 0:
-		return unplugIcon, "No ACP agent available", "Install pi or Command Code, then refresh discovery in the sidebar."
+		return unplugIcon, "No ACP agent available", "Install pi, Command Code or Codex, then refresh discovery in the sidebar."
 	case chat != nil:
 		return sparklesIcon, "Start the conversation.", "Type below and press Enter; the app connects on the first message."
 	default:

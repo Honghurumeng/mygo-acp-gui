@@ -36,11 +36,18 @@ pi-acp bundle 冒烟（只 `initialize`，不 spawn pi、不碰凭据）：
 node scripts/pi-acp-smoke.mjs
 ```
 
+codex-acp bundle 冒烟（只 `initialize`，需要系统 `codex`，不创建会话、不调模型）：
+
+```bash
+node scripts/codex-acp-smoke.mjs
+```
+
 真实 agent 冒烟（会创建会话并调用模型，opt-in）：
 
 ```bash
 ACP_REAL_PI=1 go test ./internal/session -run TestRealPi -v
 ACP_REAL_COMMAND_CODE=1 go test ./internal/session -run '^TestRealCommandCode$' -v -count=1
+ACP_REAL_CODEX=1 go test ./internal/session -run TestRealCodex -v -count=1
 ```
 
 ### UI
@@ -53,17 +60,18 @@ ACP_REAL_COMMAND_CODE=1 go test ./internal/session -run '^TestRealCommandCode$' 
 
 ### 真实 agent（可选、本机）
 
-当前已实现真实 pi / command-code 的 opt-in 冒烟：
+当前已实现真实 pi / command-code / codex 的 opt-in 冒烟：
 
 ```bash
 ACP_REAL_PI=1 go test ./internal/session -run TestRealPi -v
 ACP_REAL_COMMAND_CODE=1 go test ./internal/session -run '^TestRealCommandCode$' -v -count=1
 ACP_REAL_COMMAND_CODE=1 go test ./internal/session -run '^TestRealCommandCodeAuthRequired$' -v -count=1
+ACP_REAL_CODEX=1 go test ./internal/session -run TestRealCodex -v -count=1
 ```
 
-pi 测试走 `initialize` + `session/new` + 一轮 `session/prompt`，并断言 `usage_update` 和 prompt `usage`；command-code 测试额外覆盖写文件权限、`session/cancel`、取消后继续对话和退出清理，另一个测试用临时 `HOME` 覆盖未登录的 `-32000` / `authMethods`。调用模型的测试默认跳过。发现阶段的只读 `initialize` 探测已由 `internal/session.Probe` 实现，UI 启动时逐 agent 并行执行。
+pi 测试走 `initialize` + `session/new` + 一轮 `session/prompt`，并断言 `usage_update` 和 prompt `usage`；command-code 测试额外覆盖写文件权限、`session/cancel`、取消后继续对话和退出清理，另一个测试用临时 `HOME` 覆盖未登录的 `-32000` / `authMethods`；codex 测试走 vendored bundle + 系统 `codex app-server`，断言 session/new、model config 和一轮回复。调用模型的测试默认跳过。发现阶段的只读 `initialize` 探测已由 `internal/session.Probe` 实现，UI 启动时逐 agent 并行执行。
 
-Command Code 的协议细节见 [command-code.md](command-code.md)；UI 能力见 [features.md](features.md)。
+Command Code 的协议细节见 [command-code.md](command-code.md)，Codex 见 [codex.md](codex.md)；UI 能力见 [features.md](features.md)。
 
 Feature tests:
 
@@ -81,14 +89,15 @@ go test ./internal/ui -run 'TestSettings|TestShutdownPersists|TestCorruptSetting
 
 1. 从 Finder 启动 `.app`（不是终端）——验证 PATH 解析。
 2. 本机已装 `command-code`：应出现在 Agent 列表，能 Connect、流式回复、审批权限、取消。
-3. 本机未装 `command-code`：不应阻塞 pi，也不应出现空列表崩溃。
+3. 本机未装 `command-code` 或 `codex`：不应阻塞已安装的 agent，也不应出现空列表崩溃。
 4. 本机未登录 Command Code：Connect 显示 `authMethods` + `command-code login`，应用不代登录。
 5. 用 fixture 模拟同名非 ACP 命令：Connect 失败并显示 stderr，该 agent 状态显示 `installed-not-acp`。
-6. 界面只列出 pi、command-code，不出现 registry 里的其他 agent。
+6. 界面只列出 pi、command-code、codex，不出现 registry 里的其他 agent。
 7. pi：离线（断网）启动，仍能连接（vendored pi-acp），且能聊天。
-8. 权限弹窗、取消、关闭窗口：无残留 `pi` / `command-code` / agent 进程。
+8. 权限弹窗、取消、关闭窗口：无残留 `pi` / `command-code` / `codex` / agent 进程。
 9. 退出再启动：上次 agent / 工作区恢复。
 10. pi 未登录：只显示 `authMethods` / 登录命令，应用不尝试登录、不打开内嵌终端。
+10b. codex：已装 Codex CLI 时应出现在列表；`codex login` 后能 Connect、流式回复、取消；未登录时只显示 `authMethods` + `codex login`，不代登录。
 11. 多会话：在侧栏开两个会话分别发 `/slow` 和普通消息，切换会话时后台继续流式；后台会话请求权限时弹窗标明会话，回答不影响另一个会话。
 12. 已保存会话：重启后在对应 workspace 下直接从 `sessions.json` 看到历史会话，不等 agent；点击按存档的 agent + sessionId 用 `session/load` 重放历史。重命名后重启仍显示 `showName`；删除后自动同步/重启都不再出现，可从 “Show deleted” 恢复。
 12b. 工作区软删除：工作区 `⋯` → `Remove workspace` 后分组隐藏但存档/会话不变，重启仍不出现；“Show removed (N)” → `Restore workspace` 恢复。
@@ -106,12 +115,14 @@ go tool mygo dev
 go tool mygo build
 go tool mygo build -skip-dmg   # 本地快速打包
 node scripts/pi-acp-smoke.mjs        # vendored pi-acp 冒烟
+node scripts/codex-acp-smoke.mjs     # vendored codex-acp 冒烟
 scripts/vendor-pi-acp.sh             # 仅在升级 pi-acp 时运行
+scripts/vendor-codex-acp.sh          # 仅在升级 codex-acp 时运行
 ```
 
 ## MVP
 
-- [x] 内置 agent（pi、command-code）路径/版本解析 + 可选列表 + 单 agent 失败不阻塞另一个
+- [x] 内置 agent（pi、command-code、codex）路径/版本解析 + 可选列表 + 单 agent 失败不阻塞另一个
 - [x] 内置 agent 的 `initialize` 探测（5 秒，不缓存）+ `ready` / `not-installed` / `installed-not-acp` / `needs-auth` 状态展示
 - [x] 发现后异步配置探测（临时 `session/new` 读 `configOptions` / `modes`），草稿即可选 provider / model / thinking / mode，Connect 后自动补齐；provider 列表以 agent 当前返回的 model 选项为准，面板打开时节流刷新
 - [x] agent 选择 + 工作区选择 + 绝对路径/可写校验（上次使用由 settings.json 恢复）
@@ -120,14 +131,16 @@ scripts/vendor-pi-acp.sh             # 仅在升级 pi-acp 时运行
 - [x] 模型/effort/模式配置 + `session/set_config_option` / `set_mode`；model/thinking/mode 按 agent 持久化（`lastSelections`），新建草稿恢复、Connect 校验、切换 agent 恢复各自的选择
 - [x] 图片附件（文件选择 + 剪贴板粘贴）、MCP servers JSON、输入 `/` 触发的命令面板、`@` 文件引用（只发路径文本）
 - [x] 侧栏按 workspace 分组、已保存会话直接展示、折叠/展开、超过 5 条收起、重命名/删除/软删除恢复
-- [x] 会话行与标题栏的 agent 品牌图标（pi、Command Code，SVG 内嵌并跟随主题）
+- [x] 会话行与标题栏的 agent 品牌图标（pi、Command Code、Codex，SVG 内嵌并跟随主题）
 - [x] 本地 `sessions.json` 会话存档：agent/session 关联、启动直接展示、show 软删除、showName 重命名、点击 load 重放历史
 - [x] composer：可拖动高度、附件/git/mode/上下文环/模型面板/thinking/发送；首条消息自动连接
 - [x] 右侧 Git 面板：可折叠、无 git/无仓库提示、status、紧凑可展开提交图、逐文件 diff 预览、stage/commit/fetch/pull/push/undo soft reset
 - [x] 右侧 Tasks 面板：任务创建/排序/删除、pending/ongoing/complete + pass/failure、串行 executor + 隔离 checker（多轮上下文）、成功 Markdown 总结 + 每任务一次 commit（不 push）、失败回滚 + 无 commit
 - [x] pi-acp 单文件 bundle vendored（`resources/agents/pi-acp/`）
-- [x] 系统 Node / pi / command-code 定位（登录 shell + 绝对路径覆盖）+ 登录指引（只展示，不代登录）
+- [x] codex-acp 官方单文件 bundle vendored（`resources/agents/codex-acp/`）+ 系统 Codex CLI（`CODEX_PATH`）
+- [x] 系统 Node / pi / command-code / codex 定位（登录 shell + 绝对路径覆盖）+ 登录指引（只展示，不代登录）
 - [x] Command Code 启动与完整聊天流程：initialize、session/new、流式、权限、取消、退出清理
+- [x] Codex 启动与完整聊天流程：官方 codex-acp bundle + 系统 codex、initialize、session/new、流式、取消、退出清理
 - [x] 退出清理（Setpgid + 进程组 SIGTERM/SIGKILL）
 - [x] settings.json 持久化（上次 agent/工作区、每个 agent 的模型/thinking/mode、侧栏工作区列表 + `removedWorkspaces` 软删除、MCP 默认值、paths 覆盖、外观/主题；原子写入 + 容错加载）
 - [x] 错误诊断面板、stderr 日志滚动（Diagnostics 模态 + `logs/<agent>.log`，1 MiB 滚动）
@@ -151,11 +164,11 @@ scripts/vendor-pi-acp.sh             # 仅在升级 pi-acp 时运行
 
 ## 明确不做
 
-- 不实现 ACP agent 端（pi-acp 已经做了）
+- 不实现 ACP agent 端（pi-acp / codex-acp 已经做了）
 - 不重写 pi（pi 仍然是 Node 程序）
 - 不做 Mac App Store 沙箱版本
 - MVP 不自动安装任意 agent
-- 不做 registry 全量发现/在线目录；只支持内置表（当前 pi、command-code）
+- 不做 registry 全量发现/在线目录；只支持内置表（当前 pi、command-code、codex）
 - 不声明 `fs` / `terminal` 能力
 - 不捆绑、不安装、不升级 Node；默认用户电脑上已有 Node 22+
 - 不实现登录流程、不内嵌终端；模型凭据/可用性由用户自理
@@ -169,6 +182,7 @@ scripts/vendor-pi-acp.sh             # 仅在升级 pi-acp 时运行
 
 - ACP 协议：https://agentclientprotocol.com
 - `@geohar/pi-acp`：npm 包（MIT）；fork `https://github.com/georgeharker/pi-acp`，原始项目 `https://github.com/svkozak/pi-acp`。
+- `@agentclientprotocol/codex-acp`：官方 ACP 适配器（Apache-2.0），`https://github.com/agentclientprotocol/codex-acp`；Codex CLI：`https://github.com/openai/codex`。
 - pi RPC 文档（本机安装包内）：`docs/rpc.md`、`docs/rpc-commands.md`、`docs/json.md`、`docs/rpc-extension-ui.md`
 - MyGo 文档：`github.com/egoist/mygo/docs`，重点是 `docs/native.md`、`docs/ui/markdown.md`、`docs/ui/list.md`、`docs/ui/views.md`、`docs/distribution.md`
 - MyGo 示例：`examples/markdown-chat`

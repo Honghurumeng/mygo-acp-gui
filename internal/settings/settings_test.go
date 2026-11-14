@@ -244,6 +244,7 @@ func TestLoadDropsRelativePaths(t *testing.T) {
 			"shell": "/bin/zsh",
 			"node":  "bin/node",
 			"pi":    "/usr/local/bin/pi",
+			"codex": "/usr/local/bin/codex",
 		},
 	})
 	if err != nil {
@@ -257,7 +258,8 @@ func TestLoadDropsRelativePaths(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "relative node path") {
 		t.Fatalf("error = %v", err)
 	}
-	if file.Paths.Node != "" || file.Paths.Pi != "/usr/local/bin/pi" || file.Paths.Shell != "/bin/zsh" {
+	if file.Paths.Node != "" || file.Paths.Pi != "/usr/local/bin/pi" ||
+		file.Paths.Codex != "/usr/local/bin/codex" || file.Paths.Shell != "/bin/zsh" {
 		t.Errorf("paths = %+v", file.Paths)
 	}
 }

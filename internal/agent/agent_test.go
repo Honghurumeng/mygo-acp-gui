@@ -95,6 +95,72 @@ func TestPiLaunchSpec(t *testing.T) {
 	}
 }
 
+func TestCodexLaunchSpec(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake executables use a shebang")
+	}
+	root := t.TempDir()
+	bundleDir := filepath.Join(root, "agents", "codex-acp")
+	if err := os.MkdirAll(bundleDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bundle := filepath.Join(bundleDir, "codex-acp.bundle.mjs")
+	if err := os.WriteFile(bundle, []byte("// bundle\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	bin := t.TempDir()
+	node := fakeExecutable(t, bin, "node")
+	codex := fakeExecutable(t, bin, "codex")
+	env := Environment{
+		Env:          []string{"PATH=/usr/bin:/bin"},
+		NodePath:     node,
+		CodexPath:    codex,
+		NodeMajor:    22,
+		NodeVersion:  "v22.20.0",
+		CodexVersion: "0.169.0",
+	}
+
+	spec, err := CodexLaunchSpec(root, env)
+	if err != nil {
+		t.Fatalf("CodexLaunchSpec: %v", err)
+	}
+	if spec.ID != CodexID || spec.Name != "Codex" {
+		t.Errorf("spec = %+v", spec)
+	}
+	if spec.Command != node {
+		t.Errorf("command = %q, want %q", spec.Command, node)
+	}
+	if len(spec.Args) != 1 || spec.Args[0] != bundle {
+		t.Errorf("args = %q, want the bundle", spec.Args)
+	}
+	if spec.Source != SourceVendored || spec.Version != "0.169.0" {
+		t.Errorf("source/version = %q / %q", spec.Source, spec.Version)
+	}
+	if spec.LoginHint != "codex login" {
+		t.Errorf("login hint = %q", spec.LoginHint)
+	}
+	if got := envValue(spec.Env, "CODEX_PATH"); got != codex {
+		t.Errorf("CODEX_PATH = %q, want %q", got, codex)
+	}
+	path := envValue(spec.Env, "PATH")
+	for _, dir := range []string{bin, filepath.Dir(node), filepath.Dir(codex)} {
+		if !strings.Contains(path, dir) {
+			t.Errorf("PATH %q does not contain %q", path, dir)
+		}
+	}
+
+	env.NodeMajor = 20
+	if _, err := CodexLaunchSpec(root, env); err == nil {
+		t.Error("old Node was accepted")
+	}
+	env.NodeMajor = 22
+	env.CodexPath = ""
+	if _, err := CodexLaunchSpec(root, env); err == nil {
+		t.Error("missing Codex CLI was accepted")
+	}
+}
+
 func TestCommandCodeLaunchSpec(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("fake executables use a shebang")
@@ -149,12 +215,14 @@ func TestBuiltinLaunchResultsKeepsAvailableAgents(t *testing.T) {
 		t.Skip("fake executables use a shebang")
 	}
 	root := t.TempDir()
-	bundleDir := filepath.Join(root, "agents", "pi-acp")
-	if err := os.MkdirAll(bundleDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(bundleDir, "pi-acp.bundle.mjs"), []byte("// bundle\n"), 0o644); err != nil {
-		t.Fatal(err)
+	for _, name := range []string{"pi-acp", "codex-acp"} {
+		bundleDir := filepath.Join(root, "agents", name)
+		if err := os.MkdirAll(bundleDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(bundleDir, name+".bundle.mjs"), []byte("// bundle\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	bin := t.TempDir()
 	env := Environment{
@@ -164,11 +232,13 @@ func TestBuiltinLaunchResultsKeepsAvailableAgents(t *testing.T) {
 		NodeMajor:          22,
 		CommandCodePath:    fakeExecutable(t, bin, "command-code"),
 		CommandCodeVersion: "1.88.5",
+		CodexPath:          fakeExecutable(t, bin, "codex"),
+		CodexVersion:       "codex-cli 0.169.0",
 	}
 
 	results := BuiltinLaunchResults(root, env)
-	if len(results) != 2 {
-		t.Fatalf("results = %+v, want pi and command-code", results)
+	if len(results) != 3 {
+		t.Fatalf("results = %+v, want pi, command-code and codex", results)
 	}
 	for _, result := range results {
 		if result.Err != nil {
@@ -178,21 +248,24 @@ func TestBuiltinLaunchResultsKeepsAvailableAgents(t *testing.T) {
 			t.Errorf("missing metadata: %+v", result.BuiltinAgent)
 		}
 	}
-	if results[0].ID != PiID || results[1].ID != CommandCodeID {
-		t.Errorf("order = %q, %q", results[0].ID, results[1].ID)
+	if results[0].ID != PiID || results[1].ID != CommandCodeID || results[2].ID != CodexID {
+		t.Errorf("order = %q, %q, %q", results[0].ID, results[1].ID, results[2].ID)
 	}
 
-	// A broken pi must not hide a working Command Code install.
+	// A broken pi must not hide working Command Code and Codex installs.
 	env.PiPath = ""
 	results = BuiltinLaunchResults(root, env)
-	if len(results) != 2 {
-		t.Fatalf("results = %+v, want both rows", results)
+	if len(results) != 3 {
+		t.Fatalf("results = %+v, want all rows", results)
 	}
 	if results[0].Err == nil || !strings.Contains(results[0].Err.Error(), "pi") {
 		t.Errorf("pi error = %v", results[0].Err)
 	}
 	if results[1].Err != nil || results[1].Spec.ID != CommandCodeID {
 		t.Errorf("command-code = %+v", results[1])
+	}
+	if results[2].Err != nil || results[2].Spec.ID != CodexID {
+		t.Errorf("codex = %+v", results[2])
 	}
 }
 
@@ -204,6 +277,7 @@ func TestResolveEnvironmentLoginShell(t *testing.T) {
 	fakeExecutable(t, bin, "node")
 	fakeExecutable(t, bin, "pi")
 	fakeExecutable(t, bin, "command-code")
+	fakeExecutable(t, bin, "codex")
 	shell := filepath.Join(t.TempDir(), "fake-shell")
 	script := "#!/bin/sh\nexec /bin/sh -c \"$2\"\n"
 	if err := os.WriteFile(shell, []byte(script), 0o755); err != nil {
@@ -235,6 +309,12 @@ func TestResolveEnvironmentLoginShell(t *testing.T) {
 	if env.CommandCodeVersion != "1.88.5" {
 		t.Errorf("command-code version = %q", env.CommandCodeVersion)
 	}
+	if env.CodexPath != filepath.Join(bin, "codex") {
+		t.Errorf("codex = %q, want fake codex; warnings=%v", env.CodexPath, env.Warnings)
+	}
+	if env.CodexVersion != "0.169.0" {
+		t.Errorf("codex version = %q", env.CodexVersion)
+	}
 	if !strings.Contains(envValue(env.Env, "PATH"), bin) {
 		t.Errorf("resolved PATH lost the fake bin: %q", envValue(env.Env, "PATH"))
 	}
@@ -262,6 +342,9 @@ func fakeExecutable(t *testing.T, dir, name string) string {
 	}
 	if name == "command-code" {
 		version = "1.88.5"
+	}
+	if name == "codex" {
+		version = "codex-cli 0.169.0"
 	}
 	script := "#!/bin/sh\necho " + version + "\n"
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
