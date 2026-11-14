@@ -293,6 +293,12 @@ func (a *App) conversationRow(c *mui.Context, chat *Chat) {
 					chat.MenuOpen = false
 					a.openRename(chat)
 				}
+				closeProcess := quietButton(c, "Close process").FillWidth().FontSize(a.workspaceFont(11))
+				closeProcess.Disabled(!chat.canCloseProcess())
+				if closeProcess.Clicked() {
+					chat.MenuOpen = false
+					a.disconnectChat(chat)
+				}
 				if quietButton(c, "Delete").FillWidth().FontSize(a.workspaceFont(11)).TextColor(t.Danger).Clicked() {
 					chat.MenuOpen = false
 					a.removeChat(chat)

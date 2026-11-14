@@ -168,6 +168,12 @@ func (c *Chat) live() bool {
 	return c != nil && (c.Session != nil || c.Connecting)
 }
 
+// canCloseProcess reports whether the row's Close process action applies: a
+// process is running or starting, and no task runner owns the chat.
+func (c *Chat) canCloseProcess() bool {
+	return c != nil && !c.Closed && !c.taskActive && c.live()
+}
+
 // draftConfig returns a copy of the draft's config choices, or nil when the
 // chat is not a draft or nothing was picked.
 func (c *Chat) draftConfig() map[string]string {

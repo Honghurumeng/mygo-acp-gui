@@ -269,6 +269,67 @@ func TestCloseTabKeepsOtherChats(t *testing.T) {
 	}
 }
 
+func TestCloseProcessFromSidebarKeepsTab(t *testing.T) {
+	app, tt := newFakeApp(t)
+	first := connectTab(t, app, tt)
+	second := newTab(t, app, tt)
+	second = connectTab(t, app, tt)
+	if !second.canCloseProcess() {
+		t.Fatal("connected chat cannot close its process")
+	}
+
+	tt.Frame()
+	if err := tt.Click("Conversation actions for " + second.name()); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if !tt.HasText("Close process") {
+		t.Fatalf("conversation menu missing Close process; texts: %q", tt.Texts())
+	}
+	if err := tt.Click("Close process"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		return second.Session == nil && !second.Connected && !second.canCloseProcess()
+	})
+	if len(app.Chats) != 2 || app.Chats[0] != first || app.Chats[1] != second {
+		t.Fatalf("chats after closing a process = %+v", app.Chats)
+	}
+	if first.Session == nil || !first.Connected {
+		t.Fatal("closing one process disconnected another chat")
+	}
+	if app.activeChat() != second {
+		t.Fatal("closing a background process changed the active chat")
+	}
+}
+
+func TestCloseProcessDisabledForDraft(t *testing.T) {
+	app, tt := newFakeApp(t)
+	chat := app.activeChat()
+	if chat == nil {
+		t.Fatal("no draft chat")
+	}
+	if chat.canCloseProcess() {
+		t.Fatal("draft without a process can close one")
+	}
+	chat.Title = "Draft title"
+	tt.Frame()
+	if err := tt.Click("Conversation actions for " + chat.name()); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if !tt.HasText("Close process") {
+		t.Fatalf("conversation menu missing Close process; texts: %q", tt.Texts())
+	}
+	// The disabled item takes no press, so the draft keeps its state.
+	if err := tt.Click("Close process"); err == nil {
+		tt.Frame()
+	}
+	if chat.Title != "Draft title" || chat.Closed || len(app.Chats) != 1 || app.activeChat() != chat {
+		t.Fatal("disabled Close process changed the draft")
+	}
+}
+
 func TestSavedSessionOpensNewTabWhenChatHasMessages(t *testing.T) {
 	app, tt := newFakeApp(t)
 	first := connectTab(t, app, tt)

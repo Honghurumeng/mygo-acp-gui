@@ -679,8 +679,14 @@ func (a *App) setAgentStatus(id, status, detail string) {
 
 // Disconnect closes the active chat's process but keeps its tab as a draft.
 func (a *App) Disconnect() {
-	chat := a.activeChat()
-	if chat == nil || chat.taskActive {
+	a.disconnectChat(a.activeChat())
+}
+
+// disconnectChat closes one chat's process but keeps its tab as a draft, so
+// closing a background chat does not touch the active one. The session stays
+// in the archive and reappears as a saved row.
+func (a *App) disconnectChat(chat *Chat) {
+	if chat == nil || chat.Closed || chat.taskActive {
 		return
 	}
 	chat.cancelConnect()
