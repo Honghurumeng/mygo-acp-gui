@@ -27,7 +27,7 @@
 - 会话右侧 `⋯` 打开重命名/删除；`Close process` 只关闭该会话的 agent 进程，标签页保留为草稿并回到存档列表，没有已连接或连接中的进程时该项显示为不可用。删除会关闭该会话的进程，并把对应存档记录标为 `show=false`。工作区上的 `＋` 在该目录下新建独立会话。
 - 启动时默认创建一个草稿会话；在草稿里输入第一条消息时自动连接，成功后立即发送。
 - 每个会话保留自己的消息列表滚动位置、输入草稿、图片附件、配置选择和计划面板。
-- 顶部工具栏除 `Git` / `Tasks` 右侧面板按钮外，只保留 `Logs` 和 `MCP…`（连接中显示 `Cancel`）；会话由工作区上的 `＋` 创建。
+- 顶部工具栏只保留 `Logs` 和 `MCP…`（连接中显示 `Cancel`）；右侧面板的开关改由窗口最右缘的窄图标栏完成，会话由工作区上的 `＋` 创建。
 - 关闭窗口只是关闭窗口：应用留在后台，所有会话（包括流式中的回复）继续运行；macOS 再点 Dock 图标会按当前状态重新开窗。只有退出（⌘Q / Quit）才取消连接并关闭进程组。
 - 应用退出时取消所有正在连接的会话，并关闭所有已登记 session 的进程组。
 
@@ -140,7 +140,7 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 
 ## Git 面板
 
-- 右侧 300 DIP 可折叠面板，跟随当前会话/草稿的 workspace；顶部 MCP 左侧的 `Git` 按钮开关，打开时按钮高亮为主色。
+- 右侧 300 DIP 可折叠面板，跟随当前会话/草稿的 workspace；窗口最右缘的窄图标栏里 Git 图标按钮开关，当前 tab 的图标按钮高亮为 Accent 色。
 - 异步探测 `git` 是否存在和 workspace 所属仓库根目录；没有 git 显示安装提示，没有仓库显示 “Initialize Git repository” 按钮（`git init`）。
 - 有仓库时显示 commit message、Staged / Changes 列表、分支状态和提交图（`internal/ui/gitgraph.go` 自绘，结构化 log + lane，行高 22 DIP）；文件可逐项 stage/unstage，也可 Stage all / Unstage all。点文件名可打开 diff 预览，点提交行可展开该提交改动的文件列表，列表里的文件可打开该提交的 diff。提交行不再显示短 hash；hover 350 ms 弹出详情卡（subject、作者、时间、refs、修改文件数/代码增删行数（单行）、完整 hash），卡片位于图表左侧，卡内可复制完整 hash。
 - Commit 只提交暂存内容；Fetch/Pull/Push 不等待凭据终端，Undo 用 soft reset 保留改动；所有命令有超时和 generation 校验，切换会话不会串仓库。
@@ -148,7 +148,7 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 
 ## Tasks 面板
 
-- 右侧与 Git 面板共用 300 DIP 列，顶部 `Git` / `Tasks` 按钮打开、切换或关闭；面板内只显示当前面板名称，不再有内建 tab 条。Tasks 跟随当前会话 / 草稿的 workspace。
+- 右侧与 Git 面板共用 300 DIP 列，窗口最右缘图标栏的 Tasks 图标按钮打开、切换或关闭；面板内只显示当前面板名称，不再有内建 tab 条。Tasks 跟随当前会话 / 草稿的 workspace。
 - 每个 workspace 有有序任务；状态只有 `pending`、`ongoing`、`complete`，complete 带 `pass` / `failure`。`Run pending` 串行跑完所有 pending，`Stop` 把当前任务退回 pending 并停止队列；失败任务留在 complete(failure)，但队列继续执行剩余 pending。
 - 每个任务新建独立 executor Chat / agent 进程 / ACP 会话；回合结束后取最后一段 assistant 文本，另起隔离 checker 进程和新会话判断。checker 收到任务文本、本轮最后一段以及之前每轮的总结 + feedback，没有工具；返回严格 JSON。
 - incomplete 时把 checker reason 发回同一个 executor 会话继续；complete 时写 `<workspace>/tasks/<id>-<slug>.md`，执行一次 `git add -A` + commit（不 push），再开始下一个任务。

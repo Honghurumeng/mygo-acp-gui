@@ -23,7 +23,7 @@ func TestTaskPanelCreateEditReorderDeleteAndPersist(t *testing.T) {
 		app.Flush()
 	})
 
-	if err := tt.Click("Show task panel"); err != nil {
+	if err := tt.Click("Show Tasks panel"); err != nil {
 		t.Fatal(err)
 	}
 	tt.Frame()
@@ -48,7 +48,7 @@ func TestTaskPanelCreateEditReorderDeleteAndPersist(t *testing.T) {
 	if !app.GitPanelOpen || app.RightTab != rightTabGit {
 		t.Fatalf("Git tab did not take over the right column: open=%v tab=%q", app.GitPanelOpen, app.RightTab)
 	}
-	if err := tt.Click("Show task panel"); err != nil {
+	if err := tt.Click("Show Tasks panel"); err != nil {
 		t.Fatal(err)
 	}
 	tt.Frame()
@@ -141,7 +141,7 @@ func TestTaskRunnerChecksContinuesAndCommits(t *testing.T) {
 		t.Fatalf("tasks = %+v", app.Tasks)
 	}
 
-	if err := tt.Click("Show task panel"); err != nil {
+	if err := tt.Click("Show Tasks panel"); err != nil {
 		t.Fatal(err)
 	}
 	tt.Frame()
@@ -279,7 +279,7 @@ func TestTaskFailureDiscardsWorkAndMarksFailure(t *testing.T) {
 	app.TaskEditText = "/refuse /writefile task-output.txt"
 	app.saveTaskEditor()
 
-	if err := tt.Click("Show task panel"); err != nil {
+	if err := tt.Click("Show Tasks panel"); err != nil {
 		t.Fatal(err)
 	}
 	tt.Frame()

@@ -65,6 +65,20 @@ Nord、Solarized、Catppuccin、Claude 的浅色版本是各自色板在浅色�
 使用 Snow Storm 背景与 Polar Night 文字/边框。部分浅色主题的 Accent/Warning/Success 为了文字对比度做了
 加深，不保证与官方色值逐字一致。配色来源记录在 `themeFamilies` 定义上方，不复制第三方代码，只使用颜色值。
 
+## 派生色
+
+右侧图标栏（Git / Tasks 窄栏）的底色不写进 palette，而是由 `sunkenSurface(t)`（`widgets.go`）从 Surface 派生，
+比右侧面板深一阶，看起来像面板旁的凹槽：
+
+- 浅色：`Surface.Mix(black, 0.07)`；深色：`Surface.Mix(black, 0.18)`。深色色域被压缩（Surface 只比 Background
+  高几个色阶），需要更大比例才能读出同样的分隔感；结果与面板的亮度差在浅色约 16–17、深色约 7–12。
+- 不新增 palette 字段：每个家族有浅/深两套，新增字段要同步 10 份配色，Default 家族又直接用 MyGo 的主题、
+  没有这个字段；派生自动覆盖全部家族、后续新家族、高对比度和系统 Accent。
+- 图标栏按钮的 hover/pressed 不能用 `SurfaceHover` / `SurfacePressed`（个别浅色主题的 SurfacePressed
+  与图标栏底色几乎相同），改用 `Text.Alpha(0.04)` / `Text.Alpha(0.10)` 叠在图标栏底色上：浅色变暗、深色变亮，
+  与其它按钮的状态方向一致。
+- 设置界面的主题预览仍只画 Background/Surface/Accent/Text 四个色块，不需要为图标栏加色块。
+
 ## 设置界面
 
 设置面板新增 `Appearance` 分类（默认仍打开 `Notifications`）：

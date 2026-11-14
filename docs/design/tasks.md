@@ -14,7 +14,7 @@
 
 ## 右侧栏
 
-- 右侧仍是 300 DIP 的可折叠列，`Git` 与 `Tasks` 共用宽度和开关。切换只由标题栏的 `Git` / `Tasks` 按钮完成；面板内部始终只显示当前面板名称，不再放 tab 条或面板内切换按钮。
+- 右侧仍是 300 DIP 的可折叠列，`Git` 与 `Tasks` 共用宽度和开关。窗口最右缘常驻一条 38 DIP 的窄图标栏（`internal/ui/rightpanel.go`），背景用 `sunkenSurface` 从主题 Surface 派生得比面板深一阶（见 [themes.md](themes.md)），竖排 Git / Tasks 两个无文字图标按钮（Lucide `git-branch`、`list-checks`），是右侧列唯一的切换入口：点未显示的 tab 打开/切换，点当前 tab 关闭。当前 tab 的按钮用 Accent 底和 Accent 图标表示。面板内部始终只显示当前面板名称，不再放 tab 条或面板内切换按钮，顶部会话标题栏也不再放 `Git` / `Tasks` 文字按钮。
 - 默认面板是 Git；Tasks 跟随当前会话 / 草稿的 workspace。开始任务时自动打开 Tasks。
 - Tasks 面板从上到下：当前名称与任务计数 / 运行阶段、`Run pending`、`Stop`、错误与提示、任务列表。
 - 任务行显示状态符号：pending `○`、ongoing spinner、complete 成功 `✓ pass`、complete 失败 `✗ failure`；下面显示状态 / 轮次 / note。pending 行有上移、下移、编辑、删除，complete 行有 View 和删除，ongoing 行不可编辑/移动/删除。

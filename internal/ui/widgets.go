@@ -32,6 +32,21 @@ func surfaceCard(c *mui.Context, e mui.Element) mui.Element {
 	return e.Radius(8).Background(c.Theme().Surface)
 }
 
+// sunkenSurface is the icon rail's background: the panel surface one step
+// deeper, so the rail reads as a groove beside the right column instead of
+// continuing it. It is derived rather than stored in every palette: mixing
+// toward black deepens all theme families in both appearances, where a
+// palette's own background can sit on either side of its surface. Dark
+// surfaces have a smaller range below them, so they take a larger share to
+// stay visible next to the panel.
+func sunkenSurface(t *mui.Theme) mui.Color {
+	amount := float32(0.07)
+	if t.Dark {
+		amount = 0.18
+	}
+	return t.Surface.Mix(mui.Color{A: 255}, amount)
+}
+
 // buttonBase is the shape every button shares, taken from the sidebar's ⋯
 // action: a compact row with 8 DIP corners and no border. It sets the label
 // of the control for assistive technology and tests; the caller adds the text

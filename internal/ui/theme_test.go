@@ -132,6 +132,39 @@ func TestViewAppliesSelectedTheme(t *testing.T) {
 	}
 }
 
+func TestSunkenSurfaceKeepsRailDistinct(t *testing.T) {
+	luma := func(c mui.Color) float32 {
+		return 0.2126*float32(c.R) + 0.7152*float32(c.G) + 0.0722*float32(c.B)
+	}
+	step := func(a, b mui.Color) float32 {
+		d := luma(a) - luma(b)
+		if d < 0 {
+			return -d
+		}
+		return d
+	}
+	for _, family := range themeFamilies {
+		for _, dark := range []bool{false, true} {
+			theme := themePreview(family, dark)
+			rail := sunkenSurface(theme)
+			if luma(rail) >= luma(theme.Surface) {
+				t.Errorf("%s/%v: rail is not darker than the panel", family.id, dark)
+			}
+			if step(rail, theme.Surface) < 5 {
+				t.Errorf("%s/%v: rail %v is too close to surface %v", family.id, dark, rail, theme.Surface)
+			}
+			// The rail's own hover and pressed fills must stay visible on
+			// top of the rail, whatever the palette's surface states are.
+			if step(theme.Text.Alpha(0.04).Over(rail), rail) < 3 {
+				t.Errorf("%s/%v: hover fill blends into the rail", family.id, dark)
+			}
+			if step(theme.Text.Alpha(0.10).Over(rail), rail) < 6 {
+				t.Errorf("%s/%v: pressed fill blends into the rail", family.id, dark)
+			}
+		}
+	}
+}
+
 func TestThemeFollowsTextScale(t *testing.T) {
 	theme := resolvedTheme(ThemeNord, AppearanceDark, false, mui.Preferences{TextScale: 1.5})
 	if theme == nil {

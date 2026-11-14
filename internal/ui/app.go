@@ -695,7 +695,8 @@ func (a *App) nextChatID() int {
 }
 
 // View builds the window: a collapsible workspace sidebar, a title bar, the
-// conversation with its composer, and the collapsible Git panel.
+// conversation with its composer, the collapsible right column, and the rail
+// of tab icons at the window's right edge.
 func (a *App) View(c *mui.Context) {
 	a.applyTheme(c)
 	// Markdown headings and code are sized in ems of this body size, so one
@@ -725,6 +726,7 @@ func (a *App) View(c *mui.Context) {
 				a.gitDiffPopover(c, a.gitPanel(c))
 			}
 		}
+		a.rightRail(c)
 	})
 
 	a.gitDiscardDialog(c)
@@ -811,35 +813,11 @@ func (a *App) header(c *mui.Context) {
 }
 
 func (a *App) headerActions(c *mui.Context, chat *Chat) {
-	action := func(label, tip string) mui.Element {
-		return quietButton(c, label).Label(tip).FontSize(11)
-	}
-	gitLabel := "Show Git panel"
-	var gitButton mui.Element
-	if a.GitPanelOpen && a.RightTab == rightTabGit {
-		gitLabel = "Hide Git panel"
-		gitButton = primaryButton(c, "Git")
-	} else {
-		gitButton = quietButton(c, "Git")
-	}
-	gitButton.Label(gitLabel).FontSize(11)
-	if gitButton.Clicked() {
-		a.toggleRightPanel(rightTabGit)
-	}
-	taskLabel := "Show task panel"
-	var taskButton mui.Element
-	if a.GitPanelOpen && a.RightTab == rightTabTasks {
-		taskLabel = "Hide task panel"
-		taskButton = primaryButton(c, "Tasks")
-	} else {
-		taskButton = quietButton(c, "Tasks")
-	}
-	taskButton.Label(taskLabel).FontSize(11)
-	if taskButton.Clicked() {
-		a.toggleRightPanel(rightTabTasks)
-	}
 	if chat == nil {
 		return
+	}
+	action := func(label, tip string) mui.Element {
+		return quietButton(c, label).Label(tip).FontSize(11)
 	}
 	if chat.Connecting {
 		mutedText(c, "Connecting…", 11)

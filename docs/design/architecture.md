@@ -18,6 +18,7 @@ MyGo 原生窗口 (Go + ui)
   ├─ 右侧面板（可折叠，Git / Tasks 两个 tab）
   │    ├─ Git：提交、暂存/更改、分支图与 fetch/pull/push
   │    └─ Tasks：任务队列、executor / checker 双 agent、成功总结 + 每任务一次 commit、失败回滚
+  ├─ 窗口最右缘 38 DIP 图标栏：Git / Tasks 无文字图标按钮，切换或关闭右侧面板
   ├─ ui/markdown.Stream / View      ← agent_message_chunk
   ├─ ui.List(FollowEnd)             ← 消息列表
   ├─ ui.Collapsible                 ← thought / tool_call

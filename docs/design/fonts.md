@@ -64,8 +64,8 @@ a.gitFont(size)       // Git 面板
 | Input box | `composer.go`、`mentions.go`、`jump.go` | 输入框正文、附件/Jump/分支/mode/usage/model chip、模型面板、斜杠命令、@ 文件面板 |
 | Git panel | `gitpanel.go`、`gitgraph.go` | 面板头、提交框、暂存/更改行、提交图、提交详情卡、diff 卡片和 diff 编辑器字号 |
 
-固定不缩放：顶部会话标题栏、错误/警告 banner、设置/权限/诊断等全局模态标题、
-空状态组件和 MyGo 自带的菜单/提示。它们属于窗口 chrome 或跨区域组件。
+固定不缩放：顶部会话标题栏、右侧图标栏（只有图标，尺寸固定 16 DIP）、错误/警告 banner、
+设置/权限/诊断等全局模态标题、空状态组件和 MyGo 自带的菜单/提示。它们属于窗口 chrome 或跨区域组件。
 
 ## 设置界面
 

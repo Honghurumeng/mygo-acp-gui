@@ -25,6 +25,12 @@ var sparklesIconSVG []byte
 //go:embed icons/git-compare.svg
 var gitCompareIconSVG []byte
 
+//go:embed icons/git-branch.svg
+var gitBranchIconSVG []byte
+
+//go:embed icons/list-checks.svg
+var listChecksIconSVG []byte
+
 //go:embed icons/circle-x.svg
 var circleXIconSVG []byte
 
@@ -46,6 +52,8 @@ var (
 	unplugIcon         = mui.MustParseSVG(unplugIconSVG)
 	sparklesIcon       = mui.MustParseSVG(sparklesIconSVG)
 	gitCompareIcon     = mui.MustParseSVG(gitCompareIconSVG)
+	gitBranchIcon      = mui.MustParseSVG(gitBranchIconSVG)
+	listChecksIcon     = mui.MustParseSVG(listChecksIconSVG)
 	circleXIcon        = mui.MustParseSVG(circleXIconSVG)
 	codeIcon           = mui.MustParseSVG(codeIconSVG)
 	copyIcon           = mui.MustParseSVG(copyIconSVG)

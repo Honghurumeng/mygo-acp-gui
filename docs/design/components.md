@@ -21,6 +21,8 @@
 | `unplugIcon` | Lucide `unplug` | 空状态：没有可用 agent |
 | `sparklesIcon` | Lucide `sparkles` | 空状态：开始对话 |
 | `gitCompareIcon` | Lucide `git-compare` | Git diff：两边相同 |
+| `gitBranchIcon` | Lucide `git-branch` | 右侧图标栏：Git |
+| `listChecksIcon` | Lucide `list-checks` | 右侧图标栏：Tasks |
 | `circleXIcon` | Lucide `circle-x` | danger alert |
 | `codeIcon` | Lucide `code` | code block 标题栏 |
 | `copyIcon` / `checkIcon` | Lucide `copy`、`check` | code block 复制/已复制 |
@@ -40,6 +42,7 @@
 - `sectionLabel(c, text)`：9px 加粗组标题；padding、Grow、旁边的数量由调用方叠加。
 - `surfaceCard(c, e)`：给任意元素加 8 DIP 圆角与 `t.Surface` 背景；Gap/Padding/方向仍由调用方决定，
   用于工具调用卡片和附件行。
+- `sunkenSurface(t)`：比面板 Surface 深一阶的派生色，用于窗口最右缘的图标栏；比例与原因见 [themes.md](themes.md)。
 - `buttonBase(c, label)`：所有按钮的共同形状，取自侧栏「⋯」按钮：8 DIP 圆角、`Padding(4, 6)`、无边框；
   只设 label 与几何，文字和填充由下面三个变体加。
 - `quietButton(c, label)`：默认按钮（「⋯」那种扁平胶囊）：`t.Background` 填充、hover/pressed 变色、无边框；
@@ -61,6 +64,8 @@
 - 项目里不再直接调用 `mui.Button` / `mui.PrimaryButton`；新增按钮一律走上面三个变体，需要更宽的点击区或
   字号时在返回值上叠加 `.Padding` / `.FontSize`。ButtonBase 的列表行（会话、存档、workspace 标题、git 文件行）
   不是按钮外观，保留各自的选中/hover 背景。
+- 只有图标的按钮（右侧 `rightRailButton`）同样从 `buttonBase` 起手，用 `Label()` 保留完整句子（同时作 tooltip），
+  例如 `Hide Git panel`；激活态用 `t.Accent.Alpha(0.14)` 底 + Accent 图标，不用文字。
 
 ## components.go
 

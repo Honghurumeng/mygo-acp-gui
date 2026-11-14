@@ -4,8 +4,8 @@
 
 ## 布局
 
-- 窗口右侧固定宽 300 的可折叠面板，跟随当前会话的 workspace；没有会话时跟随草稿 workspace。
-- 顶部标题栏（MCP 左侧）的 `Git` 按钮打开/切换到 Git tab；右侧列与 Tasks tab 共用开关，面板打开且 Git 为当前 tab 时按钮为主色（蓝色）。切换只由顶部按钮完成；面板内只显示当前面板名称。
+- 窗口右侧固定宽 300 的可折叠面板，窗口最右缘还有一条 38 DIP 的窄图标栏（`rightRailWidth`），跟随当前会话的 workspace；没有会话时跟随草稿 workspace。
+- 图标栏常驻，背景由 `sunkenSurface` 从主题 Surface 派生（比面板深一阶，见 [themes.md](themes.md)），竖排两个无文字的图标按钮（Git `git-branch`、Tasks `list-checks`），是右侧列唯一的开关：点未显示的 tab 打开/切换，点当前 tab 关闭。当前 tab 的按钮为 Accent 底 + Accent 图标，另一个为次要色；按钮 label / tooltip 为 `Show Git panel` / `Hide Git panel`（Tasks 同名规则）。面板内只显示当前面板名称。
 - 初始打开。面板不被持久化，重启后恢复默认打开。
 - 有仓库时从上到下：带边框的 commit message 输入框、Commit 按钮、错误/成功提示、暂存/更改列表、Git 图表和功能按钮；输入框和按钮之间不再放常驻状态条。
   commit message 输入框的正文与 Staged/Changes 行同为 10 DIP 基准，只受 Git 面板字号设置缩放。
@@ -94,7 +94,7 @@
   右缘贴面板左缘（`AttachTo(anchor, AnchorStart, AnchorEnd)` + `MarginEnd(10)`，anchor 是 `gitPanel` 返回的整列），
   垂直居中，高 86% 窗口，圆角、边框和阴影，像放大的 Git 图表详情卡；对话布局不变，面板不被遮挡。
   标题写明 `Diff · <path>`、`Staged diff · <path>` 或 `Commit <7 位 hash> · <path>`，右侧只有 `✕`（无障碍名 Close）。
-- 宽度响应式：`gitDiffCardWidth(windowW)` = `clamp((windowW - 300) * 0.62, 480, 900)`（300 是 Git 面板宽），
+- 宽度响应式：`gitDiffCardWidth(windowW)` = `clamp((windowW - 300) * 0.62, 480, 900)`（300 是 Git 面板宽，图标栏只占右边缘 38 DIP，不参与计算），
   窗口变宽时卡片跟着变宽，仍留下部分对话可见。
 - 布局响应式：卡片宽 `≥ gitDiffSplitWidth`（700）时用 Split 左右对比，否则用 Unified 上下对比；
   切换布局保留同一个 `editor.DiffState`（滚动位置和状态不丢），两栏都开启 `Wrap`，横向不滚动。

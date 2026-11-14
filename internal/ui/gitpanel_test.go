@@ -54,7 +54,7 @@ func TestGitPanelPromptsWhenGitIsMissing(t *testing.T) {
 	}
 }
 
-func TestGitPanelTogglesFromHeader(t *testing.T) {
+func TestGitPanelTogglesFromRail(t *testing.T) {
 	workspace := initGitPanelRepo(t)
 	app, tt := newGitPanelApp(t, workspace)
 	waitFor(t, app, tt, func() bool {
@@ -72,7 +72,7 @@ func TestGitPanelTogglesFromHeader(t *testing.T) {
 	}
 	tt.Frame()
 	if app.GitPanelOpen {
-		t.Fatal("header button did not close the Git panel")
+		t.Fatal("rail button did not close the Git panel")
 	}
 	if _, ok := tt.Find("Commit"); ok {
 		t.Fatalf("Git panel still drawn after collapse; texts: %q", tt.Texts())
@@ -83,7 +83,7 @@ func TestGitPanelTogglesFromHeader(t *testing.T) {
 	}
 	tt.Frame()
 	if !app.GitPanelOpen {
-		t.Fatal("header button did not reopen the Git panel")
+		t.Fatal("rail button did not reopen the Git panel")
 	}
 	if _, ok := tt.Find("Commit"); !ok {
 		t.Fatalf("commit box missing after reopen; texts: %q", tt.Texts())
