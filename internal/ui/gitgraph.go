@@ -61,7 +61,9 @@ func (a *App) gitGraphBody(c *mui.Context) {
 		}
 	}
 
-	root := mui.Column(c).FillWidth().Padding(0, 8, 0, 0)
+	// The rows stop short of the panel's right edge by the same gutter the
+	// scroll bar sits in, as the changes list's do.
+	root := mui.Column(c).FillWidth().Padding(0, gitListGutter, 0, 0)
 	inks := []mui.Color{t.Accent, t.Success, t.Warning, t.Danger}
 	index := make(map[string]int, len(commits))
 	for i, commit := range commits {

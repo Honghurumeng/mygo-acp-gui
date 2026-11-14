@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -294,6 +295,85 @@ func TestGitGraphShowsOneShortRef(t *testing.T) {
 	}
 	if shortGraphText("发布分支", 12) != "发布分支" {
 		t.Error("shortGraphText split a short non-Latin name")
+	}
+}
+
+// TestGitListsShareScrollBarColumn keeps the changes list's and the history
+// list's overlay scroll bars in the panel's right gutter, in one column: both
+// scroll boxes run to the panel's right edge and both lists stop their rows
+// the same gutter short of it.
+func TestGitListsShareScrollBarColumn(t *testing.T) {
+	workspace := initGitPanelRepo(t)
+	for i := 1; i <= 40; i++ {
+		writeGitPanelFile(t, workspace, "history.txt", strings.Repeat("line\n", i))
+		runGitPanelCommand(t, workspace, "add", ".")
+		runGitPanelCommand(t, workspace, "commit", "-q", "-m", fmt.Sprintf("history %d", i))
+	}
+	for i := 1; i <= 30; i++ {
+		writeGitPanelFile(t, workspace, fmt.Sprintf("changed%d.txt", i), "change\n")
+	}
+
+	app, tt := newGitPanelApp(t, workspace)
+	waitFor(t, app, tt, func() bool {
+		return app.Git.Checked && !app.Git.Loading && len(app.Git.Changes) == 30 && len(app.Git.Commits) > 1
+	})
+
+	// bar returns the columns the overlay scroll bar of the list under (x, y)
+	// paints in: the frame with the pointer away from the panel and the frame
+	// with it on the list differ along that bar, and nothing changes right of
+	// it, so the rightmost run of changed columns is the bar.
+	bar := func(x, y float32) (int, int) {
+		t.Helper()
+		tt.Move(5, 5)
+		tt.Frame()
+		base := *tt.Image()
+		base.Pix = append([]byte(nil), base.Pix...)
+		tt.Move(x, y)
+		tt.Frame()
+		frame := tt.Image()
+		start, end := -1, -1
+		for px := frame.Bounds().Dx() - 1; px >= 0; px-- {
+			changed := false
+			for py := frame.Bounds().Dy() - 1; py >= 0 && !changed; py-- {
+				changed = frame.RGBAAt(px, py) != base.RGBAAt(px, py)
+			}
+			switch {
+			case changed:
+				if end < 0 {
+					end = px
+				}
+				start = px
+			case end >= 0:
+				return start, end
+			}
+		}
+		return start, end
+	}
+	center := func(r mui.Rect) (float32, float32) { return r.X + r.W/2, r.Y + r.H/2 }
+
+	file, ok := tt.Find("changed1.txt")
+	if !ok {
+		t.Fatalf("no changed file row; texts: %q", tt.Texts())
+	}
+	commit, ok := tt.Find(app.Git.Commits[1].Message)
+	if !ok {
+		t.Fatalf("no history row; texts: %q", tt.Texts())
+	}
+	changesStart, changesEnd := bar(center(file))
+	historyStart, historyEnd := bar(center(commit))
+	if changesStart != historyStart || changesEnd != historyEnd {
+		t.Fatalf("scroll bars at columns %d-%d (changes) and %d-%d (history) do not line up",
+			changesStart, changesEnd, historyStart, historyEnd)
+	}
+	if width := changesEnd - changesStart + 1; width < 4 || width > 10 {
+		t.Fatalf("changed columns %d-%d are not a scroll bar", changesStart, changesEnd)
+	}
+	// The rows stop a gutter short of the panel's right edge; the bar runs in
+	// that gutter rather than over the rows.
+	rowRight := int(commit.X + commit.W)
+	if historyStart < rowRight || historyEnd >= rowRight+gitListGutter {
+		t.Fatalf("scroll bar at columns %d-%d is not in the %d DIP gutter right of the rows at column %d",
+			historyStart, historyEnd, gitListGutter, rowRight)
 	}
 }
 

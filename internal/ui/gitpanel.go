@@ -16,7 +16,11 @@ import (
 )
 
 const (
-	gitPanelWidth           = 300
+	gitPanelWidth = 300
+	// gitListGutter is the room both lists keep at the panel's right edge
+	// for their overlay scroll bars: their scroll boxes run to that edge, so
+	// the bars line up in one column, and their rows stop short of it.
+	gitListGutter           = 12
 	defaultGitChangesHeight = 260
 	gitStatusTimeout        = 10 * time.Second
 	gitCommitTimeout        = 30 * time.Second
@@ -582,11 +586,13 @@ func (a *App) gitHistorySplit(c *mui.Context) {
 func (a *App) gitChanges(c *mui.Context) {
 	staged := a.Git.Staged
 	changes := a.Git.Changes
-	mui.Column(c).FillHeight().Padding(6, 12, 4, 12).Children(func() {
+	// The scroll box runs to the panel's right edge, so this list's overlay
+	// scroll bar sits in the same column as the history list's below.
+	mui.Column(c).FillHeight().Padding(6, 0, 4, gitListGutter).Children(func() {
 		mui.Scroll(c).Grow(1).Children(func() {
 			// Leave room for the overlay scrollbar so it never covers the
 			// stage/unstage button of a row.
-			mui.Column(c).Gap(3).Padding(0, 10, 0, 0).Children(func() {
+			mui.Column(c).Gap(3).Padding(0, gitListGutter, 0, 0).Children(func() {
 				a.gitSectionHeader(c, "Staged", len(staged), gitSectionAction{
 					label: "Unstage all",
 					tip:   "Unstage all files in this section",
@@ -947,7 +953,7 @@ func (a *App) gitGraph(c *mui.Context) {
 				})
 			})
 		})
-		mui.Scroll(c).Grow(1).Padding(5, 4, 8, 6).Children(func() {
+		mui.Scroll(c).Grow(1).Padding(5, 0, 8, 6).Children(func() {
 			a.gitGraphBody(c)
 		})
 	})
