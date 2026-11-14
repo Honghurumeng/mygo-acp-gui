@@ -56,7 +56,7 @@ MyGo 原生窗口 (Go + ui)
 - `go.mod`：module `github.com/reed/acp-gui`，Go 1.27.3（`GOTOOLCHAIN=auto` 会自动拉取）。
 - MyGo CLI 通过 `tool github.com/egoist/mygo/cmd/mygo` 固定在 `go.mod`，统一用 `go tool mygo`。
 - 无前端构建：原生 UI，入口 `main.go`，配置在 `mygo.json`。
-- App：name `ACP GUI`、slug `acp-gui`、identifier `dev.reed.acp-gui`、version `0.1.0`。
+- App：name `ACP GUI`、slug `acp-gui`、identifier `dev.reed.acp-gui`、version `0.2.0`。
 - `go tool mygo build` 产物在 `build/<os>-<arch>/`（已 gitignore）；`resources/` 整目录进 `.app`。
 - 当前已实现 `internal/acp`、`internal/agent`、`internal/session`、`internal/archive`、`internal/ui` 的 MVP 链路（见下方“当前链路”）。
 

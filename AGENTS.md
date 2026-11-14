@@ -29,3 +29,4 @@
 - 退出清理 agent 进程组；initialize 探测 5 秒超时，配置探测异步执行，失败不阻塞启动。
 - 不做 registry 全量发现/在线目录/自动安装；只支持内置表，新 agent 走代码 + 发版。
 - pi 不走 npx；直接用 `resources/agents/pi-acp/pi-acp.bundle.mjs`，不在启动时打包；重打走 `scripts/vendor-pi-acp-local.sh`（本地 fork）或 `scripts/vendor-pi-acp.sh`（上游）。
+- 每次打包发版前先升级 `mygo.json` 的 `version`（semver，当前从 0.2.0 起），并同步 `docs/design/architecture.md` 的版本号，再执行 `go tool mygo build`。
