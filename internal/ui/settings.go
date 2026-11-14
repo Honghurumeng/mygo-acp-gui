@@ -109,15 +109,19 @@ func (a *App) settingsDialog(c *mui.Context) {
 						a.settingsCategory(c, settingsSectionFonts, "Fonts")
 						a.settingsCategory(c, settingsSectionNotifications, "Notifications")
 					})
-				mui.Column(c).Grow(1).FillHeight().Padding(18).Children(func() {
-					switch a.SettingsSection {
-					case settingsSectionAppearance:
-						a.appearanceSettings(c)
-					case settingsSectionFonts:
-						a.fontSettings(c)
-					case settingsSectionNotifications:
-						a.notificationSettings(c)
-					}
+				mui.Column(c).Grow(1).FillHeight().Children(func() {
+					// The appearance list keeps growing with the theme catalog,
+					// so the whole pane scrolls and every row stays reachable.
+					mui.Scroll(c).Grow(1).Padding(18).Children(func() {
+						switch a.SettingsSection {
+						case settingsSectionAppearance:
+							a.appearanceSettings(c)
+						case settingsSectionFonts:
+							a.fontSettings(c)
+						case settingsSectionNotifications:
+							a.notificationSettings(c)
+						}
+					})
 				})
 			})
 			mui.Row(c).Gap(8).Justify(mui.End).Children(func() {

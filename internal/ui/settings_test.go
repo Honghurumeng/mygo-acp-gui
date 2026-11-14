@@ -112,7 +112,7 @@ func TestSettingsAppearancePersists(t *testing.T) {
 		t.Fatal(err)
 	}
 	tt.Frame()
-	for _, want := range []string{"System", "Light", "Dark", "Default", "Nord", "Solarized", "Catppuccin", "Claude"} {
+	for _, want := range []string{"System", "Light", "Dark", "Default", "Nord", "Solarized", "Catppuccin", "Claude", "Green", "Green Soft", "VS Code", "Everforest", "One Dark", "Tokyo Night"} {
 		if !tt.HasText(want) {
 			t.Errorf("appearance settings missing %q; texts: %q", want, tt.Texts())
 		}
@@ -130,7 +130,10 @@ func TestSettingsAppearancePersists(t *testing.T) {
 		want  string
 	}{
 		{"Theme: Solarized", ThemeSolarized},
+		{"Theme: VS Code", ThemeVSCode},
+		{"Theme: Green Soft", ThemeGreenSoft},
 		{"Theme: Claude", ThemeClaude},
+		{"Theme: Green", ThemeGreen},
 	} {
 		if err := tt.Click(choice.label); err != nil {
 			t.Fatal(err)
@@ -140,10 +143,21 @@ func TestSettingsAppearancePersists(t *testing.T) {
 			t.Fatalf("theme = %q, want %q", app.Theme, choice.want)
 		}
 	}
+	// The catalog overflows the fixed settings pane; scroll to its end and
+	// check the last family is still reachable and clickable.
+	tt.Scroll(650, 400, 0, 600)
+	tt.Frame()
+	if err := tt.Click("Theme: Tokyo Night"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if app.Theme != ThemeTokyoNight {
+		t.Fatalf("theme = %q, want %q", app.Theme, ThemeTokyoNight)
+	}
 
 	file := loadPersistedSettings(t, dataDir)
-	if file.Appearance != AppearanceDark || file.Theme != ThemeClaude {
-		t.Fatalf("persisted appearance/theme = %q/%q, want dark/claude", file.Appearance, file.Theme)
+	if file.Appearance != AppearanceDark || file.Theme != ThemeTokyoNight {
+		t.Fatalf("persisted appearance/theme = %q/%q, want dark/tokyo-night", file.Appearance, file.Theme)
 	}
 
 	restarted := New(Options{
@@ -156,8 +170,8 @@ func TestSettingsAppearancePersists(t *testing.T) {
 		restarted.Shutdown()
 		restarted.Flush()
 	})
-	if restarted.Appearance != AppearanceDark || restarted.Theme != ThemeClaude {
-		t.Fatalf("restored appearance/theme = %q/%q, want dark/claude", restarted.Appearance, restarted.Theme)
+	if restarted.Appearance != AppearanceDark || restarted.Theme != ThemeTokyoNight {
+		t.Fatalf("restored appearance/theme = %q/%q, want dark/tokyo-night", restarted.Appearance, restarted.Theme)
 	}
 }
 

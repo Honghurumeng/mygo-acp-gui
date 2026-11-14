@@ -247,8 +247,9 @@ type App struct {
 	// category in its left column.
 	SettingsOpen    bool
 	SettingsSection string
-	// Appearance is the light/dark choice (system, light or dark). Theme names
-	// the colors (default, nord, solarized, catppuccin or claude). Both are
+	// Appearance is the light/dark choice (system, light or dark). Theme
+	// names the colors (default, nord, solarized, catppuccin, claude, green,
+	// green-soft, vscode, everforest, one-dark or tokyo-night). Both are
 	// persisted in settings.json and applied in View.
 	Appearance string
 	Theme      string

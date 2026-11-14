@@ -31,7 +31,8 @@ func TestThemeCatalog(t *testing.T) {
 			}
 		}
 	}
-	for _, id := range []string{ThemeDefault, ThemeNord, ThemeSolarized, ThemeCatppuccin, ThemeClaude} {
+	for _, id := range []string{ThemeDefault, ThemeNord, ThemeSolarized, ThemeCatppuccin, ThemeClaude, ThemeGreen, ThemeGreenSoft,
+		ThemeVSCode, ThemeEverforest, ThemeOneDark, ThemeTokyoNight} {
 		if !seen[id] {
 			t.Errorf("theme family %q is not in the catalog", id)
 		}
@@ -51,12 +52,20 @@ func TestNormalizeAppearanceAndTheme(t *testing.T) {
 		}
 	}
 	for input, want := range map[string]string{
-		"":           ThemeDefault,
-		" NORD ":     ThemeNord,
-		"Solarized":  ThemeSolarized,
-		"catppuccin": ThemeCatppuccin,
-		"claude":     ThemeClaude,
-		"unknown":    ThemeDefault,
+		"":            ThemeDefault,
+		" NORD ":      ThemeNord,
+		"Solarized":   ThemeSolarized,
+		"catppuccin":  ThemeCatppuccin,
+		"claude":      ThemeClaude,
+		"green":       ThemeGreen,
+		"green-soft":  ThemeGreenSoft,
+		"GREEN-SOFT":  ThemeGreenSoft,
+		"vscode":      ThemeVSCode,
+		"everforest":  ThemeEverforest,
+		"one-dark":    ThemeOneDark,
+		"One-Dark":    ThemeOneDark,
+		"tokyo-night": ThemeTokyoNight,
+		"unknown":     ThemeDefault,
 	} {
 		if got := normalizeTheme(input); got != want {
 			t.Errorf("normalizeTheme(%q) = %q, want %q", input, got, want)
@@ -87,6 +96,19 @@ func TestResolvedTheme(t *testing.T) {
 		{"catppuccin mocha", ThemeCatppuccin, AppearanceDark, false, true, mui.Hex("#1e1e2e")},
 		{"claude light", ThemeClaude, AppearanceLight, true, false, mui.Hex("#faf9f5")},
 		{"claude dark", ThemeClaude, AppearanceDark, false, true, mui.Hex("#262624")},
+		{"green light", ThemeGreen, AppearanceLight, true, false, mui.Hex("#c9ecd0")},
+		{"green dark", ThemeGreen, AppearanceDark, false, true, mui.Hex("#1b241e")},
+		{"green system dark", ThemeGreen, AppearanceSystem, true, true, mui.Hex("#1b241e")},
+		{"green soft light", ThemeGreenSoft, AppearanceLight, true, false, mui.Hex("#e8f1ea")},
+		{"green soft dark", ThemeGreenSoft, AppearanceDark, false, true, mui.Hex("#171b18")},
+		{"vscode light", ThemeVSCode, AppearanceLight, true, false, mui.Hex("#ffffff")},
+		{"vscode dark", ThemeVSCode, AppearanceDark, false, true, mui.Hex("#1f1f1f")},
+		{"everforest light", ThemeEverforest, AppearanceLight, true, false, mui.Hex("#fffbef")},
+		{"everforest dark", ThemeEverforest, AppearanceDark, false, true, mui.Hex("#2d353b")},
+		{"one dark light", ThemeOneDark, AppearanceLight, true, false, mui.Hex("#fafafa")},
+		{"one dark dark", ThemeOneDark, AppearanceDark, false, true, mui.Hex("#282c34")},
+		{"tokyo night light", ThemeTokyoNight, AppearanceLight, true, false, mui.Hex("#e1e2e7")},
+		{"tokyo night dark", ThemeTokyoNight, AppearanceDark, false, true, mui.Hex("#1a1b26")},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

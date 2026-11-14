@@ -3,7 +3,7 @@
 ## 目标
 
 - 默认跟随系统明暗；允许强制 `Light` / `Dark`。
-- 内置 `Default`、`Nord`、`Solarized`、`Catppuccin`、`Claude` 五个配色家族，每个都有浅色和深色版本。
+- 内置 `Default`、`Nord`、`Solarized`、`Catppuccin`、`Claude`、`Green`、`Green Soft`、`VS Code`、`Everforest`、`One Dark`、`Tokyo Night` 十一个配色家族，每个都有浅色和深色版本。
 - 不引入 UI/主题库：全部基于 MyGo 的 `mui.Theme`，配色目录在 `internal/ui/theme.go`。
 - 不做用户自定义 JSON 主题、在线主题目录和按主题的代码高亮；新配色走代码 + 发版。
 - 分区字体大小是独立设置，不随主题变化；见 [fonts.md](fonts.md)。
@@ -20,7 +20,8 @@
 ```
 
 - `appearance`：`system`、`light`、`dark`。空值或未知值按 `system` 处理。
-- `theme`：`default`、`nord`、`solarized`、`catppuccin`、`claude`。空值或未知值按 `default` 处理。
+- `theme`：`default`、`nord`、`solarized`、`catppuccin`、`claude`、`green`、`green-soft`、`vscode`、`everforest`、
+  `one-dark`、`tokyo-night`。空值或未知值按 `default` 处理。
 - 旧文件没有这两个字段时保持 `system/default`，启动不报错、不阻塞。
 - `internal/settings.File` 只存字符串，不认识具体配色；`App.loadSettings` 调 `normalizeAppearance` /
   `normalizeTheme` 归一化，`persistSettings` 原样写回。
@@ -56,14 +57,29 @@
 | `solarized` | Solarized Light | Solarized Dark | `#1f73af` / `#3aa0e8` |
 | `catppuccin` | Latte | Mocha | `#8839ef` / `#cba6f7` |
 | `claude` | Warm paper | Warm charcoal | `#b8562f` / `#d97757` |
+| `green` | Eye-care paper | Forest night | `#24704c` / `#7fbf95` |
+| `green-soft` | Soft paper | Soft forest | `#2f7250` / `#8cc4a0` |
+| `vscode` | Light Modern | Dark Modern | `#005fb8` / `#0078d4` |
+| `everforest` | Everforest Light | Everforest Dark | `#6b7c00` / `#a7c080` |
+| `one-dark` | One Light | One Dark | `#3a6fe0` / `#61afef` |
+| `tokyo-night` | Tokyo Night Day | Tokyo Night | `#2568d0` / `#7aa2f7` |
 
 每个 palette 只覆盖颜色：Background、Surface/Hover/Pressed、Border、Text/TextMuted、Accent/Hover/Pressed/Text、
 Danger、Warning、Success、Selection、Focus、Scrollbar。圆角、间距、字号、滚动条宽度等指标继续取自 MyGo 的
 `LightTheme` / `DarkTheme`，这样主题不会破坏布局。
 
-Nord、Solarized、Catppuccin、Claude 的浅色版本是各自色板在浅色背景下的映射；Nord 没有官方浅色版，
+Nord、Solarized、Catppuccin、Claude、Green、Green Soft 的浅色版本是各自色板在浅色背景下的映射；Nord 没有官方浅色版，
 使用 Snow Storm 背景与 Polar Night 文字/边框。部分浅色主题的 Accent/Warning/Success 为了文字对比度做了
-加深，不保证与官方色值逐字一致。配色来源记录在 `themeFamilies` 定义上方，不复制第三方代码，只使用颜色值。
+加深，不保证与官方色值逐字一致。Green 是护眼配色：浅色用传统护眼纸绿 `#c9ecd0` 作背景、深绿作文字，
+深色用低饱和的森林墨绿；两套都压低背景与前景的亮度差，适合长时间阅读。Green Soft 是同一思路的更淡版本：
+浅色背景降到约 24% 饱和（`#e8f1ea`），接近中性纸面，正文对比约 11:1；深色用 `#171b18` + `#e0e4e0`，
+减少整体色偏，保留红/绿状态色和 Git diff 的区分度。
+
+VS Code、Everforest、One Dark、Tokyo Night 取各自官方主题的主色（背景、面板、前景、Accent），其余角色按本项目
+palette 映射：VS Code 用 Dark Modern / Light Modern，Everforest 用 medium 对比度版本，One Dark 浅色版为
+One Light，Tokyo Night 浅色版为 Tokyo Night Day。Tokyo Night Day 的正文改用深蓝灰 `#343b58`（官方 fg 是
+偏蓝的 `#3760bf`），避免整屏蓝字；VS Code 和 Tokyo Night 的深色面板比官方侧栏略亮，以满足图标栏派生色的
+区分度。所有官方色值只记录在 `themeFamilies` 定义上方，不复制第三方代码；实现的是配色映射，不保证与官方逐字一致。
 
 ## 派生色
 
@@ -84,11 +100,13 @@ Nord、Solarized、Catppuccin、Claude 的浅色版本是各自色板在浅色�
 设置面板新增 `Appearance` 分类（默认仍打开 `Notifications`）：
 
 - 顶部 `System` / `Light` / `Dark` 三个胶囊按钮，当前项用 Accent 填充。
-- 下面 `Theme` 列表：`Default`、`Nord`、`Solarized`、`Catppuccin`、`Claude`。每行展示当前明暗变体的四个色块
+- 下面 `Theme` 列表：`Default`、`Nord`、`Solarized`、`Catppuccin`、`Claude`、`Green`、`Green Soft`、`VS Code`、
+  `Everforest`、`One Dark`、`Tokyo Night`。每行展示当前明暗变体的四个色块
   （Background、Surface、Accent、Text）、名称、简介和选中勾。
 - 点击立即生效：状态改在 `App` 上，`persistSettings` 落盘；下一帧 `View` 重新 `SetTheme`，
   设置弹窗、popover、代码块和 Git 面板一起换色。
 - 色块用 `mui.Box` 直接画，不依赖 `mui.Themed`；主题预览在强制 `Light`/`Dark` 时也跟随当前明暗。
+- 右侧内容包在 `mui.Scroll` 里，主题目录变长后仍能滚动到 `Tokyo Night` 等最后一行。
 
 ## 代码高亮
 
@@ -105,5 +123,6 @@ Nord、Solarized、Catppuccin、Claude 的浅色版本是各自色板在浅色�
 
 - `internal/settings`：`appearance` / `theme` 的保存读取往返。
 - `internal/ui/theme_test.go`：目录唯一性、归一化、各家族浅/深色解析、字号缩放、原生 source 映射。
-- `internal/ui/settings_test.go`：打开 `Appearance`、切换 `Dark` + `Solarized`、落盘、重启恢复。
-- 手动检查：System/Light/Dark × 五个家族，重点看设置弹窗、权限弹窗、代码块、Git 图、侧栏状态色。
+- `internal/ui/settings_test.go`：打开 `Appearance`、切换 `Dark` + 多个配色（含 Green / Green Soft / VS Code）、
+  滚动到列表末尾切换 `Tokyo Night`、落盘、重启恢复。
+- 手动检查：System/Light/Dark × 十一个家族，重点看设置弹窗、权限弹窗、代码块、Git 图、侧栏状态色。

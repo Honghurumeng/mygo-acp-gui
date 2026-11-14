@@ -96,8 +96,9 @@ type File struct {
 	// Appearance is the light/dark choice: system, light or dark. An empty
 	// value means system, so older files keep following the desktop.
 	Appearance string `json:"appearance,omitempty"`
-	// Theme names the colors: default, nord, solarized, catppuccin or claude.
-	// An empty value means default.
+	// Theme names the colors: default, nord, solarized, catppuccin, claude,
+	// green, green-soft, vscode, everforest, one-dark or tokyo-night. An
+	// empty value means default.
 	Theme string `json:"theme,omitempty"`
 	// Notifications enables desktop notifications. It defaults to true so
 	// older files without the field keep the previous behavior; the field is

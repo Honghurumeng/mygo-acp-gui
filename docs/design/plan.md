@@ -147,7 +147,7 @@ scripts/vendor-codex-acp.sh          # 仅在升级 codex-acp 时运行
 - [x] 基础测试：framing、launch spec、登录 shell 解析、fake agent 会话、UI 发送/流式/停止/权限、进程组清理
 - [x] 新能力测试：probe、config/mode、list/load/close、侧栏已保存会话 UI、图片 prompt、MCP 校验、命令面板、图片发送 UI、设置持久化、诊断面板与日志滚动
 - [x] 存档测试：文件读写/容错、重命名与软删除跨重启、删除后同步不复活、按记录的 agent load、工作区软删除/恢复跨重启
-- [x] 主题系统：System/Light/Dark 外观 + Default/Nord/Solarized/Catppuccin/Claude 配色，设置面板切换、跨重启恢复、原生窗口外观同步（见 [themes.md](themes.md)）
+- [x] 主题系统：System/Light/Dark 外观 + Default/Nord/Solarized/Catppuccin/Claude/Green/Green Soft/VS Code/Everforest/One Dark/Tokyo Night 配色，设置面板切换、跨重启恢复、原生窗口外观同步（见 [themes.md](themes.md)）
 
 ## 后续
 
