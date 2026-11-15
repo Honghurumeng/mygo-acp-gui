@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -80,6 +81,167 @@ type Selection struct {
 	Mode          string            `json:"mode,omitempty"`
 }
 
+// DefaultCodexProviderID is the provider key ACP GUI adds to Codex when the
+// user does not name one. It must be a valid TOML dotted key.
+const DefaultCodexProviderID = "acp-gui"
+
+// DefaultCodexContextWindow is advertised to Codex when the user leaves the
+// context window empty. It is deliberately conservative: a smaller value
+// triggers earlier compaction, while a larger one can overflow the provider.
+// Keep it in sync with agent.DefaultCodexCatalogContextWindow.
+const DefaultCodexContextWindow = 200000
+
+// DefaultCodexReasoningLevels are offered on a fresh custom provider. Codex
+// exposes them through its reasoning_effort config option; an explicit empty
+// list hides that option and stops Codex from sending a reasoning request.
+var DefaultCodexReasoningLevels = []string{"low", "medium", "high"}
+
+// CodexProvider is an optional provider override for Codex sessions started
+// by this app. It does not replace ~/.codex/config.toml: the app passes the
+// fields through CODEX_CONFIG, and Codex keeps its own login, MCP servers,
+// skills, sandbox and approval settings.
+type CodexProvider struct {
+	ID        string `json:"id,omitempty"`
+	Name      string `json:"name,omitempty"`
+	BaseURL   string `json:"baseUrl,omitempty"`
+	APIKeyEnv string `json:"apiKeyEnv,omitempty"`
+	// APIKey is the optional literal key. It is stored in settings.json
+	// (0600) and injected into the child environment; it is never written to
+	// CODEX_CONFIG or logs. Empty means use the environment variable named by
+	// APIKeyEnv.
+	APIKey          string `json:"apiKey,omitempty"`
+	UseCodexLogin   bool   `json:"useCodexLogin,omitempty"`
+	ModelCatalogURL string `json:"modelCatalogUrl,omitempty"`
+	Model           string `json:"model,omitempty"`
+	// ContextWindow and ReasoningLevels feed the generated Codex model
+	// catalog. Without a catalog Codex falls back to unknown-model metadata
+	// and offers no reasoning effort. An empty ReasoningLevels is an explicit
+	// "no reasoning" choice; nil means the defaults for an enabled override.
+	ContextWindow   int      `json:"contextWindow,omitempty"`
+	ReasoningLevels []string `json:"reasoningLevels"`
+}
+
+// Codex holds the optional Codex provider override. Override false means the
+// app leaves Codex alone and lets it use the user's own configuration.
+type Codex struct {
+	Override bool          `json:"override"`
+	Provider CodexProvider `json:"provider,omitempty"`
+}
+
+// NormalizeCodex trims user input and makes the provider ID safe for the
+// model_providers.<id> key in Codex's config. It never drops the fields, so a
+// user can toggle the override off without retyping the provider.
+func NormalizeCodex(codex Codex) Codex {
+	provider := codex.Provider
+	provider.ID = normalizeCodexProviderID(provider.ID)
+	provider.Name = strings.TrimSpace(provider.Name)
+	provider.BaseURL = normalizeCodexBaseURL(provider.BaseURL)
+	provider.APIKeyEnv = strings.TrimSpace(provider.APIKeyEnv)
+	provider.APIKey = strings.TrimSpace(provider.APIKey)
+	provider.ModelCatalogURL = strings.TrimSpace(provider.ModelCatalogURL)
+	provider.Model = strings.TrimSpace(provider.Model)
+	provider.ReasoningLevels = normalizeCodexReasoningLevels(provider.ReasoningLevels)
+	if codex.Override {
+		if provider.ReasoningLevels == nil {
+			provider.ReasoningLevels = append([]string(nil), DefaultCodexReasoningLevels...)
+		}
+		if provider.ContextWindow <= 0 {
+			provider.ContextWindow = DefaultCodexContextWindow
+		}
+	}
+	codex.Provider = provider
+	return codex
+}
+
+// ParseCodexReasoningLevels turns the settings text field into the list Codex
+// advertises. An empty string means "do not offer reasoning effort", so it
+// returns a non-nil empty slice. Unknown names are rejected later, when the
+// catalog is built, so the user sees the exact error before connecting.
+func ParseCodexReasoningLevels(raw string) []string {
+	levels := make([]string, 0)
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.ToLower(strings.TrimSpace(part))
+		if part != "" {
+			levels = append(levels, part)
+		}
+	}
+	return normalizeCodexReasoningLevels(levels)
+}
+
+// ParseCodexContextWindow parses the settings text field. An empty value
+// restores the default instead of failing, so clearing the box is harmless.
+func ParseCodexContextWindow(raw string) (int, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return DefaultCodexContextWindow, nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("codex: context window must be a number")
+	}
+	if n <= 0 {
+		return 0, fmt.Errorf("codex: context window must be positive")
+	}
+	if n > 10_000_000 {
+		return 0, fmt.Errorf("codex: context window %d is too large", n)
+	}
+	return n, nil
+}
+
+func normalizeCodexReasoningLevels(levels []string) []string {
+	if levels == nil {
+		return nil
+	}
+	out := make([]string, 0, len(levels))
+	seen := make(map[string]bool, len(levels))
+	for _, level := range levels {
+		level = strings.ToLower(strings.TrimSpace(level))
+		if level == "" || seen[level] {
+			continue
+		}
+		seen[level] = true
+		out = append(out, level)
+	}
+	return out
+}
+
+// normalizeCodexBaseURL makes the OpenAI-compatible base URL end in /v1.
+// Codex appends /responses itself, so the saved value is the same shape as
+// https://api.openai.com/v1.
+func normalizeCodexBaseURL(raw string) string {
+	raw = strings.TrimRight(strings.TrimSpace(raw), "/")
+	if raw == "" {
+		return ""
+	}
+	// A query or fragment makes appending unsafe; leave it for validation to
+	// reject instead of producing https://host?x=1/v1.
+	if strings.ContainsAny(raw, "?#") {
+		return raw
+	}
+	if strings.HasSuffix(strings.ToLower(raw), "/v1") {
+		return raw
+	}
+	return raw + "/v1"
+}
+
+func normalizeCodexProviderID(id string) string {
+	id = strings.ToLower(strings.TrimSpace(id))
+	var b strings.Builder
+	for _, r := range id {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-', r == '_':
+			b.WriteRune(r)
+		case r == ' ' || r == '.':
+			b.WriteRune('-')
+		}
+	}
+	out := strings.Trim(b.String(), "-_")
+	if out == "" {
+		return DefaultCodexProviderID
+	}
+	return out
+}
+
 // File is the on-disk settings document. Workspaces keeps every known folder
 // in sidebar order; RemovedWorkspaces holds the soft-deleted ones, which stay
 // in the list so they can be restored later. CollapsedWorkspaces lists the
@@ -114,6 +276,9 @@ type File struct {
 	// last used with it, so a new draft opens with the same model, thinking
 	// level and mode instead of the agent's defaults.
 	LastSelections map[string]Selection `json:"lastSelections,omitempty"`
+	// Codex is the optional provider/model override layered over the user's
+	// own Codex configuration for sessions started by this app.
+	Codex Codex `json:"codex,omitempty"`
 }
 
 // Store reads and writes one settings file. A nil Store or an empty path is
@@ -178,6 +343,7 @@ func (s *Store) Save(file File) error {
 	}
 	file.Fonts = file.Fonts.withDefaults()
 	file.LastSelections = sanitizeSelections(file.LastSelections)
+	file.Codex = NormalizeCodex(file.Codex)
 	data, err := json.MarshalIndent(file, "", "  ")
 	if err != nil {
 		return fmt.Errorf("settings: encode: %w", err)
@@ -241,6 +407,8 @@ type rawFile struct {
 	Fonts *Fonts `json:"fonts"`
 	// Raw keeps one malformed selection from discarding the other fields.
 	LastSelections json.RawMessage `json:"lastSelections"`
+	// A pointer lets an older file without the Codex override stay absent.
+	Codex *Codex `json:"codex"`
 }
 
 func decode(data []byte) (File, error) {
@@ -276,6 +444,11 @@ func decode(data []byte) (File, error) {
 		file.Fonts = raw.Fonts.withDefaults()
 	}
 	file.LastSelections = decodeSelections(raw.LastSelections, &problems)
+	if raw.Codex != nil {
+		file.Codex = NormalizeCodex(*raw.Codex)
+	} else {
+		file.Codex = NormalizeCodex(file.Codex)
+	}
 	return file, errors.Join(problems...)
 }
 

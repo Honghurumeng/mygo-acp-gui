@@ -16,6 +16,7 @@
 - `docs/design/pi-fork.md`：fork pi-acp 的最小改动、vendor 接入与验证。
 - `docs/design/command-code.md`：Command Code 启动、已验证 ACP 流程、权限/取消、测试。
 - `docs/design/codex.md`：官方 codex-acp bundle、系统 Codex CLI/`CODEX_PATH`、认证、更新与测试。
+- `docs/design/codex-providers.md`：Codex 只支持 Responses、deepseek-recipe 定位、`CODEX_CONFIG`/`providers/set`、Codex 设置分类、模型目录与自建网关。
 - `docs/design/features.md`：多会话、发现探测、配置/模式、历史、图片、MCP、命令面板、消息跳转、计划/用量。
 - `docs/design/multi-session.md`：pi / Command Code 单进程多会话能力调查与结论。
 - `docs/design/git.md`：右侧 Git 面板、仓库探测、状态/图表、提交与 fetch/pull/push、异步与安全。

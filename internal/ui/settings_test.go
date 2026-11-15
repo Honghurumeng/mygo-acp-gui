@@ -1,10 +1,15 @@
 package ui
 
 import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 
 	mui "github.com/egoist/mygo/ui"
 	"github.com/reed/acp-gui/internal/agent"
+	"github.com/reed/acp-gui/internal/settings"
 )
 
 func TestSidebarShowsAgentCLIVersions(t *testing.T) {
@@ -194,4 +199,215 @@ func TestSettingsTestNotification(t *testing.T) {
 	if app.NotificationTestNotice == "" {
 		t.Error("test notification result is not shown")
 	}
+}
+
+func TestCodexSettingsPanelAndOverride(t *testing.T) {
+	dataDir := t.TempDir()
+	app, tt := newSettingsApp(t, dataDir, t.TempDir())
+	tt.Frame()
+	if err := tt.Click("Settings"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if err := tt.Click("Codex"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	for _, want := range []string{"Codex provider", "Use custom provider"} {
+		if !tt.HasText(want) {
+			t.Fatalf("Codex settings missing %q; texts: %q", want, tt.Texts())
+		}
+	}
+	if err := tt.Click("Toggle custom Codex provider"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if !app.CodexSettings.Override {
+		t.Fatal("Codex override toggle did not turn on")
+	}
+	if file := loadPersistedSettings(t, dataDir); !file.Codex.Override {
+		t.Fatal("Codex override was not persisted")
+	}
+	for _, want := range []string{"Base URL", "Model", "Context window (tokens)", "Reasoning levels", "API key environment variable", "API key (optional)", "Apply Codex settings"} {
+		if !tt.HasText(want) {
+			t.Fatalf("Codex provider fields missing %q; texts: %q", want, tt.Texts())
+		}
+	}
+}
+
+func TestApplyCodexSettingsBuildsLaunchEnv(t *testing.T) {
+	base := agent.LaunchSpec{
+		ID:      agent.CodexID,
+		Name:    "Codex",
+		Command: "/bin/echo",
+		Env:     []string{"PATH=/usr/bin:/bin"},
+		Source:  agent.SourceVendored,
+	}
+	app := New(Options{
+		Version:   "test",
+		Workspace: t.TempDir(),
+		Agents:    []agent.LaunchSpec{base},
+	})
+	t.Cleanup(func() {
+		app.Shutdown()
+		app.Flush()
+	})
+	app.CodexSettings = settings.Codex{
+		Override: true,
+		Provider: settings.CodexProvider{
+			ID:        "demo",
+			Name:      "Demo",
+			BaseURL:   "https://example.com",
+			APIKeyEnv: "DEMO_API_KEY",
+			APIKey:    "sk-literal-secret",
+			Model:     "demo-model",
+		},
+	}
+	app.applyCodexSettings()
+	if app.CodexError != "" {
+		t.Fatalf("applyCodexSettings: %s", app.CodexError)
+	}
+	spec, ok := app.currentCodexSpec()
+	if !ok {
+		t.Fatal("Codex spec missing")
+	}
+	raw := agent.EnvValue(spec.Env, "CODEX_CONFIG")
+	if raw == "" {
+		t.Fatal("CODEX_CONFIG was not added")
+	}
+	if !strings.Contains(raw, `"demo-model"`) || !strings.Contains(raw, `"demo"`) {
+		t.Errorf("CODEX_CONFIG = %s", raw)
+	}
+	if !strings.Contains(raw, `"base_url":"https://example.com/v1"`) {
+		t.Errorf("CODEX_CONFIG base URL was not normalized: %s", raw)
+	}
+	if !strings.Contains(raw, `"model_catalog_url":"http://127.0.0.1:`) {
+		t.Errorf("CODEX_CONFIG is missing the generated catalog URL: %s", raw)
+	}
+	catalogURL := app.codexCatalogURL()
+	if catalogURL == "" {
+		t.Fatal("the local Codex catalog server did not start")
+	}
+	if catalogURL != providerCatalogURL(t, raw) {
+		t.Errorf("catalog URL = %q, CODEX_CONFIG has %q", catalogURL, providerCatalogURL(t, raw))
+	}
+	catalog := readCatalog(t, catalogURL)
+	if !strings.Contains(catalog, `"slug":"demo-model"`) || !strings.Contains(catalog, `"effort":"medium"`) {
+		t.Errorf("catalog = %s", catalog)
+	}
+
+	// An explicit catalog URL is an expert override: do not replace it with
+	// the generated one.
+	app.CodexSettings.Provider.ModelCatalogURL = "https://example.com/models"
+	app.applyCodexSettings()
+	spec, _ = app.currentCodexSpec()
+	if raw = agent.EnvValue(spec.Env, "CODEX_CONFIG"); !strings.Contains(raw, `"model_catalog_url":"https://example.com/models"`) {
+		t.Errorf("explicit catalog URL was replaced: %s", raw)
+	}
+	if strings.Contains(raw, "sk-literal-secret") {
+		t.Fatalf("literal key leaked into CODEX_CONFIG: %s", raw)
+	}
+	if got := agent.EnvValue(spec.Env, "DEMO_API_KEY"); got != "sk-literal-secret" {
+		t.Errorf("DEMO_API_KEY = %q, want literal key", got)
+	}
+	if len(app.baseAgents) != 1 || agent.EnvValue(app.baseAgents[0].Env, "CODEX_CONFIG") != "" {
+		t.Error("base Codex spec was mutated")
+	}
+
+	app.CodexSettings.Override = false
+	app.applyCodexSettings()
+	spec, _ = app.currentCodexSpec()
+	if agent.EnvValue(spec.Env, "CODEX_CONFIG") != "" {
+		t.Error("disabling the override left CODEX_CONFIG behind")
+	}
+
+	app.CodexSettings = settings.Codex{Override: true, Provider: settings.CodexProvider{
+		ID:      "bad id",
+		BaseURL: "not a url",
+		Model:   "demo",
+	}}
+	app.applyCodexSettings()
+	if app.CodexError == "" {
+		t.Error("invalid Codex settings were accepted")
+	}
+}
+
+func TestApplyCodexTextSettingsRejectsBadContextWindow(t *testing.T) {
+	app := New(Options{Version: "test", Workspace: t.TempDir()})
+	t.Cleanup(func() {
+		app.Shutdown()
+		app.Flush()
+	})
+	app.CodexSettings = settings.Codex{Override: true, Provider: settings.CodexProvider{
+		BaseURL:         "https://example.com",
+		Model:           "demo",
+		ContextWindow:   200000,
+		ReasoningLevels: []string{"medium"},
+	}}
+	app.CodexContextText = "not-a-number"
+	app.CodexReasoningText = "low, max"
+	if app.applyCodexTextSettings() {
+		t.Fatal("invalid context window was accepted")
+	}
+	if !strings.Contains(app.CodexError, "context window") {
+		t.Errorf("CodexError = %q", app.CodexError)
+	}
+	if len(app.CodexSettings.Provider.ReasoningLevels) != 1 {
+		t.Error("reasoning levels were changed by a failed parse")
+	}
+
+	app.CodexContextText = "131072"
+	if !app.applyCodexTextSettings() {
+		t.Fatalf("applyCodexTextSettings: %s", app.CodexError)
+	}
+	if app.CodexSettings.Provider.ContextWindow != 131072 {
+		t.Errorf("context window = %d", app.CodexSettings.Provider.ContextWindow)
+	}
+	if strings.Join(app.CodexSettings.Provider.ReasoningLevels, ",") != "low,max" {
+		t.Errorf("reasoning levels = %v", app.CodexSettings.Provider.ReasoningLevels)
+	}
+	app.applyCodexSettings()
+	if app.CodexError != "" {
+		t.Fatalf("applyCodexSettings: %s", app.CodexError)
+	}
+
+	app.CodexReasoningText = "low, turbo"
+	if !app.applyCodexTextSettings() {
+		t.Fatalf("applyCodexTextSettings: %s", app.CodexError)
+	}
+	app.applyCodexSettings()
+	if app.CodexError == "" || !strings.Contains(app.CodexError, "unknown reasoning level") {
+		t.Fatalf("CodexError = %q, want an unknown-level error", app.CodexError)
+	}
+}
+
+func providerCatalogURL(t *testing.T, raw string) string {
+	t.Helper()
+	var config struct {
+		Providers map[string]map[string]any `json:"model_providers"`
+		Provider  string                    `json:"model_provider"`
+	}
+	if err := json.Unmarshal([]byte(raw), &config); err != nil {
+		t.Fatalf("decode CODEX_CONFIG: %v", err)
+	}
+	provider := config.Providers[config.Provider]
+	url, _ := provider["model_catalog_url"].(string)
+	return url
+}
+
+func readCatalog(t *testing.T, url string) string {
+	t.Helper()
+	response, err := http.Get(url)
+	if err != nil {
+		t.Fatalf("GET catalog: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("GET catalog status = %d: %s", response.StatusCode, body)
+	}
+	return string(body)
 }

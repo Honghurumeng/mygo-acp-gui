@@ -29,6 +29,8 @@ resources/agents/codex-acp/
 
 与 pi-acp 不同，codex-acp 的上游 npm 包已经发布单文件 ESM bundle。`scripts/vendor-codex-acp.sh` 只做安装、校验、复制、许可证归档和冒烟，不再用 esbuild 重打；这样 bundle 与官方发布物一致，升级时差异只看 VERSION。官方 bundle 自带 `package_default`，不需要旁边的 `package.json` 才能报告 `agentInfo.name/version`。
 
+`internal/agent/codex_prompt.txt` 是生成模型目录时用的 `base_instructions`，内容取自 Codex 自带 catalog 的 coding prompt（Codex 仓库为 Apache-2.0）；它只用于本应用生成的自定义 provider 目录，不修改官方 bundle。升级 Codex CLI 后如果目录格式变了，先对比新版自带 prompt 再更新这个文件。
+
 ## 运行时要求
 
 - **Node.js 22+**：启动前校验 `node --version`。
@@ -45,6 +47,43 @@ CODEX_PATH=/absolute/path/to/codex node resources/agents/codex-acp/codex-acp.bun
 ```
 
 因此本应用只 vendor 适配器，Codex CLI 和 pi 一样由用户自备。没有 `CODEX_PATH` 时 bundle 会尝试 `require("@openai/codex/bin/codex.js")` 并失败；`CodexLaunchSpec` 在启动前就拒绝缺失的 Codex，不会走到这一步。
+
+## 可选的供应商 / 模型覆盖
+
+设置面板的 `Codex` 分类只做一层可选覆盖，不改用户自己的 Codex 配置：
+
+- 开关关闭（默认）：不注入任何 `CODEX_CONFIG`，Codex 完全按 `~/.codex/config.toml` 的 `model_provider` / `model` 运行。
+- 开关打开：把 provider 定义和 model 通过 `CODEX_CONFIG` 交给 codex-acp，由它转成 `codex app-server` 的 `-c` 参数。`~/.codex/config.toml` 不读、不写、不备份；登录、MCP、skills、sandbox、审批仍由 Codex 自己加载。
+- 字段：provider 名称、Responses `base_url`、model slug、context window、reasoning levels、API key 环境变量名、可选的直接 API key、是否复用 Codex 登录（`requires_openai_auth`），以及可选的 `model_catalog_url`。provider id 在 `settings.json` 里规范化为 `[a-z0-9_-]+`，缺省 `acp-gui`。
+- `base_url` 会规范化为以 `/v1` 结尾：输入 `https://api.deepseek.com` 保存为 `https://api.deepseek.com/v1`；已带 `/v1` 的保持不变。
+- API key 有两种输入：
+  - **环境变量名**（如 `DEEPSEEK_API_KEY`）：只保存变量名，key 由登录 shell 提供；设置面板会提示变量是否缺失。
+  - **直接 key**：保存在 `settings.json`（0600），启动 Codex 时注入子进程环境，环境变量名用上面的名字；名字为空时用 `OPENAI_API_KEY`。直接 key 优先于环境变量，且不会写进 `CODEX_CONFIG`、命令行或日志。
+  - 复用 Codex 登录时不设置 `env_key`，两种 key 输入都不使用。
+- 应用时机：点 Apply 后保存到 `settings.json` 的 `codex`，并重建 Codex 的 launch spec；新会话生效。已连接的会话仍使用启动时的 app-server，需要重连（当前没有重连按钮，可新建会话）。
+- 模型目录：不填 `model_catalog_url` 时，应用在 `127.0.0.1` 随机端口生成一份 Codex `{"models":[...]}` 目录，并通过 provider 定义注入。目录包含当前 model、context window、reasoning levels 和 Codex 的 `base_instructions`，因此 Codex 不再对未知 slug 打印 `Model metadata ... not found`，对话内“推理强度”菜单也会出现。
+- `Reasoning levels` 是逗号分隔的 effort 列表（缺省 `low, medium, high`）；留空表示不声明 reasoning，Codex 不显示推理强度，也不会在请求里带 `reasoning`。`Context window` 缺省 `200000`，用于上下文统计和自动压缩，应不超过供应商真实上限。
+- 目录服务只在本应用进程内运行，随 `Shutdown` 关闭；Codex 会把拉到的目录缓存到 `~/.codex/models_cache.json`（只写缓存，不改 `config.toml`），每次 app-server 启动会重新拉取。
+- 当前仍只支持一个 provider、一个 model；多 model 需要扩展设置和 `agent.CodexCatalogJSON`，自定义 `http_headers`、query params、多 provider 配置还没有 UI。
+
+`CODEX_CONFIG` 的结构示例：
+
+```json
+{
+  "model_provider": "acp-gui",
+  "model": "deepseek-chat",
+  "model_providers": {
+    "acp-gui": {
+      "name": "DeepSeek",
+      "base_url": "https://api.deepseek.com/v1",
+      "wire_api": "responses",
+      "env_key": "DEEPSEEK_API_KEY"
+    }
+  }
+}
+```
+
+codex-acp 启动时读 `CODEX_CONFIG`；provider 定义里的 `model_catalog_url` 会一起传给 app-server（本机 0.169.0 实测）。Codex 的 `WireApi` 仍然只有 `responses`，本功能不做 Chat Completions 转换。
 
 ## 路径解析
 
@@ -64,6 +103,7 @@ CODEX_PATH=/absolute/path/to/codex node resources/agents/codex-acp/codex-acp.bun
 - `initialize`：`agentInfo.name = "@agentclientprotocol/codex-acp"`、`title = "Codex"`、`version = 适配器版本`；`authMethods` 包含 `api-key` / `chat-gpt`；`agentCapabilities.promptCapabilities` 支持 `image`、`embeddedContext`，`loadSession=true`。
 - `session/new` 返回 `sessionId`、`configOptions`（`mode`、`collaboration_mode`、`model`、`reasoning_effort`、`fast-mode`）、真实 `modes` 和旧式 `models`。
 - `reasoning_effort` 以 `category: thought_level` 暴露，GUI 的 Thinking 列直接使用；model、mode 等选项全部以 agent 返回为准，不硬编码。
+- 自定义 provider + 生成的模型目录（`model` 设为 `deepseek/deepseek-v4.1-flash`，目录由 `agent.CodexCatalogJSON` 生成）：`session/new` 的模型菜单只包含该 slug，`reasoning_effort` 出现且 `currentModelId` 为 `deepseek/deepseek-v4.1-flash[medium]`；不再出现 `Model metadata ... not found`。
 - session mode 使用 `session/set_mode`（`read-only` / `workspace-write` / `agent` / `agent-full-access`）；`mode` config option 与服务端 `modes` 是同一语义，GUI 的 mode chip 走 `modes`。
 - `session/prompt` 流式返回 text/thought/tool call；`session/cancel`、权限请求走现有 ACP 客户端。
 - 适配器会推送 `_auth/status_update` 扩展通知；GUI 对未知通知安静忽略，不当作协议错误。

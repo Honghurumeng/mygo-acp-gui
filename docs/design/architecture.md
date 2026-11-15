@@ -177,7 +177,7 @@ pi 自己的工具在工作区内读写执行；客户端只负责展示和审�
 存储在 `mygo.App.Path(mygo.PathUserData)`：
 
 ```
-settings.json        lastAgent、lastWorkspace、workspaces、removedWorkspaces、lastSelections（每个 agent 的模型/thinking/mode）、appearance、theme、notifications、paths 覆盖
+settings.json        lastAgent、lastWorkspace、workspaces、removedWorkspaces、lastSelections（每个 agent 的模型/thinking/mode）、appearance、theme、notifications、codex（供应商/模型覆盖）、paths 覆盖
 sessions.json        本地会话存档：agentId、sessionId、cwd、title、showName、show、会话时间、用户消息发送时间与每轮运行时间
 tasks.json           任务索引：workspace、title/text、pending/ongoing/complete、result、顺序、session、轮次、note、summaryPath
 <workspace>/tasks/   每个完成任务一份 Markdown 总结（tasks/<id>-<slug>.md）；成功的随任务 commit，失败的只保留文件
@@ -186,8 +186,8 @@ logs/                每个 agent 的 stderr / 协议日志（1 MiB 滚动，保
 
 `settings.json` 由 `internal/settings` 读写：
 
-- 结构：`{version, lastAgent, lastWorkspace, workspaces, removedWorkspaces, lastSelections, appearance, theme, notifications, dockBadge, paths:{shell,node,pi,commandCode,codex}}`。`workspaces` 保留全部已知目录（含软删除项），`removedWorkspaces` 是软删除标记，二者都按侧栏顺序保存；`lastSelections` 按 agent ID 保存 `{configOptions:{id:value}, mode}`（模型、thinking、其他 select 和 session mode，见 [features.md](features.md)）；`appearance`/`theme` 缺省为 `system`/`default`（见 [themes.md](themes.md)）；`notifications` 和 `dockBadge` 缺省为 true，显式 false 会持久化。
-- 保存时机：切换会话、选择 agent/目录/model/thinking/mode、添加/移除/恢复工作区、切换设置面板里的外观/主题/系统通知/Dock 角标、Connect 校验成功、退出。写入是原子的（同目录临时文件 + rename，0600），父目录不存在时创建。
+- 结构：`{version, lastAgent, lastWorkspace, workspaces, removedWorkspaces, lastSelections, appearance, theme, notifications, dockBadge, codex:{override,provider:{id,name,baseUrl,apiKeyEnv,apiKey,useCodexLogin,modelCatalogUrl,model,contextWindow,reasoningLevels}}, paths:{shell,node,pi,commandCode,codex}}`。`codex.provider.id` 只允许字母、数字、`-`、`_`，缺省为 `acp-gui`；`baseUrl` 统一补成 `/v1` 结尾；`apiKeyEnv` 是环境变量名，`apiKey` 是可选的直接 key（文件 0600；启动时注入子进程环境，不写 `CODEX_CONFIG`/日志）；`contextWindow`/`reasoningLevels` 用于生成本地 Codex 模型目录（`modelCatalogUrl` 为空时，见 [codex.md](codex.md)）。`workspaces` 保留全部已知目录（含软删除项），`removedWorkspaces` 是软删除标记，二者都按侧栏顺序保存；`lastSelections` 按 agent ID 保存 `{configOptions:{id:value}, mode}`（模型、thinking、其他 select 和 session mode，见 [features.md](features.md)）；`appearance`/`theme` 缺省为 `system`/`default`（见 [themes.md](themes.md)）；`notifications` 和 `dockBadge` 缺省为 true，显式 false 会持久化。
+- 保存时机：切换会话、选择 agent/目录/model/thinking/mode、添加/移除/恢复工作区、切换设置面板里的外观/主题/Codex 供应商/系统通知/Dock 角标、Connect 校验成功、退出。写入是原子的（同目录临时文件 + rename，0600），父目录不存在时创建。
 - 加载容错：文件缺失用默认值；JSON 损坏、相对路径、未来版本只产生警告（标题栏/侧栏显示），其余字段照常使用，绝不阻塞启动。
 - 路径优先级：`ACP_GUI_*` 环境变量 > `settings.json` 的 `paths` > 登录 shell 解析。显式覆盖无效时保留 shell 结果并警告，不会把可用的路径清空。
 - 保存最后一次状态（当前会话的 agent/工作区）、每个 agent 的模型/thinking/mode、侧栏工作区列表和每个工作区的折叠状态；不保存会话布局、图片草稿或消息。

@@ -108,6 +108,8 @@ func (a *App) discover(ctx context.Context) {
 				details = append(details, fmt.Sprintf("%s: %s (%s)", result.Name, statuses[i].Status, statuses[i].Detail))
 			}
 		}
+		a.baseAgents = append([]agent.LaunchSpec(nil), a.Agents...)
+		a.applyCodexSettings()
 		a.AgentIndex = 0
 		for i, spec := range a.Agents {
 			if spec.ID == selected {

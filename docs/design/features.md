@@ -58,9 +58,11 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 
 ## 设置面板
 
-- 侧栏左下角 agent 状态（名称、CLI 版本、ready 等状态）右侧的齿轮按钮打开设置面板；也可以从代码调用 `openSettings`。面板左侧是分类列表，右侧是选中分类的内容，当前有 `Appearance`、`Fonts` 和 `Notifications`，后续分类在同一 `SettingsSection` 切换。
+- 侧栏左下角 agent 状态（名称、CLI 版本、ready 等状态）右侧的齿轮按钮打开设置面板；也可以从代码调用 `openSettings`。面板左侧是分类列表，右侧是选中分类的内容，当前有 `Appearance`、`Fonts`、`Codex` 和 `Notifications`，后续分类在同一 `SettingsSection` 切换。
 - `Appearance` 分类提供 `System`/`Light`/`Dark` 外观和 `Default`/`Nord`/`Solarized`/`Catppuccin`/`Claude`/`Green`/`Green Soft`/`VS Code`/`Everforest`/`One Dark`/`Tokyo Night` 配色，改动立即生效并写入 `settings.json`；详见 [themes.md](themes.md)。
 - `Fonts` 分类分别缩放 workspace 列表、对话流、输入框和 Git 面板，范围 80%–150%，改动立即生效并持久化；详见 [fonts.md](fonts.md)。
+- `Codex` 分类是可选覆盖层：开关、provider 名称、Responses base URL（自动补 `/v1`）、model slug、context window、reasoning levels、API key 环境变量名、可选的直接 API key、是否复用 Codex 登录，以及可选的 Codex 模型目录 URL。它只作用于本应用启动的 Codex 会话，通过 `CODEX_CONFIG` 传给 codex-acp；`~/.codex/config.toml`、登录、MCP、skills、sandbox 和审批设置都不改。点 Apply 后保存到 `settings.json` 的 `codex`，新 Codex 草稿生效；已连接的 Codex 会话仍用启动时的 provider，需要重连（当前没有重连按钮，可新建会话）。API key 可以只填环境变量名（由登录 shell 提供），也可以直接粘贴 key（保存在 `settings.json` 0600，启动时注入子进程环境，不写 `CODEX_CONFIG`/日志）；直接 key 优先。详见 [codex.md](codex.md)。
+- 不填 `Model catalog URL` 时，应用会在 loopback 上生成 Codex 模型目录，带上 model、context window 和 reasoning levels。这样 Codex 不会再把自定义 slug 当未知模型，也不会打印 `Model metadata ... not found`；对话内“推理强度”菜单会出现，默认提供 `low, medium, high`。`Reasoning levels` 留空则隐藏推理强度。目录只在本进程运行，Codex 只写 `~/.codex/models_cache.json` 缓存，不改 `config.toml`。多 model 切换仍未实现。
 - 开关改动立即生效并写入 `settings.json`；测试按钮发送一条标题为 `ACP GUI` 的桌面通知，不依赖窗口焦点，用于检查系统通知权限。通知关闭时测试按钮禁用，并提示先开启。
 - `Dock badge` 开关与系统通知开关并列，独立持久化；切换后立即重算或清空角标。默认开启，不依赖通知开关。
 
@@ -220,7 +222,7 @@ go test ./internal/archive -v
 go test ./internal/git -v
 go test ./internal/settings -v
 go test ./internal/logs -v
-go test ./internal/ui -run 'TestSettings|TestShutdownPersists|TestCorruptSettings|TestExplicitWorkspace|TestSessionWritesAgentLog' -v
+go test ./internal/ui -run 'TestSettings|TestCodex|TestShutdownPersists|TestCorruptSettings|TestExplicitWorkspace|TestSessionWritesAgentLog' -v
 ACP_REAL_COMMAND_CODE=1 go test ./internal/session -run '^TestRealCommandCode$' -v -count=1
 ```
 

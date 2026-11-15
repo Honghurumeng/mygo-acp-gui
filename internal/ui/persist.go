@@ -22,6 +22,7 @@ func (a *App) persistSettings() {
 		Fonts:         normalizeFontScales(a.Fonts),
 		Notifications: a.NotificationsEnabled,
 		DockBadge:     a.DockBadgeEnabled,
+		Codex:         a.CodexSettings,
 	}
 	if len(a.lastSelections) > 0 {
 		file.LastSelections = make(map[string]settings.Selection, len(a.lastSelections))

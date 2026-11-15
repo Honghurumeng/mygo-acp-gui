@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -48,6 +49,18 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		Fonts:               Fonts{WorkspaceList: 110, Chat: 125, Composer: 90, Git: 140},
 		Notifications:       true,
 		DockBadge:           true,
+		Codex: Codex{
+			Override: true,
+			Provider: CodexProvider{
+				ID:              "deepseek",
+				Name:            "DeepSeek",
+				BaseURL:         "https://api.deepseek.com/v1",
+				APIKeyEnv:       "DEEPSEEK_API_KEY",
+				APIKey:          "sk-test-secret",
+				ModelCatalogURL: "https://api.deepseek.com/models",
+				Model:           "deepseek-chat",
+			},
+		},
 	}
 	if err := store.Save(want); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -74,6 +87,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if got.LastAgent != want.LastAgent || got.LastWorkspace != want.LastWorkspace {
 		t.Errorf("round trip = %+v", got)
+	}
+	if !reflect.DeepEqual(got.Codex, NormalizeCodex(want.Codex)) {
+		t.Errorf("codex = %+v, want %+v", got.Codex, NormalizeCodex(want.Codex))
 	}
 	if len(got.Workspaces) != 1 || got.Workspaces[0] != workspace {
 		t.Errorf("workspaces = %+v", got.Workspaces)
@@ -370,5 +386,125 @@ func TestInvalidLastSelectionsKeepOtherFields(t *testing.T) {
 	}
 	if file.LastSelections != nil {
 		t.Errorf("lastSelections = %+v, want nil", file.LastSelections)
+	}
+}
+
+func TestCodexProviderIDIsNormalized(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	store := Open(path)
+	file := File{
+		Version: CurrentVersion,
+		Codex: Codex{
+			Override: true,
+			Provider: CodexProvider{
+				ID:      " My.Provider ",
+				Name:    "  Demo  ",
+				BaseURL: "  https://example.com  ",
+				APIKey:  "  sk-test-secret  ",
+				Model:   "  demo-model  ",
+			},
+		},
+	}
+	if err := store.Save(file); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Codex.Provider.ID != "my-provider" {
+		t.Errorf("provider id = %q, want my-provider", got.Codex.Provider.ID)
+	}
+	if got.Codex.Provider.Name != "Demo" || got.Codex.Provider.BaseURL != "https://example.com/v1" || got.Codex.Provider.Model != "demo-model" {
+		t.Errorf("codex provider = %+v", got.Codex.Provider)
+	}
+	if got.Codex.Provider.APIKey != "sk-test-secret" {
+		t.Errorf("codex api key = %q", got.Codex.Provider.APIKey)
+	}
+	if !reflect.DeepEqual(got.Codex.Provider.ReasoningLevels, DefaultCodexReasoningLevels) {
+		t.Errorf("reasoning levels = %v, want %v", got.Codex.Provider.ReasoningLevels, DefaultCodexReasoningLevels)
+	}
+	if got.Codex.Provider.ContextWindow != DefaultCodexContextWindow {
+		t.Errorf("context window = %d, want %d", got.Codex.Provider.ContextWindow, DefaultCodexContextWindow)
+	}
+
+	empty := File{Version: CurrentVersion, Codex: Codex{Override: true}}
+	if err := store.Save(empty); err != nil {
+		t.Fatal(err)
+	}
+	got, err = store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Codex.Provider.ID != DefaultCodexProviderID {
+		t.Errorf("empty provider id = %q, want %q", got.Codex.Provider.ID, DefaultCodexProviderID)
+	}
+}
+
+func TestCodexEmptyReasoningLevelsRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	store := Open(path)
+	file := File{Version: CurrentVersion, Codex: Codex{
+		Override: true,
+		Provider: CodexProvider{ReasoningLevels: []string{}},
+	}}
+	if err := store.Save(file); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"reasoningLevels": []`) {
+		t.Errorf("explicit empty levels were not written: %s", data)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Codex.Provider.ReasoningLevels == nil || len(got.Codex.Provider.ReasoningLevels) != 0 {
+		t.Errorf("empty levels became %#v", got.Codex.Provider.ReasoningLevels)
+	}
+}
+
+func TestCodexCatalogSettingsNormalizeAndParse(t *testing.T) {
+	enabled := NormalizeCodex(Codex{Override: true, Provider: CodexProvider{
+		ReasoningLevels: []string{" High ", "low", "high", ""},
+	}})
+	if !reflect.DeepEqual(enabled.Provider.ReasoningLevels, []string{"high", "low"}) {
+		t.Errorf("levels = %v", enabled.Provider.ReasoningLevels)
+	}
+	if enabled.Provider.ContextWindow != DefaultCodexContextWindow {
+		t.Errorf("context window = %d", enabled.Provider.ContextWindow)
+	}
+
+	// nil means "not configured", which gets the default list; an explicit
+	// empty slice means the user does not want reasoning effort.
+	defaults := NormalizeCodex(Codex{Override: true})
+	if !reflect.DeepEqual(defaults.Provider.ReasoningLevels, DefaultCodexReasoningLevels) {
+		t.Errorf("default levels = %v", defaults.Provider.ReasoningLevels)
+	}
+	none := NormalizeCodex(Codex{Override: true, Provider: CodexProvider{ReasoningLevels: []string{}}})
+	if none.Provider.ReasoningLevels == nil || len(none.Provider.ReasoningLevels) != 0 {
+		t.Errorf("explicit empty levels = %#v", none.Provider.ReasoningLevels)
+	}
+
+	if got := ParseCodexReasoningLevels(" Low, medium ,, HIGH "); !reflect.DeepEqual(got, []string{"low", "medium", "high"}) {
+		t.Errorf("ParseCodexReasoningLevels = %v", got)
+	}
+	if got := ParseCodexReasoningLevels(""); got == nil || len(got) != 0 {
+		t.Errorf("empty reasoning text = %#v, want an explicit empty list", got)
+	}
+
+	if got, err := ParseCodexContextWindow(" 131072 "); err != nil || got != 131072 {
+		t.Errorf("context window = %d, %v", got, err)
+	}
+	if got, err := ParseCodexContextWindow(""); err != nil || got != DefaultCodexContextWindow {
+		t.Errorf("empty context window = %d, %v", got, err)
+	}
+	for _, raw := range []string{"abc", "0", "-5", "20000000"} {
+		if _, err := ParseCodexContextWindow(raw); err == nil {
+			t.Errorf("ParseCodexContextWindow(%q) accepted an invalid value", raw)
+		}
 	}
 }

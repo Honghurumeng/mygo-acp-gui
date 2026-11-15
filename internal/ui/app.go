@@ -348,6 +348,26 @@ type App struct {
 	settings         *settings.Store
 	settingsPaths    settings.Paths
 	preferredAgentID string
+	// baseAgents is the launch-spec catalog from discovery or the test
+	// injection, without the Codex provider override. The Codex override is
+	// rebuilt from these specs so changing or disabling it never stacks two
+	// CODEX_CONFIG values.
+	baseAgents []agent.LaunchSpec
+	// CodexSettings is the optional provider/model layer applied to Codex
+	// sessions. CodexNotice and CodexError are the settings panel's feedback.
+	CodexSettings settings.Codex
+	CodexNotice   string
+	CodexError    string
+	// CodexReasoningText and CodexContextText back the settings fields. Apply
+	// parses them into CodexSettings so the generated catalog always sees
+	// complete values.
+	CodexReasoningText string
+	CodexContextText   string
+	// codexCatalog serves the generated Codex model catalog on loopback. It
+	// starts when the override first needs it and lives until Shutdown, so
+	// the URL in a launch spec stays valid for the whole session.
+	codexMu      sync.Mutex
+	codexCatalog *agent.CodexCatalogServer
 	// lastSelections remembers the model-panel values and session mode per
 	// agent, so a new draft starts where the last conversation left off. It
 	// is loaded from settings.json and rewritten by rememberSelection.
@@ -417,6 +437,7 @@ func New(opts Options) *App {
 	}
 	if opts.Agents != nil {
 		a.Agents = append([]agent.LaunchSpec(nil), opts.Agents...)
+		a.baseAgents = append([]agent.LaunchSpec(nil), opts.Agents...)
 		a.Resolving = false
 		for _, spec := range a.Agents {
 			a.AgentStatuses = append(a.AgentStatuses, AgentStatus{ID: spec.ID, Name: spec.Name, Version: spec.Version, Status: AgentReady})
@@ -445,6 +466,7 @@ func New(opts Options) *App {
 	a.loadSessionArchive(opts.DataDir)
 	a.loadTaskStore(opts.DataDir)
 	a.loadModelConfigs(opts.DataDir)
+	a.applyCodexSettings()
 	a.ensureWorkspace(a.Workspace)
 	if opts.Agents != nil {
 		a.AgentIndex = a.agentIndex(a.preferredAgentID)
@@ -499,6 +521,8 @@ func (a *App) loadSettings(dataDir string, workspaceDefault bool) {
 	a.Fonts = normalizeFontScales(file.Fonts)
 	a.NotificationsEnabled = file.Notifications
 	a.DockBadgeEnabled = file.DockBadge
+	a.CodexSettings = settings.NormalizeCodex(file.Codex)
+	a.syncCodexSettingsText()
 	for _, workspace := range file.Workspaces {
 		a.ensureWorkspace(workspace)
 	}
@@ -646,6 +670,12 @@ func (a *App) Shutdown() {
 		}
 		a.cleanup.Wait()
 		a.closeLogs()
+		a.codexMu.Lock()
+		if a.codexCatalog != nil {
+			_ = a.codexCatalog.Close()
+			a.codexCatalog = nil
+		}
+		a.codexMu.Unlock()
 	})
 }
 
