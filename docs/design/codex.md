@@ -81,9 +81,9 @@ CODEX_PATH=/absolute/path/to/codex node resources/agents/codex-acp/codex-acp.bun
 - 也可由用户在外部设置 `CODEX_API_KEY` / `OPENAI_API_KEY`；应用不读取、不保存 key。
 - `codex-acp` 会打开浏览器完成 ChatGPT 登录，但那需要客户端主动调用 `authenticate`；本应用不调用，保持“只展示”。
 
-## 日志与诊断
+## 日志
 
-Codex CLI / 适配器的 stderr 由会话收集，进入当前标签的 Diagnostics 缓冲，并写入 `<data>/logs/codex.log`（1 MiB 滚动）。连接时的命令、`CODEX_PATH` 和 bundle 路径可在 Diagnostics 看到。
+Codex CLI / 适配器的 stderr 由会话收集，写入 `<data>/logs/codex.log`（1 MiB 滚动）。连接时的命令、`CODEX_PATH` 和 bundle 路径也记录在日志里（当前没有查看面板）。
 
 ## 构建 / 升级
 
@@ -112,7 +112,7 @@ node scripts/codex-acp-smoke.mjs          # initialize（需要 codex，不调�
 - `Cannot find module '@openai/codex/bin/codex.js'`：不是通过 `CodexLaunchSpec` 启动，子进程缺少 `CODEX_PATH`；重跑正式启动路径，不要直接裸跑 bundle。
 - `Node.js 22+ required`：升级 Node，或设置 `ACP_GUI_NODE`。
 - `authMethods` / `-32000`：Codex 未登录或模型不可用；在外部执行 `codex login` 后重连。
-- 启动后立即退出：看 Diagnostics / `logs/codex.log`，常见原因是 Codex CLI 版本过旧或 `codex app-server` 不可用。
+- 启动后立即退出：看 `logs/codex.log`，常见原因是 Codex CLI 版本过旧或 `codex app-server` 不可用。
 
 ## 来源
 

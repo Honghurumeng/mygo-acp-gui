@@ -419,8 +419,6 @@ func (a *App) connectChat(chat *Chat) {
 	chat.Connecting = true
 	chat.Busy = "connect"
 	chat.Unread = false
-	chat.Stderr = ""
-	chat.StderrBytes = 0
 	a.ensureWorkspace(workspace)
 	a.WorkspaceCollapsed[workspace] = false
 	a.persistSettings()
@@ -432,9 +430,8 @@ func (a *App) connectChat(chat *Chat) {
 	pendingMode := chat.draftMode()
 	chat.clearPendingSession()
 	cfg := session.Config{
-		Launch:     spec,
-		Workspace:  workspace,
-		MCPServers: chat.MCPServers,
+		Launch:    spec,
+		Workspace: workspace,
 		ClientInfo: acp.Implementation{
 			Name:    "acp-gui",
 			Title:   "ACP GUI",
@@ -465,20 +462,9 @@ func (a *App) connectChat(chat *Chat) {
 		}
 		cfg.OnStderr = func(chunk string) {
 			a.appendAgentLog(spec.ID, []byte(chunk))
-			a.Post(func() {
-				if a.connectIsCurrent(chat, gen) {
-					a.appendStderr(chat, chunk)
-				}
-			})
 		}
 		cfg.OnProtocolError = func(err error) {
-			line := "[protocol] " + err.Error() + "\n"
-			a.appendAgentLog(spec.ID, []byte(line))
-			a.Post(func() {
-				if a.connectIsCurrent(chat, gen) {
-					a.appendStderr(chat, line)
-				}
-			})
+			a.appendAgentLog(spec.ID, []byte("[protocol] "+err.Error()+"\n"))
 		}
 		cfg.OnExit = func(exit session.Exit) {
 			// The process is already gone and its descendants have been
@@ -988,11 +974,10 @@ func (a *App) newSession() {
 	a.resetConversation(chat)
 	chat.Busy = "new"
 	workspace := chat.Workspace
-	mcpServers := append([]any(nil), chat.MCPServers...)
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		info, err := s.NewSession(ctx, workspace, mcpServers)
+		info, err := s.NewSession(ctx, workspace, nil)
 		if err == nil && oldID != "" && oldID != info.SessionID {
 			closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
 			_ = s.CloseSessionID(closeCtx, oldID)
@@ -1444,11 +1429,6 @@ func (a *App) applyExit(chat *Chat, exit session.Exit) {
 	}
 	elapsed := a.finishTurnRuntime(chat, chat.turn)
 	a.rememberSelection(chat)
-	if exit.Err != nil {
-		a.appendStderr(chat, fmt.Sprintf("\n[agent exited: %v]\n", exit.Err))
-	} else {
-		a.appendStderr(chat, "\n[agent exited]\n")
-	}
 	chat.Session = nil
 	chat.Connected = false
 	chat.Connecting = false

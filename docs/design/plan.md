@@ -6,7 +6,7 @@
 
 - `internal/acp`：行分帧（多 chunk、CRLF、非 JSON、U+2028 内容）、请求/响应匹配、权限回执
 - `internal/agent`：内置表、launch spec 解析、路径解析、探测超时与进程组清理
-- `internal/settings`：缺失/损坏/未来版本、坏 MCP、相对路径、原子写入
+- `internal/settings`：缺失/损坏/未来版本、相对路径、原子写入
 - `internal/logs`：追加、1 MiB 滚动与备份、超大 chunk、并发写入
 - 探测 fixture：正常 agent、慢 agent、只打印 stderr 的 agent、立即退出的 agent、stdout 混入日志的 agent
 
@@ -76,12 +76,12 @@ Command Code 的协议细节见 [command-code.md](command-code.md)，Codex 见 [
 Feature tests:
 
 ```bash
-go test ./internal/ui -run 'TestSessionConfig|TestSaved|TestCloseChat|TestSendImage|TestMCP|TestPromptUsageFallback|TestGitPanel' -v
+go test ./internal/ui -run 'TestSessionConfig|TestSaved|TestCloseChat|TestSendImage|TestPromptUsageFallback|TestGitPanel' -v
 go test ./internal/git -v
 go test ./internal/tasks -v
 go test ./internal/settings -v
 go test ./internal/logs -v
-go test ./internal/ui -run 'TestSettings|TestShutdownPersists|TestCorruptSettings|TestExplicitWorkspace|TestDiagnostics' -v
+go test ./internal/ui -run 'TestSettings|TestShutdownPersists|TestCorruptSettings|TestExplicitWorkspace|TestSessionWritesAgentLog' -v
 ```
 
 
@@ -101,8 +101,8 @@ go test ./internal/ui -run 'TestSettings|TestShutdownPersists|TestCorruptSetting
 11. 多会话：在侧栏开两个会话分别发 `/slow` 和普通消息，切换会话时后台继续流式；后台会话请求权限时弹窗标明会话，回答不影响另一个会话。
 12. 已保存会话：重启后在对应 workspace 下直接从 `sessions.json` 看到历史会话，不等 agent；点击按存档的 agent + sessionId 用 `session/load` 重放历史。重命名后重启仍显示 `showName`；删除后自动同步/重启都不再出现，可从 “Show deleted” 恢复。
 12b. 工作区软删除：工作区 `⋯` → `Remove workspace` 后分组隐藏但存档/会话不变，重启仍不出现；“Show removed (N)” → `Restore workspace` 恢复。
-13. 设置持久化：改 agent/工作区/MCP/model/thinking/mode 后退出，再启动应恢复（模型面板与草稿都停在原选择）；手改 `lastSelections` 成已下架的 model 或 mode 后重启，Connect 应跳过并保持 agent 默认，不报错；手工损坏 `settings.json` 或写入相对路径，应正常启动并在工具栏显示警告。
-14. 诊断：点顶部 “Logs” 能看到当前会话的 stderr；`logs/<agent>.log` 有连接头和 stderr，超过 1 MiB 后生成 `.1` 备份。
+13. 设置持久化：改 agent/工作区/model/thinking/mode 后退出，再启动应恢复（模型面板与草稿都停在原选择）；手改 `lastSelections` 成已下架的 model 或 mode 后重启，Connect 应跳过并保持 agent 默认，不报错；手工损坏 `settings.json` 或写入相对路径，应正常启动并在工具栏显示警告。
+14. 日志：连接后 `logs/<agent>.log` 有连接头和 stderr，超过 1 MiB 后生成 `.1` 备份（当前没有查看面板）。
 15. Git：打开非仓库 workspace，右侧提示 “Not a Git repository” 并可 `git init`；PATH 中无 git 时提示安装；仓库内可 stage/commit、查看提交图、切换 workspace 后不串仓库。
 16. Tasks：创建两个任务并 Run pending；每个任务应新建会话，checker 先拒绝再通过时同一 executor 会话继续，第二次 checker 应能看到第一轮总结和反馈；完成后 `tasks/` 有 Markdown、每个任务各一次 commit、没有 push；失败任务应回滚 executor 文件、保留用户已有改动、写 failure 总结且不 commit；Stop 后任务回 pending，重启后仍未完成的任务仍可编辑。
 
@@ -129,7 +129,7 @@ scripts/vendor-codex-acp.sh          # 仅在升级 codex-acp 时运行
 - [x] ACP 会话：initialize、session/new、session/prompt、agent_message_chunk 流式 Markdown、思考、工具调用、权限、取消
 - [x] 计划面板、配置选择、已保存会话（list/load/close）
 - [x] 模型/effort/模式配置 + `session/set_config_option` / `set_mode`；model/thinking/mode 按 agent 持久化（`lastSelections`），新建草稿恢复、Connect 校验、切换 agent 恢复各自的选择
-- [x] 图片附件（文件选择 + 剪贴板粘贴）、MCP servers JSON、输入 `/` 触发的命令面板、`@` 文件引用（只发路径文本）
+- [x] 图片附件（文件选择 + 剪贴板粘贴）、输入 `/` 触发的命令面板、`@` 文件引用（只发路径文本）
 - [x] 侧栏按 workspace 分组、已保存会话直接展示、折叠/展开、超过 5 条收起、重命名/删除/软删除恢复
 - [x] 会话行与标题栏的 agent 品牌图标（pi、Command Code、Codex，SVG 内嵌并跟随主题）
 - [x] 本地 `sessions.json` 会话存档：agent/session 关联、启动直接展示、show 软删除、showName 重命名、点击 load 重放历史
@@ -142,10 +142,10 @@ scripts/vendor-codex-acp.sh          # 仅在升级 codex-acp 时运行
 - [x] Command Code 启动与完整聊天流程：initialize、session/new、流式、权限、取消、退出清理
 - [x] Codex 启动与完整聊天流程：官方 codex-acp bundle + 系统 codex、initialize、session/new、流式、取消、退出清理
 - [x] 退出清理（Setpgid + 进程组 SIGTERM/SIGKILL）
-- [x] settings.json 持久化（上次 agent/工作区、每个 agent 的模型/thinking/mode、侧栏工作区列表 + `removedWorkspaces` 软删除、MCP 默认值、paths 覆盖、外观/主题；原子写入 + 容错加载）
-- [x] 错误诊断面板、stderr 日志滚动（Diagnostics 模态 + `logs/<agent>.log`，1 MiB 滚动）
+- [x] settings.json 持久化（上次 agent/工作区、每个 agent 的模型/thinking/mode、侧栏工作区列表 + `removedWorkspaces` 软删除、paths 覆盖、外观/主题；原子写入 + 容错加载）
+- [ ] 诊断面板（stderr / 日志查看；目前只有 `logs/<agent>.log` 文件写入）
 - [x] 基础测试：framing、launch spec、登录 shell 解析、fake agent 会话、UI 发送/流式/停止/权限、进程组清理
-- [x] 新能力测试：probe、config/mode、list/load/close、侧栏已保存会话 UI、图片 prompt、MCP 校验、命令面板、图片发送 UI、设置持久化、诊断面板与日志滚动
+- [x] 新能力测试：probe、config/mode、list/load/close、侧栏已保存会话 UI、图片 prompt、命令面板、图片发送 UI、设置持久化、agent 日志写入
 - [x] 存档测试：文件读写/容错、重命名与软删除跨重启、删除后同步不复活、按记录的 agent load、工作区软删除/恢复跨重启
 - [x] 主题系统：System/Light/Dark 外观 + Default/Nord/Solarized/Catppuccin/Claude/Green/Green Soft/VS Code/Everforest/One Dark/Tokyo Night 配色，设置面板切换、跨重启恢复、原生窗口外观同步（见 [themes.md](themes.md)）
 
@@ -156,9 +156,9 @@ scripts/vendor-codex-acp.sh          # 仅在升级 codex-acp 时运行
 - [x] 图片输入（文件选择 + 剪贴板粘贴）
 - [x] `@` 文件引用面板（只发 `@路径` 文本，agent 自行读文件）
 - [x] 多会话并行（侧栏每个会话一个 agent 进程；后台流式、权限按会话路由、重命名/删除/切换）
-- [x] settings.json 持久化（MCP、上次 agent/工作区）
+- [x] settings.json 持久化（上次 agent/工作区）
 - [x] 移除 CrychicUI：通用外观改到 `internal/ui/widgets.go` / `components.go`，图标内嵌 Lucide 子集，release 二进制约减 1.3 MB（见 [components.md](components.md)）
-- [ ] MCP 行编辑器（当前是校验过的 JSON）
+- [ ] MCP servers 配置 UI（JSON 编辑 + 校验 + 持久化；当前协议层只发送空 `mcpServers` 数组）
 - [ ] ACP 报文监视器
 - [ ] Windows / Linux 打包验证
 

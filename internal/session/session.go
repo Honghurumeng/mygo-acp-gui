@@ -83,9 +83,6 @@ type Session struct {
 	stderrBuf  *tailBuffer
 	stderrDone chan struct{}
 
-	mcpMu      sync.RWMutex
-	mcpServers []any
-
 	infoMu sync.RWMutex
 	info   Info
 
@@ -181,7 +178,6 @@ func Start(ctx context.Context, cfg Config) (*Session, error) {
 		stderr:       stderrR,
 		stderrBuf:    newTailBuffer(stderrTail),
 		stderrDone:   make(chan struct{}),
-		mcpServers:   append([]any(nil), cfg.MCPServers...),
 		processDone:  make(chan struct{}),
 		done:         make(chan struct{}),
 		eventsActive: !cfg.DeferUpdates,
@@ -480,7 +476,7 @@ func (s *Session) LoadSessionAt(ctx context.Context, sessionID, cwd string) (Inf
 	raw, err := s.client.Call(ctx, "session/load", acp.LoadSessionParams{
 		SessionID:  sessionID,
 		Cwd:        cwd,
-		MCPServers: s.currentMCPServers(),
+		MCPServers: s.cfg.MCPServers,
 	})
 	if err != nil {
 		return Info{}, fmt.Errorf("session/load: %w", err)
@@ -497,20 +493,6 @@ func (s *Session) LoadSessionAt(ctx context.Context, sessionID, cwd string) (Inf
 	return info, nil
 }
 
-// SetMCPServers changes the servers passed to the next session/load.
-// New sessions take their list from the caller.
-func (s *Session) SetMCPServers(servers []any) {
-	s.mcpMu.Lock()
-	s.mcpServers = append([]any(nil), servers...)
-	s.mcpMu.Unlock()
-}
-
-func (s *Session) currentMCPServers() []any {
-	s.mcpMu.RLock()
-	defer s.mcpMu.RUnlock()
-	return append([]any(nil), s.mcpServers...)
-}
-
 // NewSession creates a new ACP session in the running agent process. The
 // old session stays open until closeSessionID is called with its id.
 func (s *Session) NewSession(ctx context.Context, cwd string, mcpServers []any) (Info, error) {
@@ -518,7 +500,7 @@ func (s *Session) NewSession(ctx context.Context, cwd string, mcpServers []any) 
 		return Info{}, fmt.Errorf("session/new: cwd must be absolute: %q", cwd)
 	}
 	if mcpServers == nil {
-		mcpServers = s.currentMCPServers()
+		mcpServers = s.cfg.MCPServers
 	}
 	raw, err := s.client.Call(ctx, "session/new", acp.NewSessionParams{Cwd: cwd, MCPServers: mcpServers})
 	if err != nil {

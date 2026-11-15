@@ -448,40 +448,6 @@ func TestSendImageAttachment(t *testing.T) {
 	})
 }
 
-func TestMCPDialogAndPrompt(t *testing.T) {
-	app, tt := newFakeApp(t)
-	app.openMCPSettings()
-	app.MCPText = `[{"name":"demo","command":"true"}]`
-	tt.Frame()
-	if err := tt.Click("Apply"); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, app, tt, func() bool { return !app.MCPOpen && len(app.MCPServers) == 1 })
-
-	app.Connect()
-	waitFor(t, app, tt, func() bool { return current(app).Connected })
-	current(app).Input = "hello"
-	tt.Frame()
-	if err := tt.Click("Send"); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, app, tt, func() bool {
-		return !current(app).Streaming && lastAssistantHas(app, "mcp=1")
-	})
-}
-
-func TestParseMCPServersRejectsInvalid(t *testing.T) {
-	if _, err := parseMCPServers(`[{"name":"x"}]`); err == nil {
-		t.Error("stdio server without command was accepted")
-	}
-	if _, err := parseMCPServers(`[{"type":"http","name":"x"}]`); err == nil {
-		t.Error("http server without url was accepted")
-	}
-	if got, err := parseMCPServers(`[{"name":"x","command":"true"}]`); err != nil || len(got) != 1 {
-		t.Errorf("valid server: %v %v", got, err)
-	}
-}
-
 func hasRoleText(app *App, role MessageRole, want string) bool {
 	chat := current(app)
 	for _, message := range chat.Messages {

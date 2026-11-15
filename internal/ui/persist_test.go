@@ -72,7 +72,7 @@ func loadPersistedSettings(t *testing.T, dataDir string) settings.File {
 	return file
 }
 
-func TestSettingsSavedOnConnectAndMCPApply(t *testing.T) {
+func TestSettingsSavedOnConnect(t *testing.T) {
 	dataDir := t.TempDir()
 	workspace := t.TempDir()
 	app, tt := newSettingsApp(t, dataDir, workspace)
@@ -85,23 +85,6 @@ func TestSettingsSavedOnConnectAndMCPApply(t *testing.T) {
 	if file.LastWorkspace != workspace {
 		t.Errorf("lastWorkspace = %q, want %q", file.LastWorkspace, workspace)
 	}
-
-	app.openMCPSettings()
-	app.MCPText = `[{"name":"demo","command":"true"}]`
-	tt.Frame()
-	if err := tt.Click("Apply"); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, app, tt, func() bool { return !app.MCPOpen && len(app.MCPServers) == 1 })
-
-	file = loadPersistedSettings(t, dataDir)
-	if len(file.MCPServers) != 1 {
-		t.Fatalf("persisted MCP servers = %+v", file.MCPServers)
-	}
-	server, ok := file.MCPServers[0].(map[string]any)
-	if !ok || server["name"] != "demo" {
-		t.Errorf("persisted MCP server = %#v", file.MCPServers[0])
-	}
 }
 
 func TestSettingsRestoreOnStart(t *testing.T) {
@@ -112,7 +95,6 @@ func TestSettingsRestoreOnStart(t *testing.T) {
 		Version:       settings.CurrentVersion,
 		LastAgent:     "other",
 		LastWorkspace: workspace,
-		MCPServers:    []any{map[string]any{"name": "demo", "command": "true"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -124,19 +106,12 @@ func TestSettingsRestoreOnStart(t *testing.T) {
 	if app.AgentIndex != 1 || app.Agents[app.AgentIndex].ID != "other" {
 		t.Errorf("agent index = %d (%+v), want other", app.AgentIndex, app.Agents)
 	}
-	if len(app.MCPServers) != 1 {
-		t.Errorf("MCP servers = %+v", app.MCPServers)
-	}
-
 	chat := app.newChatTab()
 	if chat.Workspace != workspace {
 		t.Errorf("new chat workspace = %q", chat.Workspace)
 	}
 	if chat.Agent.ID != "other" {
 		t.Errorf("new chat agent = %q", chat.Agent.ID)
-	}
-	if len(chat.MCPServers) != 1 {
-		t.Errorf("new chat MCP servers = %+v", chat.MCPServers)
 	}
 }
 

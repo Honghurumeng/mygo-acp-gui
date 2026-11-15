@@ -23,8 +23,7 @@ type Chat struct {
 	ID    int
 	Agent agent.LaunchSpec
 
-	Workspace  string
-	MCPServers []any
+	Workspace string
 
 	Session        *session.Session
 	Info           session.Info
@@ -33,11 +32,6 @@ type Chat struct {
 	Busy           string
 	ConnectError   string
 	WorkspaceError string
-
-	// Stderr is the tail of this chat's agent stderr, shown in Diagnostics.
-	// StderrBytes counts everything received, including the trimmed prefix.
-	Stderr      string
-	StderrBytes int64
 
 	Messages   []*Message
 	Input      string
@@ -388,7 +382,6 @@ func (a *App) defaultWorkspace() string {
 func (a *App) newChatTabIn(workspace string) *Chat {
 	chat := &Chat{
 		ID:             a.nextChatID(),
-		MCPServers:     append([]any(nil), a.MCPServers...),
 		Workspace:      workspace,
 		ComposerHeight: defaultComposerHeight,
 		composerCaret:  -1,
@@ -396,9 +389,6 @@ func (a *App) newChatTabIn(workspace string) *Chat {
 	if spec, ok := a.preferredAgent(); ok {
 		chat.Agent = spec
 		a.restoreSelection(chat)
-	}
-	if current := a.activeChat(); current != nil {
-		chat.MCPServers = append([]any(nil), current.MCPServers...)
 	}
 	a.chatsMu.Lock()
 	a.Chats = append(a.Chats, chat)

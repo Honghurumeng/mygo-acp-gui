@@ -35,13 +35,11 @@ func (a *App) persistSettings() {
 	if chat := a.activeChat(); chat != nil {
 		file.LastAgent = chat.Agent.ID
 		file.LastWorkspace = strings.TrimSpace(chat.Workspace)
-		file.MCPServers = append([]any(nil), chat.MCPServers...)
 	} else {
 		if a.AgentIndex >= 0 && a.AgentIndex < len(a.Agents) {
 			file.LastAgent = a.Agents[a.AgentIndex].ID
 		}
 		file.LastWorkspace = strings.TrimSpace(a.Workspace)
-		file.MCPServers = append([]any(nil), a.MCPServers...)
 	}
 	if err := a.settings.Save(file); err != nil {
 		a.SettingsWarning = err.Error()

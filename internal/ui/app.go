@@ -238,11 +238,6 @@ type App struct {
 	RenameSessionID string
 	RenameText      string
 
-	MCPText    string
-	MCPServers []any
-	MCPError   string
-	MCPOpen    bool
-
 	// SettingsOpen shows the settings panel. SettingsSection is the selected
 	// category in its left column.
 	SettingsOpen    bool
@@ -287,9 +282,6 @@ type App struct {
 	archive  *archive.Store
 
 	SettingsWarning string
-
-	DiagOpen bool
-	DiagChat *Chat
 
 	// ImagePreview is the attachment shown enlarged by imagePreviewDialog.
 	ImagePreview *Attachment
@@ -449,8 +441,6 @@ func New(opts Options) *App {
 	if a.fileIndexer == nil {
 		a.fileIndexer = scanWorkspaceFiles
 	}
-	a.MCPServers = []any{}
-	a.MCPText = "[]"
 	a.loadSettings(opts.DataDir, strings.TrimSpace(opts.Workspace) == "")
 	a.loadSessionArchive(opts.DataDir)
 	a.loadTaskStore(opts.DataDir)
@@ -535,10 +525,6 @@ func (a *App) loadSettings(dataDir string, workspaceDefault bool) {
 				a.Workspace = home
 			}
 		}
-	}
-	if len(file.MCPServers) > 0 {
-		a.MCPServers = file.MCPServers
-		a.MCPText = prettyJSON(file.MCPServers)
 	}
 }
 
@@ -736,8 +722,6 @@ func (a *App) View(c *mui.Context) {
 	}
 	a.permissionDialog(c)
 	a.settingsDialog(c)
-	a.mcpDialog(c)
-	a.diagnosticsDialog(c)
 	a.renameDialog(c)
 	a.taskEditorDialog(c)
 	a.taskDeleteDialog(c)
@@ -830,12 +814,6 @@ func (a *App) headerActions(c *mui.Context, chat *Chat) {
 			}
 		}
 		return
-	}
-	if action("Logs", "Diagnostics").Clicked() {
-		a.openDiagnostics()
-	}
-	if action("MCP…", "MCP servers").Clicked() {
-		a.openMCPSettings()
 	}
 }
 

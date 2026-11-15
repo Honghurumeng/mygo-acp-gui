@@ -91,7 +91,6 @@ type File struct {
 	Workspaces          []string `json:"workspaces,omitempty"`
 	RemovedWorkspaces   []string `json:"removedWorkspaces,omitempty"`
 	CollapsedWorkspaces []string `json:"collapsedWorkspaces,omitempty"`
-	MCPServers          []any    `json:"mcpServers,omitempty"`
 	Paths               Paths    `json:"paths,omitempty"`
 	// Appearance is the light/dark choice: system, light or dark. An empty
 	// value means system, so older files keep following the desktop.
@@ -221,8 +220,8 @@ func (s *Store) Save(file File) error {
 	return nil
 }
 
-// rawFile keeps mcpServers undecoded so one malformed list does not discard
-// the other fields.
+// rawFile keeps the workspace lists undecoded so one malformed list does not
+// discard the other fields.
 type rawFile struct {
 	Version             int             `json:"version"`
 	LastAgent           string          `json:"lastAgent"`
@@ -230,7 +229,6 @@ type rawFile struct {
 	Workspaces          json.RawMessage `json:"workspaces"`
 	RemovedWorkspaces   json.RawMessage `json:"removedWorkspaces"`
 	CollapsedWorkspaces json.RawMessage `json:"collapsedWorkspaces"`
-	MCPServers          json.RawMessage `json:"mcpServers"`
 	Paths               Paths           `json:"paths"`
 	Appearance          string          `json:"appearance"`
 	Theme               string          `json:"theme"`
@@ -265,14 +263,6 @@ func decode(data []byte) (File, error) {
 	file.Workspaces = decodeWorkspaceList(raw.Workspaces, "workspaces", &problems)
 	file.RemovedWorkspaces = decodeWorkspaceList(raw.RemovedWorkspaces, "removedWorkspaces", &problems)
 	file.CollapsedWorkspaces = decodeWorkspaceList(raw.CollapsedWorkspaces, "collapsedWorkspaces", &problems)
-	if len(raw.MCPServers) > 0 && string(raw.MCPServers) != "null" {
-		var servers []any
-		if err := json.Unmarshal(raw.MCPServers, &servers); err != nil {
-			problems = append(problems, fmt.Errorf("settings: ignoring mcpServers: %w", err))
-		} else {
-			file.MCPServers = servers
-		}
-	}
 	file.Paths = sanitizePaths(raw.Paths, &problems)
 	file.Appearance = strings.TrimSpace(raw.Appearance)
 	file.Theme = strings.TrimSpace(raw.Theme)

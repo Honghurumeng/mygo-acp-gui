@@ -11,7 +11,7 @@
 ```
 MyGo 原生窗口 (Go + ui)
   ├─ 左侧工作区/会话栏（每个会话一个 agent 进程 + ACP session）
-  ├─ 顶部会话标题栏 + MCP/诊断操作
+  ├─ 顶部会话标题栏：标题 + 侧栏开关，连接中显示 Cancel
   ├─ 消息区 + 可拖动高度的 composer
   ├─ composer 底栏：附件、Jump、git 分支、mode、上下文环、agent/model/thinking、发送
   ├─ @ 文件面板：workspace 索引 → 只把 @相对路径 文本写进 prompt（agent 自读）
@@ -71,7 +71,7 @@ MyGo 原生窗口 (Go + ui)
 
 ```
 启动 app
-  → internal/settings 读取 PathUserData/settings.json（上次 agent/工作区/MCP、外观/主题、分区字号、路径覆盖）
+  → internal/settings 读取 PathUserData/settings.json（上次 agent/工作区、外观/主题、分区字号、路径覆盖）
   → internal/archive 读取 PathUserData/sessions.json，立即按 cwd 展示已保存会话（不等 agent）
   → internal/agent.ResolveEnvironment（环境变量 > settings paths > 登录 shell；node/pi/command-code/codex 绝对路径）
   → internal/agent.BuiltinLaunchResults
@@ -127,7 +127,7 @@ MyGo 原生窗口 (Go + ui)
 - 错误：
   - JSON-RPC error 保留 `code` / `data`；`-32000` 或 `authMethods` → 展示登录指引，不代登录
   - stdout 非 JSON → 协议错误日志
-  - stderr 单独收集，展示在诊断面板
+  - stderr 单独收集，写入 agent 日志文件
 - 能力声明与现有实现一致：
 
 ```go
@@ -162,10 +162,10 @@ pi 自己的工具在工作区内读写执行；客户端只负责展示和审�
 - 多会话：左侧栏按 workspace 分组，先显示打开会话，再显示该目录的已保存会话；打开会话的状态用行背景表达：流式为移动的绿色斜线，其他会话结束/报错为绿底，当前会话结束为蓝底，权限请求为蓝/白闪烁。两类会话合并后默认只列前 5 条，`Show N more` / `Show less` 展开收起，展开状态不落盘（启动时默认折叠）。会话名前的内联图标标明 agent（pi 的方块 mark、Command Code 的 # 徽标、Codex 的终端 mark，`internal/ui/agenticons.go`，随主题变色）；已保存会话用存档里的 `agentId` 画同一个图标，标题栏也用同一图标标当前会话，模型 chip 左侧也用它标当前 agent。工作区头部 `⋯` 可移除该分组（软删除，只隐藏不删记录/会话），移除项通过 “Show removed (N)” 查看并从同一菜单恢复。工作区的 `＋` 新建独立进程；连接在首条消息或打开存档时自动发生。打开会话的 `⋯` 菜单还可 `Close process`：只关闭该会话的 agent 进程，标签页保留为草稿，会话回到存档列表；没有已连接或连接中的进程时该项置灰。
 - 权限：模态只显示当前会话的请求并标注 `Chat: …`；后台请求只排队，由侧栏 `!` 提醒，用户切到该会话时才显示，切走时隐藏但保留；回答按所属 `Chat` 路由；遮罩/Esc 不关闭。
 - 历史：启动直接从 `sessions.json` 展示；点击存档行按记录的 agent + sessionId 执行 `session/load` 重放历史。已打开会话不重复显示，当前会话已有消息或流式时在新标签页打开。`⋯` 可重命名（showName）或软删除（show=false），删除项通过 “Show deleted” 恢复。
-- MCP：JSON 模态，校验后传给 new/load；输入 `/` 时 composer 上方出现命令面板，解析 `available_commands_update`。
+- MCP：尚未提供配置 UI；`session/new` / `session/load` 仍按 ACP 要求发送空 `mcpServers` 数组。输入 `/` 时 composer 上方出现命令面板，解析 `available_commands_update`。
 - Git 面板：右侧 300 DIP、可折叠，跟随当前会话 workspace；`internal/git` 异步执行 status/log 与 stage/commit/fetch/pull/push，无 git 或非仓库时只显示安装/`git init` 提示（见 [git.md](git.md)）。
 - Tasks 面板与 Git 共用右侧列：同一时间一个串行 runner；每个任务新建 executor Chat/session，回合结束后另起隔离 checker 进程，只按任务文本、本轮最后一段和此前轮次上下文判断。checker 通过后写 `tasks/<id>-<slug>.md`、执行一次 `git add -A` + commit（不 push），再开始下一个 pending；失败恢复任务开始前的 work tree 快照、写总结并标记 complete/failure（不 commit），然后继续下一个 pending；只有 Stop 会停队列并退回 pending；支持 pending 编辑/排序/删除和跨重启持久化（见 [tasks.md](tasks.md)）。
-- 诊断：顶部 “Logs” 打开 `Diagnostics`，显示发现状态、当前会话的 stderr 尾部、日志路径与 Reveal；stderr 同时写入滚动日志文件。
+- 诊断：暂无查看面板；agent stderr、协议错误与探测失败仍写入 `logs/<agent>.log`。
 - 计划/用量：composer 上方 plan；上下文环形进度、turn token 用量和会话标题在 composer/标题栏显示。
 - 跨 goroutine 改状态：`win.Update(func(){ ... })`；没有窗口的测试用 `App.Flush` 排队应用。
 - 资源：`mygo.App.Path(mygo.PathResources)`；数据与设置：`mygo.App.Path(mygo.PathUserData)`。
@@ -177,7 +177,7 @@ pi 自己的工具在工作区内读写执行；客户端只负责展示和审�
 存储在 `mygo.App.Path(mygo.PathUserData)`：
 
 ```
-settings.json        lastAgent、lastWorkspace、workspaces、removedWorkspaces、mcpServers、lastSelections（每个 agent 的模型/thinking/mode）、appearance、theme、notifications、paths 覆盖
+settings.json        lastAgent、lastWorkspace、workspaces、removedWorkspaces、lastSelections（每个 agent 的模型/thinking/mode）、appearance、theme、notifications、paths 覆盖
 sessions.json        本地会话存档：agentId、sessionId、cwd、title、showName、show、会话时间、用户消息发送时间与每轮运行时间
 tasks.json           任务索引：workspace、title/text、pending/ongoing/complete、result、顺序、session、轮次、note、summaryPath
 <workspace>/tasks/   每个完成任务一份 Markdown 总结（tasks/<id>-<slug>.md）；成功的随任务 commit，失败的只保留文件
@@ -186,11 +186,11 @@ logs/                每个 agent 的 stderr / 协议日志（1 MiB 滚动，保
 
 `settings.json` 由 `internal/settings` 读写：
 
-- 结构：`{version, lastAgent, lastWorkspace, workspaces, removedWorkspaces, mcpServers, lastSelections, appearance, theme, notifications, dockBadge, paths:{shell,node,pi,commandCode,codex}}`。`workspaces` 保留全部已知目录（含软删除项），`removedWorkspaces` 是软删除标记，二者都按侧栏顺序保存；`lastSelections` 按 agent ID 保存 `{configOptions:{id:value}, mode}`（模型、thinking、其他 select 和 session mode，见 [features.md](features.md)）；`appearance`/`theme` 缺省为 `system`/`default`（见 [themes.md](themes.md)）；`notifications` 和 `dockBadge` 缺省为 true，显式 false 会持久化。
-- 保存时机：切换会话、选择 agent/目录/model/thinking/mode、添加/移除/恢复工作区、切换设置面板里的外观/主题/系统通知/Dock 角标、Connect 校验成功、MCP Apply、退出。写入是原子的（同目录临时文件 + rename，0600），父目录不存在时创建。
-- 加载容错：文件缺失用默认值；JSON 损坏、MCP 不是数组、相对路径、未来版本只产生警告（标题栏/侧栏显示），其余字段照常使用，绝不阻塞启动。
+- 结构：`{version, lastAgent, lastWorkspace, workspaces, removedWorkspaces, lastSelections, appearance, theme, notifications, dockBadge, paths:{shell,node,pi,commandCode,codex}}`。`workspaces` 保留全部已知目录（含软删除项），`removedWorkspaces` 是软删除标记，二者都按侧栏顺序保存；`lastSelections` 按 agent ID 保存 `{configOptions:{id:value}, mode}`（模型、thinking、其他 select 和 session mode，见 [features.md](features.md)）；`appearance`/`theme` 缺省为 `system`/`default`（见 [themes.md](themes.md)）；`notifications` 和 `dockBadge` 缺省为 true，显式 false 会持久化。
+- 保存时机：切换会话、选择 agent/目录/model/thinking/mode、添加/移除/恢复工作区、切换设置面板里的外观/主题/系统通知/Dock 角标、Connect 校验成功、退出。写入是原子的（同目录临时文件 + rename，0600），父目录不存在时创建。
+- 加载容错：文件缺失用默认值；JSON 损坏、相对路径、未来版本只产生警告（标题栏/侧栏显示），其余字段照常使用，绝不阻塞启动。
 - 路径优先级：`ACP_GUI_*` 环境变量 > `settings.json` 的 `paths` > 登录 shell 解析。显式覆盖无效时保留 shell 结果并警告，不会把可用的路径清空。
-- 保存最后一次状态（当前会话的 agent/工作区/MCP）、每个 agent 的模型/thinking/mode、侧栏工作区列表和每个工作区的折叠状态；不保存会话布局、图片草稿或消息。
+- 保存最后一次状态（当前会话的 agent/工作区）、每个 agent 的模型/thinking/mode、侧栏工作区列表和每个工作区的折叠状态；不保存会话布局、图片草稿或消息。
 - 会话索引单独放在 `sessions.json`，由 `internal/archive` 读写：`{version, sessions:[{agentId,sessionId,cwd,title,showName,createdAt,updatedAt,userTurns:[{number,sentAt,durationMs}],show}]}`。`(agentId, sessionId)` 唯一；`show=false` 是软删除，`showName` 是本地重命名；`userTurns` 按用户轮次保存本地发送时间和该轮运行时间（prompt 发送到结果返回），供 Jump 和会话流在 `session/load` 重放后显示。pi 的 fork 回放会带每条消息的发送时间；Command Code 和旧 bundle 没有时间元数据，退回本地 `userTurns`（ACP 本身不提供消息时间或耗时）。
 - 存档写入时机：session/new、load 成功，标题/轮次更新，重命名、删除/恢复。启动只读存档，且不会从存档补建 workspace；discovery 完成后，每个 ready agent 在后台自动调一次 `session/list` 合并（`cwd: null` 表示全部工作区并走完分页；有已连接进程时复用，否则临时 spawn；失败下次连接重试），之后该 agent 连接成功时再补一次。合并只保留 cwd 属于已添加 workspace 的会话，且绝不覆盖 `show/showName`。`session_info_update.title` 会立即写入存档；启动读存档时会把旧版本用首条 user 消息生成的图片临时路径标题清洗成正文或 `[Image]`（`internal/ui/title.go`），避免侧栏先显示路径再等同步。新增 workspace 时按该 cwd 过滤同步一次。文件为原子写入、0600；损坏 JSON 只在侧栏提示，不阻塞启动。
 - 任务索引单独放在 `tasks.json`，由 `internal/tasks` 读写：任务按 workspace 归属，状态固定为 `pending` / `ongoing` / `complete`，complete 带 `pass` / `failure` result；`summaryPath` 是 `tasks/<id>-<slug>.md` 的相对路径。创建、编辑、排序、删除和每次状态变化都原子落盘；启动时把遗留的 ongoing 改回 pending，旧的 complete 行补成 pass。成功总结会随任务 commit 提交；失败总结留在 workspace 但不提交。任务记录删除不删总结文件。
@@ -202,8 +202,7 @@ logs/                每个 agent 的 stderr / 协议日志（1 MiB 滚动，保
 
 - 记录连接头（时间、agent、动作、工作区、命令行）、agent stderr 原样输出、`[protocol]` 错误、`[probe]` 发现失败和 `[exit]` 退出原因。
 - 单文件上限 1 MiB；写满时旧文件改名为 `<agent>.log.1`（覆盖上一份备份），新文件继续写。文件模式 0600。
-- UI 每个会话另保留最近 64 KiB stderr 供 Diagnostics 展示；完整历史看日志文件。
-- 日志可能包含 agent 输出里的敏感信息，只在用户打开 Diagnostics 时显示，不在主界面展开。
+- 日志可能包含 agent 输出里的敏感信息，不在主界面展开，仅以文件形式保存。
 - 写日志失败不影响会话，只丢掉文件副本。
 
 ## 安全与边界
@@ -211,7 +210,7 @@ logs/                每个 agent 的 stderr / 协议日志（1 MiB 滚动，保
 - 只探测内置表里的 pi / command-code / codex，不遍历可执行文件，也不接受表外 agent。
 - 探测超时 5 秒；每次探测都要能杀掉进程组，不能残留。
 - 不静默安装任何 agent；未安装时只展示安装提示/命令。
-- agent 继承用户环境；不在日志里主动打印 API key。stderr 可能含敏感信息：主界面不展开，Diagnostics 里可查看，日志文件 0600。
+- agent 继承用户环境；不在日志里主动打印 API key。stderr 可能含敏感信息：主界面不展开，日志文件 0600。
 - 不声明 `fs/*`、`terminal/*` 能力；未知 agent→client 请求一律拒绝。
 - 本地存档含 cwd 和 session id，只写用户数据目录（0600），不上传、不跨设备同步。
 - 不管登录与模型可用性：不检测凭据/配额，不代跑登录命令，不在应用内打开终端。

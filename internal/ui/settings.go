@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -14,74 +13,6 @@ const (
 	settingsSectionNotifications = "notifications"
 )
 
-const mcpExample = `[
-  {
-    "name": "filesystem",
-    "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
-  },
-  {
-    "type": "http",
-    "name": "remote",
-    "url": "https://example.com/mcp",
-    "headers": {"Authorization": "Bearer …"}
-  }
-]`
-
-func (a *App) openMCPSettings() {
-	a.MCPText = prettyJSON(a.MCPServers)
-	a.MCPError = ""
-	a.MCPOpen = true
-}
-
-func (a *App) mcpDialog(c *mui.Context) {
-	if !a.MCPOpen {
-		return
-	}
-	t := c.Theme()
-	mui.Modal(c, &a.MCPOpen, func() {
-		mui.Column(c).Gap(10).Width(620).Children(func() {
-			mui.Text(c, "MCP servers").FontSize(18).Bold()
-			mutedText(c, "Applies to the active chat and new tabs created from it. Each tab keeps its own list.", 11)
-			mui.TextArea(c, &a.MCPText).
-				Label("JSON array").
-				Lines(8, 20).
-				Placeholder(mcpExample)
-			mutedText(c, "stdio: name + command + args + env; HTTP: type \"http\" + name + url + headers.", 10)
-			if a.MCPError != "" {
-				mui.Text(c, a.MCPError).FontSize(12).TextColor(t.Danger).Selectable()
-			}
-			mui.Row(c).Gap(8).Wrap().Justify(mui.End).Children(func() {
-				if quietButton(c, "Insert example").Clicked() {
-					a.MCPText = mcpExample
-					a.MCPError = ""
-				}
-				if quietButton(c, "Cancel").Clicked() {
-					a.MCPOpen = false
-				}
-				if primaryButton(c, "Apply").Clicked() {
-					servers, err := parseMCPServers(a.MCPText)
-					if err != nil {
-						a.MCPError = err.Error()
-					} else {
-						a.MCPServers = servers
-						if chat := a.activeChat(); chat != nil {
-							chat.MCPServers = append([]any(nil), servers...)
-							if chat.Session != nil {
-								chat.Session.SetMCPServers(servers)
-							}
-						}
-						a.MCPText = prettyJSON(servers)
-						a.MCPError = ""
-						a.MCPOpen = false
-						a.persistSettings()
-					}
-				}
-			})
-		})
-	})
-}
-
 func (a *App) openSettings() {
 	if a.SettingsSection == "" {
 		a.SettingsSection = settingsSectionNotifications
@@ -91,8 +22,7 @@ func (a *App) openSettings() {
 }
 
 // settingsDialog is the general settings panel: a category list on the left
-// and the selected category's settings on the right. MCP stays in its own
-// modal because it edits the active chat's server list.
+// and the selected category's settings on the right.
 func (a *App) settingsDialog(c *mui.Context) {
 	if !a.SettingsOpen {
 		return
@@ -321,46 +251,4 @@ func (a *App) notificationSettings(c *mui.Context) {
 			mutedText(c, notice, 10).Selectable()
 		}
 	})
-}
-
-func parseMCPServers(text string) ([]any, error) {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return []any{}, nil
-	}
-	var servers []any
-	if err := json.Unmarshal([]byte(text), &servers); err != nil {
-		return nil, fmt.Errorf("MCP servers must be a JSON array: %w", err)
-	}
-	for i, server := range servers {
-		obj, ok := server.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("MCP server %d must be an object", i+1)
-		}
-		name, _ := obj["name"].(string)
-		if strings.TrimSpace(name) == "" {
-			return nil, fmt.Errorf("MCP server %d needs a name", i+1)
-		}
-		kind, _ := obj["type"].(string)
-		command, _ := obj["command"].(string)
-		url, _ := obj["url"].(string)
-		if (kind == "http" || kind == "sse") && strings.TrimSpace(url) == "" {
-			return nil, fmt.Errorf("MCP server %q needs a url", name)
-		}
-		if kind != "http" && kind != "sse" && strings.TrimSpace(command) == "" {
-			return nil, fmt.Errorf("MCP server %q needs a command", name)
-		}
-	}
-	return servers, nil
-}
-
-func prettyJSON(value any) string {
-	if value == nil {
-		return "[]"
-	}
-	data, err := json.MarshalIndent(value, "", "  ")
-	if err != nil {
-		return "[]"
-	}
-	return string(data)
 }

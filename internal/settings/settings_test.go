@@ -17,7 +17,7 @@ func TestLoadMissingFileReturnsDefaults(t *testing.T) {
 	if file.Version != CurrentVersion {
 		t.Errorf("version = %d, want %d", file.Version, CurrentVersion)
 	}
-	if file.LastAgent != "" || file.LastWorkspace != "" || file.MCPServers != nil {
+	if file.LastAgent != "" || file.LastWorkspace != "" {
 		t.Errorf("missing file returned data: %+v", file)
 	}
 	if !file.Notifications {
@@ -42,15 +42,12 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		Workspaces:          []string{workspace},
 		RemovedWorkspaces:   []string{workspace},
 		CollapsedWorkspaces: []string{workspace},
-		MCPServers: []any{
-			map[string]any{"name": "demo", "command": "true"},
-		},
-		Paths:         Paths{Shell: "/bin/zsh", Node: "/usr/local/bin/node"},
-		Appearance:    "dark",
-		Theme:         "solarized",
-		Fonts:         Fonts{WorkspaceList: 110, Chat: 125, Composer: 90, Git: 140},
-		Notifications: true,
-		DockBadge:     true,
+		Paths:               Paths{Shell: "/bin/zsh", Node: "/usr/local/bin/node"},
+		Appearance:          "dark",
+		Theme:               "solarized",
+		Fonts:               Fonts{WorkspaceList: 110, Chat: 125, Composer: 90, Git: 140},
+		Notifications:       true,
+		DockBadge:           true,
 	}
 	if err := store.Save(want); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -86,12 +83,6 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if len(got.CollapsedWorkspaces) != 1 || got.CollapsedWorkspaces[0] != workspace {
 		t.Errorf("collapsedWorkspaces = %+v", got.CollapsedWorkspaces)
-	}
-	if len(got.MCPServers) != 1 {
-		t.Fatalf("mcp servers = %+v", got.MCPServers)
-	}
-	if server, ok := got.MCPServers[0].(map[string]any); !ok || server["name"] != "demo" {
-		t.Errorf("mcp server = %#v", got.MCPServers[0])
 	}
 	if got.Paths != want.Paths {
 		t.Errorf("paths = %+v, want %+v", got.Paths, want.Paths)
@@ -208,7 +199,7 @@ func TestLoadCorruptFileReturnsDefaultsAndError(t *testing.T) {
 	}
 }
 
-func TestLoadKeepsGoodFieldsWhenMCPIsBad(t *testing.T) {
+func TestLoadIgnoresLegacyMCPField(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings.json")
 	workspace := t.TempDir()
 	document, err := json.Marshal(map[string]any{
@@ -225,14 +216,11 @@ func TestLoadKeepsGoodFieldsWhenMCPIsBad(t *testing.T) {
 	}
 
 	file, err := Open(path).Load()
-	if err == nil || !strings.Contains(err.Error(), "mcpServers") {
-		t.Fatalf("error = %v", err)
+	if err != nil {
+		t.Fatalf("legacy mcpServers should be ignored: %v", err)
 	}
 	if file.LastAgent != "pi" || file.LastWorkspace != workspace {
 		t.Errorf("good fields lost: %+v", file)
-	}
-	if file.MCPServers != nil {
-		t.Errorf("bad MCP list kept: %+v", file.MCPServers)
 	}
 }
 

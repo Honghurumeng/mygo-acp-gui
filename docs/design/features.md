@@ -1,6 +1,6 @@
 # 会话能力与 UI
 
-本文记录除基础聊天之外的 ACP 能力：多会话、发现探测、配置/模式、已保存会话、图片、MCP、命令面板、计划与用量、Git 与 Tasks 面板。
+本文记录除基础聊天之外的 ACP 能力：多会话、发现探测、配置/模式、已保存会话、图片、命令面板、计划与用量、Git 与 Tasks 面板。
 
 ## 发现与状态
 
@@ -15,11 +15,11 @@
 
 ## 多会话
 
-每个会话是一个独立的 `Chat`：拥有自己的 agent 进程、ACP session、工作区、MCP 列表、消息、配置、草稿和权限请求。会话之间并行运行，切换只改变显示，不会暂停后台流式回复。
+每个会话是一个独立的 `Chat`：拥有自己的 agent 进程、ACP session、工作区、消息、配置、草稿和权限请求。会话之间并行运行，切换只改变显示，不会暂停后台流式回复。
 
 选择“每会话独立进程”而不是共享进程里的多个 ACP session：进程级隔离让 cwd、取消、权限和崩溃互不影响，代价是每个会话各有一套 agent 运行时资源。agent 侧的单进程多会话能力并不一致：Command Code 可同进程多会话但必须共用 cwd，pi-acp 当前只保留最新一个活会话；codex-acp 由应用按会话独立进程启动，见 [multi-session.md](multi-session.md) 与 [codex.md](codex.md)。
 
-- `App` 只保存全局状态（内置 agent、发现结果、工作区列表、MCP 默认值、会话列表、当前会话）和 `[]*Chat`。
+- `App` 只保存全局状态（内置 agent、发现结果、工作区列表、会话列表、当前会话）和 `[]*Chat`。
 - session 回调在创建时捕获所属 `*Chat`，按 session 指针路由，不读取“当前会话”，所以后台会话的 `session/update`、退出和权限都能落到正确位置。
 - 左侧工作区栏按 `Chat.Workspace` 分组：先显示打开会话，再显示该目录的已保存会话。打开会话的状态用行背景表达（`internal/ui/chatstatus.go`）：流式中是自左向右移动的绿色斜线，其他会话结束/报错是绿色底，当前会话结束是蓝色选区底，等待权限是蓝/白（深色主题为蓝/背景色）交替闪烁。两者合并计算，默认只显示前 5 条，超过时显示 `Show N more` 展开全部，展开后可 `Show less` 收回；展开状态只存在内存里，下次启动恢复为默认折叠。
 - 会话名前的内联图标是 agent 标记：pi 用 `pi.dev` 的方块 mark，Command Code 用其扩展里的 `#` 徽标，Codex 用终端 mark（`internal/ui/icons/*.svg`，`//go:embed` 进二进制）。`mui.Icon` 以文字颜色绘制，所以跟随主题；未知 agent（如测试的 fake）不画图标。已保存会话按存档 `agentId` 画图标，标题栏也显示当前会话的 agent 图标，hover 提示 “pi agent” / “Command Code agent” / “Codex agent”。
@@ -27,7 +27,7 @@
 - 会话右侧 `⋯` 打开重命名/删除；`Close process` 只关闭该会话的 agent 进程，标签页保留为草稿并回到存档列表，没有已连接或连接中的进程时该项显示为不可用。删除会关闭该会话的进程，并把对应存档记录标为 `show=false`。工作区上的 `＋` 在该目录下新建独立会话。
 - 启动时默认创建一个草稿会话；在草稿里输入第一条消息时自动连接，成功后立即发送。
 - 每个会话保留自己的消息列表滚动位置、输入草稿、图片附件、配置选择和计划面板。
-- 顶部工具栏只保留 `Logs` 和 `MCP…`（连接中显示 `Cancel`）；右侧面板的开关改由窗口最右缘的窄图标栏完成，会话由工作区上的 `＋` 创建。
+- 顶部工具栏只保留侧栏开关、会话标题和 `Cancel`（仅连接中）；右侧面板的开关由窗口最右缘的窄图标栏完成，会话由工作区上的 `＋` 创建。
 - 关闭窗口只是关闭窗口：应用留在后台，所有会话（包括流式中的回复）继续运行；macOS 再点 Dock 图标会按当前状态重新开窗。只有退出（⌘Q / Quit）才取消连接并关闭进程组。
 - 应用退出时取消所有正在连接的会话，并关闭所有已登记 session 的进程组。
 
@@ -63,7 +63,6 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 - `Fonts` 分类分别缩放 workspace 列表、对话流、输入框和 Git 面板，范围 80%–150%，改动立即生效并持久化；详见 [fonts.md](fonts.md)。
 - 开关改动立即生效并写入 `settings.json`；测试按钮发送一条标题为 `ACP GUI` 的桌面通知，不依赖窗口焦点，用于检查系统通知权限。通知关闭时测试按钮禁用，并提示先开启。
 - `Dock badge` 开关与系统通知开关并列，独立持久化；切换后立即重算或清空角标。默认开启，不依赖通知开关。
-- MCP 编辑仍走顶部 `MCP…` 的独立模态，因为它修改的是当前会话的服务器列表，不放进通用设置分类。
 
 ## 配置与模式
 
@@ -130,13 +129,10 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 - 发送时只把 `@相对路径 ` 文本放进 `session/prompt` 的 text 块，不发送 `resource` / `resource_link`，也不内嵌文件正文：agent 以自己的 cwd 为 workspace，会按路径自行读取；不需要也不声明 `fs`/`terminal` 客户端能力。
 - 用户消息下方仍显示文件 chip 作为可读提示（只保留文本里仍有对应 `@token` 的文件）；点选记录只在当前草稿/会话内存里，不写入 settings.json 或 sessions.json，历史重放以 agent 返回的 user/assistant 内容块为准（当前渲染文本和用户图片）。
 
-## MCP servers
+## MCP servers（未实现）
 
-- “MCP…” 模态编辑 JSON 数组，支持 stdio（`name` + `command`/`args`/`env`）和 HTTP/SSE（`type:"http"` 或 `"sse"` + `name` + `url`/`headers`）。
-- 保存前校验：必须是对象数组、必须有 `name`，stdio 必须有 `command`，http 必须有 `url`。
-- 每个会话各有一份列表；设置窗口修改当前会话，并作为新会话的默认值。列表传给该会话后续的 `session/new` / `session/load`；已连接时也更新 Session 的待用列表。
-- 不启动、不管理 MCP 进程；由 agent 自己拉起。
-- Apply 后的列表写入 settings.json，成为下次启动的默认值（见“设置持久化”）。
+- 当前没有配置 UI，也不持久化服务器列表；`session/new` / `session/load` 只按 ACP 要求发送空 `mcpServers` 数组。
+- 后续计划见 [plan.md](plan.md)。
 
 ## Git 面板
 
@@ -159,19 +155,17 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 ## 设置持久化
 
 - `internal/settings` 读写 `PathUserData/settings.json`；`ui.Options.DataDir` 为空时完全不落盘（测试、便携运行）。
-- 保存内容：最后使用的 agent、工作区、侧栏工作区列表（`workspaces`）、软删除记录（`removedWorkspaces`）、折叠状态（`collapsedWorkspaces`）、MCP 默认列表、每个 agent 的模型/thinking/mode（`lastSelections`）、系统通知开关（`notifications`，默认 true）、Dock 角标开关（`dockBadge`，默认 true），以及 `paths` 里的显式工具覆盖。
-- 保存时机：切换会话、选择 agent/目录/model/thinking/mode、添加/移除/恢复工作区、折叠/展开工作区、切换系统通知或 Dock 角标、Connect 校验成功、MCP Apply、退出。
-- 启动恢复：工作区、侧栏工作区列表（含软删除分组）、折叠状态、MCP 列表、上次 agent，以及该 agent 的模型/thinking/mode 草稿选择；显式传入的 `ui.Options.Workspace` 优先（测试用）。上次工作区已被软删除时，草稿改用第一个可见工作区（没有则用 home）。启动时创建的草稿不会展开已折叠的工作区。
+- 保存内容：最后使用的 agent、工作区、侧栏工作区列表（`workspaces`）、软删除记录（`removedWorkspaces`）、折叠状态（`collapsedWorkspaces`）、每个 agent 的模型/thinking/mode（`lastSelections`）、系统通知开关（`notifications`，默认 true）、Dock 角标开关（`dockBadge`，默认 true），以及 `paths` 里的显式工具覆盖。
+- 保存时机：切换会话、选择 agent/目录/model/thinking/mode、添加/移除/恢复工作区、折叠/展开工作区、切换系统通知或 Dock 角标、Connect 校验成功、退出。
+- 启动恢复：工作区、侧栏工作区列表（含软删除分组）、折叠状态、上次 agent，以及该 agent 的模型/thinking/mode 草稿选择；显式传入的 `ui.Options.Workspace` 优先（测试用）。上次工作区已被软删除时，草稿改用第一个可见工作区（没有则用 home）。启动时创建的草稿不会展开已折叠的工作区。
 - `paths` 只保存配置里的覆盖值；`ACP_GUI_*` 环境变量优先，且不会被写回文件。
-- 容错：文件缺失用默认值；损坏 JSON、MCP 不是数组、相对路径、未来版本只显示侧栏/标题栏警告，其余字段照常生效。
+- 容错：文件缺失用默认值；损坏 JSON、相对路径、未来版本只显示侧栏/标题栏警告，其余字段照常生效。
 - 不保存会话布局、草稿文本、附件和消息；会话索引、用户消息发送时间和每轮运行时间在单独的 `sessions.json` 里（见“已保存会话与本地存档”）。
 
-## 诊断与日志
+## 诊断与日志（未实现面板）
 
-- 顶部 “Logs” 打开 Diagnostics 模态；没有聊天时显示发现状态，有聊天时额外显示当前会话的 agent、工作区、命令行、连接错误和 stderr 尾部。
-- 每个会话在内存中保留最近 64 KiB stderr（`Chat.Stderr` / `StderrBytes`），超过部分只留在日志文件。
-- 同时写入 `<data>/logs/<agent>.log`：连接头、stderr 原样、`[protocol]`、`[probe]`、`[exit]`。单文件 1 MiB，滚动为 `.1` 备份，模式 0600。
-- “Reveal log” 在文件管理器中定位日志；stderr 以只读等宽 TextArea 展示，可选中复制。
+- 暂无 Diagnostics / Logs 查看面板。
+- agent stderr、`[protocol]`、`[probe]`、`[exit]` 仍写入 `<data>/logs/<agent>.log`：连接头 + 原样 stderr，单文件 1 MiB，滚动为 `.1` 备份，模式 0600。
 - 写日志失败或未设置数据目录时不影响聊天，只看不到文件副本。
 
 ## 命令面板
@@ -221,13 +215,13 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 
 ```bash
 go test ./... -race
-go test ./internal/ui -run 'TestSessionConfig|TestSaved|TestDeleteSaved|TestDeleteOpen|TestCloseChat|TestSendImage|TestPasteImage|TestPasteText|TestImagePreview|Test.*Mention|TestMCP|TestPromptUsageFallback|TestMultipleChats|TestBackgroundChat|TestPermissionFrom|TestCloseTab|TestFirstMessage|TestWorkspaceConversation|TestRename|TestGit|TestGitPanel|TestComposerHeight|TestRemoveWorkspace|TestRemovedWorkspace|TestAgentIcon|TestAgentBadges|TestDockBadge|TestBackgroundTurn|TestActiveChatIsUnread' -v
+go test ./internal/ui -run 'TestSessionConfig|TestSaved|TestDeleteSaved|TestDeleteOpen|TestCloseChat|TestSendImage|TestPasteImage|TestPasteText|TestImagePreview|Test.*Mention|TestPromptUsageFallback|TestMultipleChats|TestBackgroundChat|TestPermissionFrom|TestCloseTab|TestFirstMessage|TestWorkspaceConversation|TestRename|TestGit|TestGitPanel|TestComposerHeight|TestRemoveWorkspace|TestRemovedWorkspace|TestAgentIcon|TestAgentBadges|TestDockBadge|TestBackgroundTurn|TestActiveChatIsUnread' -v
 go test ./internal/archive -v
 go test ./internal/git -v
 go test ./internal/settings -v
 go test ./internal/logs -v
-go test ./internal/ui -run 'TestSettings|TestShutdownPersists|TestCorruptSettings|TestExplicitWorkspace|TestDiagnostics' -v
+go test ./internal/ui -run 'TestSettings|TestShutdownPersists|TestCorruptSettings|TestExplicitWorkspace|TestSessionWritesAgentLog' -v
 ACP_REAL_COMMAND_CODE=1 go test ./internal/session -run '^TestRealCommandCode$' -v -count=1
 ```
 
-`scripts/fake-agent.mjs` 支持 list/load/close、set_mode、set_config_option、图片计数、MCP 计数、命令和计划事件。
+`scripts/fake-agent.mjs` 支持 list/load/close、set_mode、set_config_option、图片计数、命令和计划事件。
