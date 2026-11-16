@@ -86,7 +86,7 @@ MyGo 原生窗口 (Go + ui)
   → 侧栏工作区/会话 + 工作区 ＋：每个会话各自 internal/session.Start
       session/new | session/load（DeferUpdates 缓冲历史）
   → session/prompt（文本 + 图片；@ 文件以路径文本出现）
-  → session/update → 所属 *Chat → Window.Update → markdown / tool / plan / usage
+  → session/update → 所属 *Chat → Window.Update → root / subagent markdown / tool / plan / usage
   → session/set_config_option / set_mode
   → 点击存档行 → 按记录里的 agent + sessionId 执行 session/load 重放历史；cwd 不同则新建进程
   → 右侧 Git 面板 → 异步探测 workspace 仓库 → status/log 展示与 stage/commit/fetch/pull/push
@@ -106,7 +106,7 @@ MyGo 原生窗口 (Go + ui)
 - UI 状态只在主线程修改。session 回调通过 `Window.Update`（测试中通过队列）提交，不直接改状态。
 - 每个会话是一个 `ui.Chat`，保存自己的 Session、Info、消息、输入草稿、配置、附件和连接代数；App 持有 `Chats`、`Active`、工作区列表和侧栏折叠状态。回调捕获 chat 指针，因此后台会话仍能流式更新。
 - `App.Archived` 是本地会话索引，按 `(agentId, sessionId)` 去重；`SavedSessions` 只是它排序后的 UI 视图。启动时侧栏不调用 `session/list`，因此 agent 慢、未登录或未安装不影响历史列表。
-- 测试用 `scripts/fake-agent.mjs`：prompt 流式输出、`/slow` + cancel、`/permission`、config/mode、list/load/close、图片/MCP 计数、命令/plan/usage、任务 executor/checker 标记、子进程清理。
+- 测试用 `scripts/fake-agent.mjs`：prompt 流式输出、`/slow` + cancel、`/permission`、`/subagent` 子会话、config/mode、list/load/close、图片/MCP 计数、命令/plan/usage、任务 executor/checker 标记、子进程清理。
 
 ## ACP 客户端
 
@@ -126,6 +126,8 @@ MyGo 原生窗口 (Go + ui)
 - `session/update` 需要处理：
   - `agent_message_chunk`、`agent_thought_chunk`
   - `tool_call`、`tool_call_update`（pending → in_progress → completed/failed）
+  - `subagent_update`（标准 ACP 子会话公告/状态）；子消息、思考和工具调用使用 child `sessionId`
+  - `session_message`（会话间消息）；只渲染 recipient envelope，子任务和子代理回传进入父聊天
   - `plan`
   - `current_mode_update`、`config_option_update`、`available_commands_update`
   - 未知 `sessionUpdate`：安静忽略，不要崩
@@ -137,12 +139,13 @@ MyGo 原生窗口 (Go + ui)
 
 ```go
 ClientCapabilities{
-  Fs:       FileSystemCapabilities{ReadTextFile: false, WriteTextFile: false},
-  Terminal: false,
+  Fs:        FileSystemCapabilities{ReadTextFile: false, WriteTextFile: false},
+  Terminal:  false,
+  Subagents: &SubagentCapabilities{},
 }
 ```
 
-pi 自己的工具在工作区内读写执行；客户端只负责展示和审批。
+`fs: false` / `terminal: false` 仍表示客户端不代读文件、不提供终端；`subagents: {}` 只声明客户端能接收 agent 管理的 child session。pi 自己的工具在工作区内读写执行；客户端只负责展示和审批。
 
 ## 进程管理
 
@@ -160,6 +163,7 @@ pi 自己的工具在工作区内读写执行；客户端只负责展示和审�
 - 消息流：`markdown.Stream` 显示进行中的回复，结束后切换 `markdown.View`（同一位置）。
 - 聊天列表：`ui.List`，`FollowEnd` + `FollowAnimation = &ui.Smooth`；用户上滑后停止跟随。
 - 思考/工具：`ui.Collapsible`；工具卡片用 `ui.CollapsibleBase` 做成整卡可点击：默认折叠，标题（指令）单行省略，展开后显示完整指令与入参/输出，再次点击重新折叠。
+- 子代理：`Chat.Subagents` 按 child `sessionId` 保存独立状态卡、流式行和工具 map；父 envelope 上的 `subagent_update` 建立映射，子 envelope 的 update 仍落到父聊天。子权限沿用父 Chat 队列并标注 `Subagent`，退出/重放结束时统一关闭未完成的 child 流。
 - 权限：`session/request_permission` 回调阻塞；弹窗用 MyGo `ui.DialogBase` + 本地 `arrive`/`shade` 做遮罩与入场，展示工具名、入参和 agent 给出的 `options`；`rawInput.description` 存在时作为主标题，工具 `title` 降为次行；只有弹窗按钮会作答（选项回 `optionId`，`Cancel` 回 `cancelled`），点遮罩或按 Esc 被吞掉，避免误拒绝。
 - 通用外观（按钮、弹窗、空状态、代码块、图标）都在 `internal/ui` 的 `widgets.go` 与 `components.go`，不依赖第三方 UI 库；见 [components.md](components.md)。
 - 配置：模型面板按 agent → provider → model → thinking 选择；模型/思考来自 `configOptions`（切换模型时由响应/`config_option_update` 整组替换），mode 来自真实 `modes`，不硬编码。Codex 还可在设置里配置一个自定义 provider 和额外模型；provider 只写入本次启动的 Codex 子进程环境，模型列表由 `CODEX_ACP_MODELS` 追加，DeepSeek 目标（provider 名称、Base URL 或模型 id 含 deepseek）另生成 `<data>/codex-models.json` 并通过 `CODEX_CONFIG.model_catalog_json` 提供 DeepSeek 模型元数据（slug 使用设置里的 id），自定义模型的推理档位由设置里的复选框生成 `CODEX_ACP_REASONING_EFFORTS`，标题模型由 `CODEX_ACP_TITLE_MODEL` 覆盖（见 [codex-provider.md](codex-provider.md)）。pi-acp v1 把 thinking levels 同时放进 `modes` 的兼容块会被过滤。agent 只在会话开始前可选；未连接的草稿用发现阶段的配置探测缓存显示模型、thinking 和 mode，选择在 Connect 后补发。每个 agent 的 model/thinking/mode 存入 `settings.json` 的 `lastSelections`，新建草稿和切换 agent 时恢复，Connect 时用 agent 返回的列表校验。ACP 只报告当前模型的档位，所以配置探测会在同一个临时进程里把未缓存模型逐个切换并存入 `<data>/model-config.json`（`internal/modelconfig`）；下次启动用模型列表对照该文件，只扫新模型。草稿切到已缓存的 model 直接显示其档位，未缓存时才隐藏并等 Connect 后由 agent 给出。

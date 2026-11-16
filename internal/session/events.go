@@ -13,32 +13,40 @@ import (
 // Well-known session/update kinds. Unknown kinds are delivered with their
 // raw payload instead of being dropped.
 const (
-	UpdateMessageChunk = "agent_message_chunk"
-	UpdateUserChunk    = "user_message_chunk"
-	UpdateThoughtChunk = "agent_thought_chunk"
-	UpdateToolCall     = "tool_call"
-	UpdateToolCallDone = "tool_call_update"
-	UpdatePlan         = "plan"
-	UpdateConfigOption = "config_option_update"
-	UpdateCurrentMode  = "current_mode_update"
-	UpdateCommands     = "available_commands_update"
-	UpdateSessionInfo  = "session_info_update"
-	UpdateUsage        = "usage_update"
+	UpdateMessageChunk   = "agent_message_chunk"
+	UpdateUserChunk      = "user_message_chunk"
+	UpdateThoughtChunk   = "agent_thought_chunk"
+	UpdateToolCall       = "tool_call"
+	UpdateToolCallDone   = "tool_call_update"
+	UpdatePlan           = "plan"
+	UpdateConfigOption   = "config_option_update"
+	UpdateCurrentMode    = "current_mode_update"
+	UpdateCommands       = "available_commands_update"
+	UpdateSessionInfo    = "session_info_update"
+	UpdateUsage          = "usage_update"
+	UpdateSubagent       = "subagent_update"
+	UpdateSessionMessage = "session_message"
+	// Legacy codex-acp revisions used two separate child notifications.
+	// They are normalized into UpdateSubagent so the UI has one path.
+	UpdateSubagentSpawned = "subagent_spawned"
+	UpdateSubagentState   = "subagent_state_update"
 )
 
 // Event is one parsed agent -> client update. Unknown kinds remain raw.
 type Event struct {
-	Session       *Session
-	SessionID     string
-	Kind          string
-	Text          string
-	ToolCall      *ToolCall
-	Plan          []PlanEntry
-	ConfigOptions []acp.ConfigOption
-	CurrentModeID string
-	Commands      []acp.AvailableCommand
-	Title         string
-	Usage         *acp.Usage
+	Session        *Session
+	SessionID      string
+	Kind           string
+	Text           string
+	ToolCall       *ToolCall
+	Plan           []PlanEntry
+	ConfigOptions  []acp.ConfigOption
+	CurrentModeID  string
+	Commands       []acp.AvailableCommand
+	Title          string
+	Usage          *acp.Usage
+	Subagent       *SubagentUpdate
+	SessionMessage *SessionMessage
 	// StartupInfo marks the synthetic pi-acp startup prelude. It is not part
 	// of the model's answer and should be shown separately or dropped.
 	StartupInfo bool
@@ -55,6 +63,33 @@ type Event struct {
 	// instead of dropping everything but text.
 	Content []acp.ContentBlock
 	Update  json.RawMessage
+}
+
+// SubagentUpdate describes one agent-managed child session. SessionID is the
+// child's ACP session id (not the envelope's parent id). Pointer fields keep
+// string metadata optional; the Known flags keep non-string fields optional.
+type SubagentUpdate struct {
+	SessionID   string
+	Title       *string
+	Description *string
+	State       string
+	StopReason  string
+	StateKnown  bool
+	CWD         string
+	CWDKnown    bool
+	CanCancel   bool
+	CancelKnown bool
+}
+
+// SessionMessage is one inter-session message routed by the agent. Events are
+// emitted for both sender and recipient views; the UI uses the recipient view
+// so the two representations do not create duplicate rows.
+type SessionMessage struct {
+	MessageID          string
+	SenderSessionID    string
+	RecipientSessionID string
+	SenderMessageID    string
+	RecipientMessageID string
 }
 
 // Notice is adapter-generated status text carried on an agent message chunk.
@@ -270,8 +305,106 @@ func parseEvent(s *Session, params json.RawMessage) *Event {
 		if err := json.Unmarshal(update, &payload); err == nil {
 			ev.Usage = &payload
 		}
+	case UpdateSubagent:
+		ev.Subagent = parseSubagentUpdate(update)
+	case UpdateSubagentSpawned:
+		var payload struct {
+			SubagentSessionID string `json:"subagentSessionId"`
+			Name              string `json:"name"`
+			Task              string `json:"task"`
+		}
+		if err := json.Unmarshal(update, &payload); err == nil && payload.SubagentSessionID != "" {
+			title, description := payload.Name, payload.Task
+			ev.Subagent = &SubagentUpdate{
+				SessionID:   payload.SubagentSessionID,
+				Title:       &title,
+				Description: &description,
+				State:       "running",
+				StateKnown:  true,
+			}
+		}
+	case UpdateSubagentState:
+		var payload struct {
+			SubagentSessionID string `json:"subagentSessionId"`
+			State             string `json:"state"`
+		}
+		if err := json.Unmarshal(update, &payload); err == nil && payload.SubagentSessionID != "" {
+			ev.Subagent = &SubagentUpdate{
+				SessionID:  payload.SubagentSessionID,
+				State:      payload.State,
+				StateKnown: true,
+			}
+		}
+	case UpdateSessionMessage:
+		var payload struct {
+			MessageID          string `json:"messageId"`
+			SenderSessionID    string `json:"senderSessionId"`
+			RecipientSessionID string `json:"recipientSessionId"`
+			SenderMessageID    string `json:"senderMessageId"`
+			RecipientMessageID string `json:"recipientMessageId"`
+		}
+		if err := json.Unmarshal(update, &payload); err == nil && payload.MessageID != "" {
+			ev.SessionMessage = &SessionMessage{
+				MessageID:          payload.MessageID,
+				SenderSessionID:    payload.SenderSessionID,
+				RecipientSessionID: payload.RecipientSessionID,
+				SenderMessageID:    payload.SenderMessageID,
+				RecipientMessageID: payload.RecipientMessageID,
+			}
+			ev.Content = contentBlocks(update)
+			ev.Text = blocksText(ev.Content)
+		}
 	}
 	return ev
+}
+
+func parseSubagentUpdate(raw json.RawMessage) *SubagentUpdate {
+	var payload struct {
+		SessionID    string          `json:"sessionId"`
+		Title        *string         `json:"title"`
+		Description  *string         `json:"description"`
+		State        json.RawMessage `json:"state"`
+		CWD          string          `json:"cwd"`
+		Capabilities json.RawMessage `json:"capabilities"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil || payload.SessionID == "" {
+		return nil
+	}
+	update := &SubagentUpdate{
+		SessionID:   payload.SessionID,
+		Title:       payload.Title,
+		Description: payload.Description,
+		CWD:         payload.CWD,
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) == nil {
+		if value, ok := fields["cwd"]; ok && string(value) != "null" {
+			update.CWDKnown = true
+		}
+	}
+	if len(payload.State) > 0 && string(payload.State) != "null" {
+		update.StateKnown = true
+		if err := json.Unmarshal(payload.State, &update.State); err != nil {
+			var state struct {
+				State      string `json:"state"`
+				StopReason string `json:"stopReason"`
+			}
+			if json.Unmarshal(payload.State, &state) == nil {
+				update.State = state.State
+				update.StopReason = state.StopReason
+			}
+		}
+	}
+	if len(payload.Capabilities) > 0 && string(payload.Capabilities) != "null" {
+		update.CancelKnown = true
+		var capabilities struct {
+			Cancel json.RawMessage `json:"cancel"`
+		}
+		if json.Unmarshal(payload.Capabilities, &capabilities) == nil && len(capabilities.Cancel) > 0 && string(capabilities.Cancel) != "null" {
+			update.CanCancel = true
+		}
+	}
+	return update
 }
 
 func contentBlocks(raw json.RawMessage) []acp.ContentBlock {

@@ -26,6 +26,12 @@
 - 工作区头部右侧 `⋯` 提供 `Remove workspace`：软删除只隐藏该分组，已打开会话、已保存会话和目录本身都不动，记录仍在 `workspaces` 里。移除后侧栏出现 “Show removed (N)”，展开后分组显示为 `[removed]`，同一菜单可 `Restore workspace`；重新通过 `＋` 添加或打开该目录下的存档也会恢复。
 - 会话右侧 `⋯` 打开重命名/删除；`Close process` 只关闭该会话的 agent 进程，标签页保留为草稿并回到存档列表，没有已连接或连接中的进程时该项显示为不可用。删除会关闭该会话的进程，并把对应存档记录标为 `show=false`。工作区上的 `＋` 在该目录下新建独立会话。
 - 启动时默认创建一个草稿会话；在草稿里输入第一条消息时自动连接，成功后立即发送。
+
+### 子代理
+
+标准 ACP v1 子代理通过 `initialize.clientCapabilities.subagents = {}` 协商。应用把 agent 管理的 child session 挂在父 `Chat` 下，而不是新建侧栏会话：`subagent_update` 建立 child id、名称、描述、cwd、运行状态和取消能力；`session_message` 的 recipient 视图显示会话间任务/回传；后续 child `sessionId` 的文本、思考、工具调用与历史重放都进入父聊天。
+
+每个 child 维护独立的流式文本和工具 map，因此子代理工具不会截断主代理当前回复。子代理公告显示为状态卡，child 输入显示为左侧任务行，child 输出带 `Subagent · 名称` 标签；权限弹窗继续按父 Chat 排队，并额外显示子代理名称。父回合取消/结束时关闭未完成的 child 行，退出进程时标记为 disconnected。兼容旧版 `subagent_spawned` / `subagent_state_update`，但不实现 AIR 私有 native-subagent 扩展。
 - 每个会话保留自己的消息列表滚动位置、输入草稿、图片附件、配置选择和计划面板。
 - 顶部工具栏只保留侧栏开关、会话标题和 `Cancel`（仅连接中）；右侧面板的开关由窗口最右缘的窄图标栏完成，会话由工作区上的 `＋` 创建。
 - 右侧 Files 面板按当前 workspace 懒加载文件树，显示 Git 状态，支持右键揭示/重命名/删除、新建文件和文件夹、拖动移动，点文件在共享卡片里查看/编辑；详见 [files.md](files.md)、[viewer.md](viewer.md)。

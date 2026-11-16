@@ -359,6 +359,7 @@ func (a *App) runTaskChecker(ctx context.Context, spec agent.LaunchSpec, prompt 
 
 	var mu sync.Mutex
 	var reply strings.Builder
+	var rootSessionID string
 	cfg := session.Config{
 		Launch:    spec,
 		Workspace: checkDir,
@@ -372,6 +373,10 @@ func (a *App) runTaskChecker(ctx context.Context, spec agent.LaunchSpec, prompt 
 				return
 			}
 			mu.Lock()
+			if rootSessionID != "" && ev.SessionID != "" && ev.SessionID != rootSessionID {
+				mu.Unlock()
+				return
+			}
 			if reply.Len() < taskCheckReplyLimit {
 				reply.WriteString(clipText(ev.Text, taskCheckReplyLimit-reply.Len()))
 			}
@@ -396,6 +401,9 @@ func (a *App) runTaskChecker(ctx context.Context, spec agent.LaunchSpec, prompt 
 	if !a.trackSession(s) {
 		return "", errors.New("app is shutting down")
 	}
+	mu.Lock()
+	rootSessionID = s.Info().SessionID
+	mu.Unlock()
 	defer a.untrackSession(s)
 	defer func() { _ = s.Close() }()
 	res, err := s.Prompt(ctx, prompt)
@@ -906,7 +914,7 @@ func lastAgentParagraph(chat *Chat, turn *turnState) string {
 	}
 	for i := len(chat.Messages) - 1; i >= start; i-- {
 		message := chat.Messages[i]
-		if message.Role != RoleAssistant || strings.TrimSpace(message.Text) == "" {
+		if message.Role != RoleAssistant || message.SubagentID != "" || strings.TrimSpace(message.Text) == "" {
 			continue
 		}
 		return lastParagraph(message.Text)

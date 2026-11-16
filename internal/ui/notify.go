@@ -152,7 +152,7 @@ func notificationSummary(chat *Chat) string {
 	}
 	for i := len(chat.Messages) - 1; i >= 0; i-- {
 		message := chat.Messages[i]
-		if message == nil || message.Role != RoleAssistant {
+		if message == nil || message.Role != RoleAssistant || message.SubagentID != "" {
 			continue
 		}
 		if text := strings.TrimSpace(message.Text); text != "" {

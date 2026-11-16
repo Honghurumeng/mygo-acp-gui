@@ -24,16 +24,17 @@ func TestCatalogRewritesModelNamesAndReasoningLevels(t *testing.T) {
 	}
 	var document struct {
 		Models []struct {
-			Slug              string   `json:"slug"`
-			DisplayName       string   `json:"display_name"`
-			ContextWindow     int      `json:"context_window"`
-			MaxContextWindow  int      `json:"max_context_window"`
-			AutoCompactLimit  int      `json:"auto_compact_token_limit"`
-			DefaultLevel      string   `json:"default_reasoning_level"`
-			MultiAgentVersion string   `json:"multi_agent_version"`
-			InputModalities   []string `json:"input_modalities"`
-			BaseInstructions  string   `json:"base_instructions"`
-			ModelMessages     struct {
+			Slug               string   `json:"slug"`
+			DisplayName        string   `json:"display_name"`
+			ContextWindow      int      `json:"context_window"`
+			MaxContextWindow   int      `json:"max_context_window"`
+			AutoCompactLimit   int      `json:"auto_compact_token_limit"`
+			DefaultLevel       string   `json:"default_reasoning_level"`
+			MultiAgentVersion  string   `json:"multi_agent_version"`
+			SupportsSearchTool bool     `json:"supports_search_tool"`
+			InputModalities    []string `json:"input_modalities"`
+			BaseInstructions   string   `json:"base_instructions"`
+			ModelMessages      struct {
 				InstructionsTemplate string `json:"instructions_template"`
 			} `json:"model_messages"`
 			SupportedLevels []struct {
@@ -73,6 +74,9 @@ func TestCatalogRewritesModelNamesAndReasoningLevels(t *testing.T) {
 			t.Errorf("%s multi_agent_version = %q, want v1", model.name, model.version)
 		}
 	}
+	if flash.SupportsSearchTool || pro.SupportsSearchTool {
+		t.Errorf("supports_search_tool = %t/%t, want false so multi_agent_v1 is direct", flash.SupportsSearchTool, pro.SupportsSearchTool)
+	}
 	gotEfforts := make([]string, 0, len(flash.SupportedLevels))
 	for _, level := range flash.SupportedLevels {
 		gotEfforts = append(gotEfforts, level.Effort)
@@ -94,6 +98,23 @@ func TestCatalogRewritesModelNamesAndReasoningLevels(t *testing.T) {
 	}
 	if !strings.Contains(flash.ModelMessages.InstructionsTemplate, "You are Codex") {
 		t.Error("catalog instructions do not look like the Codex prompt")
+	}
+	for _, want := range []string{
+		"Codex Multi-Agent V1",
+		"is already available",
+		"Call `multi_agent_v1.<tool>` directly",
+		"do not run a shell command",
+		"`multi_agent_v1.spawn_agent`",
+		"`multi_agent_v1.wait_agent`",
+		"never invoke its tools through",
+		"Do not run `codex exec`",
+	} {
+		if !strings.Contains(flash.ModelMessages.InstructionsTemplate, want) {
+			t.Errorf("catalog instructions missing %q", want)
+		}
+		if !strings.Contains(pro.ModelMessages.InstructionsTemplate, want) {
+			t.Errorf("pro catalog instructions missing %q", want)
+		}
 	}
 }
 

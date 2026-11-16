@@ -141,6 +141,7 @@ child.stdin.write(
       clientCapabilities: {
         fs: { readTextFile: false, writeTextFile: false },
         terminal: false,
+        subagents: {},
       },
     },
   }) + '\n',

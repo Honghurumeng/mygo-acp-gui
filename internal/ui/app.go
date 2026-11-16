@@ -69,6 +69,9 @@ const (
 	RoleError
 	// RoleTurn is the muted runtime caption that closes a completed turn.
 	RoleTurn
+	// RoleInbound is a left-aligned message sent to this client by another
+	// agent session, such as the task assigned to a subagent.
+	RoleInbound
 )
 
 // Message is one row in the chat list.
@@ -85,6 +88,10 @@ type Message struct {
 	Detail      string
 	NoticeKind  string
 	NoticeLevel string
+	// SubagentID and SubagentName identify child-session output. They stay
+	// empty for the root conversation.
+	SubagentID   string
+	SubagentName string
 	// DetailOpen opens a tool card: the full command and its output show
 	// only while it is true. Tool cards start collapsed.
 	DetailOpen  bool
@@ -147,6 +154,24 @@ type turnState struct {
 	// endNotified keeps a task runner from receiving the same turn's end
 	// twice when both the prompt result and the process exit arrive.
 	endNotified bool
+}
+
+// Subagent is one child session announced by the agent. Its output shares the
+// parent chat list but keeps independent streaming and tool-call state, so a
+// child tool cannot close the parent's current assistant row.
+type Subagent struct {
+	ID          string
+	ParentID    string
+	Title       string
+	Description string
+	State       string
+	StopReason  string
+	CWD         string
+	CanCancel   bool
+	Card        *Message
+
+	turn     *turnState
+	incoming *Message
 }
 
 // App is the root UI state.
@@ -1036,6 +1061,7 @@ func (a *App) message(c *mui.Context, m *Message) {
 		})
 	case RoleAssistant:
 		mui.Column(c).MaxWidth(chatMaxWidth).Children(func() {
+			a.subagentLabel(c, m)
 			if m.Thought != "" {
 				mui.Collapsible(c, "Thinking", &m.ShowThought, func() {
 					mutedText(c, m.Thought, a.chatFont(12)).Selectable()
@@ -1069,6 +1095,19 @@ func (a *App) message(c *mui.Context, m *Message) {
 		}
 		mui.Text(c, m.Text).MaxWidth(chatMaxWidth).FontSize(a.chatBodyFont(c)).
 			TextColor(color).TextAlign(mui.Center)
+	case RoleInbound:
+		mui.Row(c).Children(func() {
+			mui.Column(c).Gap(6).MaxWidth(720).Padding(8, 12).Radius(12).
+				Background(t.Surface).Children(func() {
+				a.subagentLabel(c, m)
+				if m.Text != "" {
+					mui.Text(c, m.Text).FontSize(a.chatBodyFont(c)).Selectable()
+				}
+				a.messageFiles(c, m.FileRefs)
+				a.messageAttachments(c, m.Attachments)
+			})
+			mui.Spacer(c)
+		})
 	case RoleTurn:
 		if m.Elapsed > 0 {
 			mui.Row(c).MaxWidth(chatMaxWidth).Children(func() {
@@ -1077,6 +1116,21 @@ func (a *App) message(c *mui.Context, m *Message) {
 			})
 		}
 	}
+}
+
+// subagentLabel identifies child-session output without taking over the main
+// assistant identity. The full id stays in the tooltip for debugging.
+func (a *App) subagentLabel(c *mui.Context, m *Message) {
+	if m == nil || strings.TrimSpace(m.SubagentName) == "" {
+		return
+	}
+	label := "Subagent · " + singleLine(m.SubagentName)
+	if m.SubagentID != "" {
+		labelElement := mutedText(c, label, a.chatFont(10)).SingleLine()
+		labelElement.Tooltip(m.SubagentID)
+		return
+	}
+	mutedText(c, label, a.chatFont(10)).SingleLine()
 }
 
 // toolMessage draws one tool call as a card that starts collapsed: its header
@@ -1095,6 +1149,7 @@ func (a *App) toolMessage(c *mui.Context, m *Message) {
 		statusColor = t.Warning
 	}
 	surfaceCard(c, mui.Column(c).Gap(3).MaxWidth(chatMaxWidth).Padding(8, 10)).Children(func() {
+		a.subagentLabel(c, m)
 		// Created inside the card: nodes join their parent as they are built,
 		// so a trigger built before it would sit outside the card's surface.
 		parts := mui.CollapsibleBase(c, &m.DetailOpen)

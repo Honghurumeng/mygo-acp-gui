@@ -12,6 +12,8 @@
  *   /turnusage    不发 usage_update，只在 prompt 结果里返回 usage
  *   /tinyusage    发一个小于 1% 的 usage_update
  *   /notice       先发 startup / auto_retry 状态块，再正常回复
+ *   /subagent     声明并流式输出一个子代理子会话
+ *   /subagent /permission  在子代理会话里请求权限
  *   /writefile p  任务 executor 在当前目录写一个文件（用于失败回滚测试）
  *   /refuse       任务 executor 写完文件后以 refusal 结束
  *   /eventually   配合 FAKE_TASK_CHECK_STATE：checker 先 incomplete 再 complete
@@ -50,8 +52,10 @@ const clampThinking = () => {
   if (!levels.includes(currentThinking)) currentThinking = levels.includes('medium') ? 'medium' : levels[0];
 };
 let sessionCounter = 0;
+let subagentCounter = 0;
 let lastSessionId = 'fake-session';
 let lastMCPServers = [];
+let clientSupportsSubagents = false;
 
 const state = {
   get modes() {
@@ -150,6 +154,170 @@ function sendChunk(turn, text, meta = null) {
   };
   if (meta) update._meta = meta;
   sendUpdate({ sessionId: turn.sessionId, update });
+}
+
+function sendSubagentChunk(childSessionId, text) {
+  sendUpdate({
+    sessionId: childSessionId,
+    update: {
+      sessionUpdate: 'agent_message_chunk',
+      content: { type: 'text', text },
+    },
+  });
+}
+
+function finishSubagent(turn, childSessionId) {
+  sendUpdate({
+    sessionId: turn.sessionId,
+    update: {
+      sessionUpdate: 'subagent_update',
+      sessionId: childSessionId,
+      state: { state: 'idle', stopReason: 'end_turn' },
+    },
+  });
+  sendUpdate({
+    sessionId: turn.sessionId,
+    update: {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: `spawn-${childSessionId}`,
+      status: 'completed',
+    },
+  });
+  sendChunk(turn, 'Parent received the subagent result.');
+  finishTurn(turn, 'end_turn');
+}
+
+function startSubagent(turn, withPermission) {
+  if (!clientSupportsSubagents) {
+    sendChunk(turn, 'subagents disabled');
+    finishTurn(turn);
+    return;
+  }
+  subagentCounter += 1;
+  const childSessionId = `fake-subagent-${subagentCounter}`;
+  sendUpdate({
+    sessionId: turn.sessionId,
+    update: {
+      sessionUpdate: 'tool_call',
+      toolCallId: `spawn-${childSessionId}`,
+      title: 'Spawn researcher subagent',
+      kind: 'other',
+      status: 'in_progress',
+      rawInput: { task: 'Inspect the workspace' },
+    },
+  });
+  sendUpdate({
+    sessionId: turn.sessionId,
+    update: {
+      sessionUpdate: 'subagent_update',
+      sessionId: childSessionId,
+      title: 'Researcher',
+      description: 'Inspects the workspace',
+      cwd: process.cwd(),
+      capabilities: { cancel: {} },
+      state: { state: 'running' },
+    },
+  });
+  const outgoingMessageId = `task-${childSessionId}`;
+  const incomingMessageId = `incoming-${childSessionId}`;
+  const task = 'Inspect the requested workspace.';
+  sendUpdate({
+    sessionId: turn.sessionId,
+    update: {
+      sessionUpdate: 'session_message',
+      messageId: outgoingMessageId,
+      senderSessionId: turn.sessionId,
+      recipientSessionId: childSessionId,
+      content: [{ type: 'text', text: task }],
+    },
+  });
+  sendUpdate({
+    sessionId: childSessionId,
+    update: {
+      sessionUpdate: 'session_message',
+      messageId: incomingMessageId,
+      senderSessionId: turn.sessionId,
+      recipientSessionId: childSessionId,
+      senderMessageId: outgoingMessageId,
+      content: [{ type: 'text', text: task }],
+    },
+  });
+  sendUpdate({
+    sessionId: childSessionId,
+    update: {
+      sessionUpdate: 'agent_thought_chunk',
+      content: { type: 'text', text: 'I will inspect the files first.' },
+    },
+  });
+  sendUpdate({
+    sessionId: childSessionId,
+    update: {
+      sessionUpdate: 'tool_call',
+      toolCallId: `read-${childSessionId}`,
+      title: 'Read workspace files',
+      kind: 'read',
+      status: 'completed',
+      rawOutput: { files: ['README.md'] },
+    },
+  });
+  if (!withPermission) {
+    sendSubagentChunk(childSessionId, 'Subagent found the relevant files.');
+    finishSubagent(turn, childSessionId);
+    return;
+  }
+
+  const permissionId = nextPermissionId++;
+  sendUpdate({
+    sessionId: childSessionId,
+    update: {
+      sessionUpdate: 'tool_call',
+      toolCallId: `child-tool-${permissionId}`,
+      title: 'Subagent needs approval',
+      kind: 'execute',
+      status: 'pending',
+      rawInput: { command: 'echo subagent' },
+    },
+  });
+  pendingPermissions.set(permissionId, (result) => {
+    const outcome = result?.outcome ?? {};
+    const selected = outcome.outcome === 'selected' ? outcome.optionId : 'cancelled';
+    sendUpdate({
+      sessionId: childSessionId,
+      update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: `child-tool-${permissionId}`,
+        status: selected.startsWith('allow') ? 'completed' : 'failed',
+      },
+    });
+    if (selected.startsWith('allow')) {
+      sendSubagentChunk(childSessionId, 'Subagent permission granted.');
+      finishSubagent(turn, childSessionId);
+    } else if (outcome.outcome === 'cancelled') {
+      finishTurn(turn, 'cancelled');
+    } else {
+      sendSubagentChunk(childSessionId, 'Subagent permission denied.');
+      finishSubagent(turn, childSessionId);
+    }
+  });
+  send({
+    jsonrpc: '2.0',
+    id: permissionId,
+    method: 'session/request_permission',
+    params: {
+      sessionId: childSessionId,
+      toolCall: {
+        toolCallId: `child-tool-${permissionId}`,
+        title: 'Subagent needs approval',
+        kind: 'execute',
+        status: 'pending',
+        rawInput: { command: 'echo subagent', description: 'Let the subagent run a command' },
+      },
+      options: [
+        { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' },
+        { optionId: 'reject-once', name: 'Reject', kind: 'reject_once' },
+      ],
+    },
+  });
 }
 
 function requestPermission(turn) {
@@ -269,6 +437,11 @@ function startTurn(turn, text, images = 0, mcpCount = 0, files = 0, embedded = 0
     });
   }
 
+  if (text.includes('/subagent')) {
+    startSubagent(turn, text.includes('/permission'));
+    return;
+  }
+
   if (permission) {
     requestPermission(turn);
     return;
@@ -370,6 +543,7 @@ rl.on('line', (line) => {
 
   switch (method) {
     case 'initialize':
+      clientSupportsSubagents = params.clientCapabilities?.subagents != null;
       send({
         jsonrpc: '2.0',
         id,

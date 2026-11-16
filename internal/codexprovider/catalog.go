@@ -31,6 +31,39 @@ var catalogTemplate []byte
 //go:embed catalog_instructions.txt
 var catalogInstructions string
 
+// multiAgentV1Instructions supplements the generic Codex prompt with the V1
+// tool contract. Custom OpenAI-compatible providers do not implement Codex's
+// Responses `tool_search` type, so the catalog disables search-tool metadata
+// and Codex sends the `multi_agent_v1` namespace directly. Keep the exact tool
+// names visible here because V1 exposes the child tools through that namespace
+// instead of the individual collaboration functions used by V2.
+const multiAgentV1Instructions = "\n\n" +
+	"## Codex Multi-Agent V1\n\n" +
+	"The `multi_agent_v1` namespace is already available for native sub-agent " +
+	"work. Call `multi_agent_v1.<tool>` directly; do not run a shell command " +
+	"to discover or enable it, and never invoke its tools through " +
+	"`functions.exec`.\n\n" +
+	"When the user or applicable instructions explicitly ask you to create, " +
+	"delegate to, ask, wait for, or otherwise use a sub-agent, use the native " +
+	"multi-agent tools. In particular:\n\n" +
+	"- `multi_agent_v1.spawn_agent` creates a child agent. Pass a clear, " +
+	"self-contained task and a lowercase `task_name`. Follow the tool schema " +
+	"for context, model, and reasoning options; omit model overrides unless " +
+	"the user explicitly requested one.\n" +
+	"- `multi_agent_v1.send_input` and `multi_agent_v1.followup_task` continue " +
+	"an existing child agent.\n" +
+	"- `multi_agent_v1.wait_agent` waits when you need the child result before " +
+	"continuing.\n" +
+	"- `multi_agent_v1.interrupt_agent`, `multi_agent_v1.close_agent`, " +
+	"`multi_agent_v1.resume_agent`, and `multi_agent_v1.list_agents` manage " +
+	"the child lifecycle.\n\n" +
+	"Do not run `codex exec`, start another Codex CLI, or use a shell command " +
+	"as a substitute for a native child session. A shell-launched Codex " +
+	"process is not a `spawn_agent` child and must not be described as one. " +
+	"If a native tool call fails or the namespace is unavailable, report that " +
+	"failure instead of silently substituting `codex exec` or inventing a " +
+	"child result.\n"
+
 // Catalog returns the Codex model catalog for the custom models, or nil when
 // the provider is off, has no models, or does not look like DeepSeek. Each
 // configured id becomes one entry: ids containing "pro" use the Pro metadata,
@@ -61,6 +94,7 @@ func (c Config) Catalog() ([]byte, error) {
 	defaultLevel := c.DefaultReasoningEffort()
 	contextWindow := c.EffectiveContextWindow()
 	autoCompactLimit := c.AutoCompactTokenLimit()
+	instructions := catalogInstructions + multiAgentV1Instructions
 	models := make([]map[string]any, 0, len(c.Models))
 	for _, id := range c.Models {
 		source := flash
@@ -82,9 +116,16 @@ func (c Config) Catalog() ([]byte, error) {
 		// non-OpenAI Responses providers. The catalog is only generated for
 		// custom providers, so V1 is the portable choice.
 		entry["multi_agent_version"] = "v1"
-		entry["base_instructions"] = catalogInstructions
+		// `supports_search_tool: true` makes Codex wrap multi_agent_v1 in a
+		// Responses `tool_search` tool. OpenAI-compatible third-party models
+		// ignore that non-function tool type, leaving only a deferred namespace
+		// description and causing shell-based fallbacks. False exposes the
+		// namespace directly in the model request and keeps every child thread
+		// on the V1 message format supported by those providers.
+		entry["supports_search_tool"] = false
+		entry["base_instructions"] = instructions
 		entry["model_messages"] = map[string]any{
-			"instructions_template": catalogInstructions,
+			"instructions_template": instructions,
 		}
 		models = append(models, entry)
 	}

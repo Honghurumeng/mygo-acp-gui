@@ -78,9 +78,12 @@ CODEX_PATH=/absolute/path/to/codex node resources/agents/codex-acp/codex-acp.bun
 - `session/prompt` 流式返回 text/thought/tool call；`session/cancel`、权限请求走现有 ACP 客户端。
 - 适配器会推送 `_auth/status_update` 扩展通知；GUI 对未知通知安静忽略，不当作协议错误。
 - `session/list` / `session/load` / `session/close` 可用；历史重放按通用 ACP 路径处理。
+- `initialize.clientCapabilities.subagents = {}` 启用标准 ACP 子会话。`subagent_update` 的 envelope 是父会话、payload `sessionId` 是子会话；后续子会话消息、思考和工具调用使用子 `sessionId`，GUI 都归到父 `Chat`，并用独立的流式与工具状态防止子代理关闭主代理正在输出的文本行。
+- 子代理状态卡显示名称、描述、workspace 和 running/idle/completed/cancelled/failed；`session_message` 的 recipient envelope 渲染子任务/回传消息，思考、工具调用和回复用 `Subagent · <name>` 标识。兼容 `subagent_spawned` / `subagent_state_update` 旧事件。
+- 子会话的 `session/request_permission` 仍进入父 Chat 的权限队列，弹窗额外显示 `Subagent: <name>`。Stop 仍向父 `session/cancel`，由 codex-acp 中断其正在运行的子代理；`session/load` 中的子会话公告和历史块走同一映射。
 - 适配器是长驻进程，会再 spawn 一个 `codex app-server` 子进程；`internal/session` 用进程组退出清理，一起杀掉。
 
-bundle 的 AIR 扩展、steering、subagent、goal 等能力没有在 GUI 里实现；应用只使用标准 ACP 方法，未实现的扩展能力不影响基础聊天。
+bundle 的 AIR 私有扩展、steering、goal 等能力没有在 GUI 里实现；subagent 已通过标准 ACP child-session 能力接通，不依赖 `_meta.jetbrains.air`。
 
 ## 认证
 

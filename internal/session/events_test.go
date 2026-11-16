@@ -104,3 +104,58 @@ func TestParseEventKeepsTextAndImageOrder(t *testing.T) {
 		t.Fatalf("content = %+v", ev.Content)
 	}
 }
+
+func TestParseEventSubagentUpdate(t *testing.T) {
+	update := `{"sessionUpdate":"subagent_update","sessionId":"child-1",` +
+		`"title":"Researcher","description":"Inspects files","cwd":"/tmp/work",` +
+		`"capabilities":{"cancel":{}},"state":{"state":"idle","stopReason":"end_turn"}}`
+	ev := parseEvent(nil, json.RawMessage(`{"sessionId":"parent","update":`+update+`}`))
+	if ev == nil || ev.Subagent == nil {
+		t.Fatalf("subagent update not parsed: %+v", ev)
+	}
+	sub := ev.Subagent
+	if sub.SessionID != "child-1" || sub.Title == nil || *sub.Title != "Researcher" {
+		t.Errorf("subagent identity = %+v", sub)
+	}
+	if sub.Description == nil || *sub.Description != "Inspects files" || !sub.CWDKnown || sub.CWD != "/tmp/work" {
+		t.Errorf("subagent metadata = %+v", sub)
+	}
+	if !sub.StateKnown || sub.State != "idle" || sub.StopReason != "end_turn" {
+		t.Errorf("subagent state = %+v", sub)
+	}
+	if !sub.CancelKnown || !sub.CanCancel {
+		t.Errorf("subagent cancel capability = %+v", sub)
+	}
+}
+
+func TestParseEventLegacySubagentUpdates(t *testing.T) {
+	spawned := parseEvent(nil, json.RawMessage(`{"sessionId":"parent","update":`+
+		`{"sessionUpdate":"subagent_spawned","subagentSessionId":"child-1","name":"Worker","task":"Run tests"}}`))
+	if spawned == nil || spawned.Subagent == nil || spawned.Subagent.SessionID != "child-1" ||
+		spawned.Subagent.Title == nil || *spawned.Subagent.Title != "Worker" || spawned.Subagent.State != "running" {
+		t.Fatalf("legacy spawn not normalized: %+v", spawned)
+	}
+	finished := parseEvent(nil, json.RawMessage(`{"sessionId":"parent","update":`+
+		`{"sessionUpdate":"subagent_state_update","subagentSessionId":"child-1","state":"completed"}}`))
+	if finished == nil || finished.Subagent == nil || !finished.Subagent.StateKnown || finished.Subagent.State != "completed" {
+		t.Fatalf("legacy state not normalized: %+v", finished)
+	}
+}
+
+func TestParseEventSessionMessage(t *testing.T) {
+	update := `{"sessionUpdate":"session_message","messageId":"child-message",` +
+		`"senderSessionId":"parent","recipientSessionId":"child-1",` +
+		`"senderMessageId":"parent-message","content":[{"type":"text","text":"Inspect files"}]}`
+	ev := parseEvent(nil, json.RawMessage(`{"sessionId":"child-1","update":`+update+`}`))
+	if ev == nil || ev.SessionMessage == nil {
+		t.Fatalf("session message not parsed: %+v", ev)
+	}
+	message := ev.SessionMessage
+	if message.MessageID != "child-message" || message.SenderSessionID != "parent" ||
+		message.RecipientSessionID != "child-1" || message.SenderMessageID != "parent-message" {
+		t.Errorf("session message identity = %+v", message)
+	}
+	if ev.Text != "Inspect files" || len(ev.Content) != 1 {
+		t.Errorf("session message content = %q / %+v", ev.Text, ev.Content)
+	}
+}

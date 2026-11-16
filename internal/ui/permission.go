@@ -34,10 +34,16 @@ func (a *App) askPermission(chat *Chat, ctx context.Context, req session.Permiss
 		result:  make(chan acp.RequestPermissionResult, 1),
 	}
 	a.Post(func() {
-		if a.closed.Load() || chat == nil || chat.Closed || chat.Session != req.Session ||
-			(req.SessionID != "" && chat.Info.SessionID != "" && req.SessionID != chat.Info.SessionID) {
+		if a.closed.Load() || chat == nil || chat.Closed || chat.Session != req.Session {
 			p.respond(acp.CancelledPermission())
 			return
+		}
+		if req.SessionID != "" && chat.Info.SessionID != "" && req.SessionID != chat.Info.SessionID {
+			// The permission request and the preceding subagent_update travel
+			// on different goroutines. Materialize the child here so a fast
+			// request cannot be cancelled before the announcement reaches the
+			// UI thread.
+			a.ensureSubagent(chat, req.SessionID, chat.Info.SessionID)
 		}
 		a.enqueuePermission(p)
 	})
@@ -198,6 +204,9 @@ func (a *App) permissionDialog(c *mui.Context) {
 	permissionModal(c, "Permission required", func() {
 		if p.Chat != nil {
 			mutedText(c, "Chat: "+p.Chat.name(), 11)
+			if sub := p.Chat.subagent(req.SessionID); sub != nil {
+				mutedText(c, "Subagent: "+subagentName(sub), 11)
+			}
 		}
 		title := req.ToolCall.Title
 		description := toolDescription(req.ToolCall.RawInput)

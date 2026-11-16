@@ -31,12 +31,13 @@ func TestCodexProviderWritesModelCatalog(t *testing.T) {
 	}
 	var document struct {
 		Models []struct {
-			Slug              string `json:"slug"`
-			ContextWindow     int    `json:"context_window"`
-			AutoCompactLimit  int    `json:"auto_compact_token_limit"`
-			MultiAgentVersion string `json:"multi_agent_version"`
-			BaseInstructions  string `json:"base_instructions"`
-			ModelMessages     struct {
+			Slug               string `json:"slug"`
+			ContextWindow      int    `json:"context_window"`
+			AutoCompactLimit   int    `json:"auto_compact_token_limit"`
+			MultiAgentVersion  string `json:"multi_agent_version"`
+			SupportsSearchTool bool   `json:"supports_search_tool"`
+			BaseInstructions   string `json:"base_instructions"`
+			ModelMessages      struct {
 				InstructionsTemplate string `json:"instructions_template"`
 			} `json:"model_messages"`
 		} `json:"models"`
@@ -55,6 +56,9 @@ func TestCodexProviderWritesModelCatalog(t *testing.T) {
 	}
 	if document.Models[0].MultiAgentVersion != "v1" {
 		t.Errorf("multi_agent_version = %q, want v1", document.Models[0].MultiAgentVersion)
+	}
+	if document.Models[0].SupportsSearchTool {
+		t.Error("supports_search_tool = true; multi_agent_v1 would remain behind unsupported tool_search")
 	}
 	if document.Models[0].BaseInstructions == "" || document.Models[0].ModelMessages.InstructionsTemplate == "" {
 		t.Error("catalog model is missing instructions; Codex will refuse the catalog")

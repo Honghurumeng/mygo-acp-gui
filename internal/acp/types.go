@@ -18,12 +18,18 @@ type FileSystemCapabilities struct {
 	WriteTextFile bool `json:"writeTextFile"`
 }
 
+// SubagentCapabilities declares that the client can receive child-session
+// updates for an agent-managed subagent. Standard ACP v1 only requires the
+// presence of the object; fields may be added by later protocol revisions.
+type SubagentCapabilities struct{}
+
 // ClientCapabilities is sent in initialize. The GUI deliberately advertises
 // no filesystem or terminal access: agents work in the workspace themselves
 // and the client only renders updates and asks the user about permissions.
 type ClientCapabilities struct {
-	Fs       FileSystemCapabilities `json:"fs"`
-	Terminal bool                   `json:"terminal"`
+	Fs        FileSystemCapabilities `json:"fs"`
+	Terminal  bool                   `json:"terminal"`
+	Subagents *SubagentCapabilities  `json:"subagents,omitempty"`
 }
 
 // DefaultClientCapabilities returns the fixed capabilities of this client.
@@ -33,7 +39,8 @@ func DefaultClientCapabilities() ClientCapabilities {
 			ReadTextFile:  false,
 			WriteTextFile: false,
 		},
-		Terminal: false,
+		Terminal:  false,
+		Subagents: &SubagentCapabilities{},
 	}
 }
 
@@ -80,8 +87,9 @@ type MCPCapabilities struct {
 // SessionCapabilities marks optional session methods. A present field (even
 // an empty object) means the agent supports it.
 type SessionCapabilities struct {
-	List  json.RawMessage `json:"list,omitempty"`
-	Close json.RawMessage `json:"close,omitempty"`
+	List      json.RawMessage `json:"list,omitempty"`
+	Close     json.RawMessage `json:"close,omitempty"`
+	Subagents json.RawMessage `json:"subagents,omitempty"`
 }
 
 // AgentCapabilities is the initialize capability block.

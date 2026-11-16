@@ -33,7 +33,10 @@ type Chat struct {
 	ConnectError   string
 	WorkspaceError string
 
-	Messages   []*Message
+	Messages []*Message
+	// Subagents maps agent-managed child session ids to their transcript and
+	// status card. Child updates use the same ACP connection and process.
+	Subagents  map[string]*Subagent
 	Input      string
 	Streaming  bool
 	Cancelling bool
@@ -162,6 +165,13 @@ func (c *Chat) live() bool {
 	return c != nil && (c.Session != nil || c.Connecting)
 }
 
+func (c *Chat) subagent(sessionID string) *Subagent {
+	if c == nil || sessionID == "" || c.Subagents == nil {
+		return nil
+	}
+	return c.Subagents[sessionID]
+}
+
 // canCloseProcess reports whether the row's Close process action applies: a
 // process is running or starting, and no task runner owns the chat.
 func (c *Chat) canCloseProcess() bool {
@@ -282,6 +292,7 @@ func singleLine(text string) string {
 // conversationState restores a chat when opening a saved session fails.
 type conversationState struct {
 	messages    []*Message
+	subagents   map[string]*Subagent
 	turn        *turnState
 	info        session.Info
 	title       string
@@ -298,6 +309,7 @@ type conversationState struct {
 func (c *Chat) snapshot() conversationState {
 	return conversationState{
 		messages:    c.Messages,
+		subagents:   c.Subagents,
 		turn:        c.turn,
 		info:        c.Info,
 		title:       c.Title,
@@ -314,6 +326,7 @@ func (c *Chat) snapshot() conversationState {
 
 func (c *Chat) restore(state conversationState) {
 	c.Messages = state.messages
+	c.Subagents = state.subagents
 	c.turn = state.turn
 	c.Info = state.info
 	c.Title = state.title

@@ -772,6 +772,11 @@ func (s *Session) handleNotification(method string, params json.RawMessage) {
 func (s *Session) applyInfoEvent(ev Event) {
 	s.infoMu.Lock()
 	defer s.infoMu.Unlock()
+	// Child-session settings and titles must not overwrite the root session's
+	// config. The UI keeps the child metadata from subagent_update instead.
+	if s.info.SessionID != "" && ev.SessionID != "" && ev.SessionID != s.info.SessionID {
+		return
+	}
 	switch ev.Kind {
 	case UpdateConfigOption:
 		if len(ev.ConfigOptions) > 0 {

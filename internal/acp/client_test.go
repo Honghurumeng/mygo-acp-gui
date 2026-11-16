@@ -160,6 +160,12 @@ func TestCall(t *testing.T) {
 	if params.ClientCapabilities.Terminal || params.ClientCapabilities.Fs.ReadTextFile {
 		t.Errorf("client capabilities must not grant fs/terminal: %+v", params.ClientCapabilities)
 	}
+	if params.ClientCapabilities.Subagents == nil {
+		t.Errorf("client capabilities must advertise standard subagent sessions: %+v", params.ClientCapabilities)
+	}
+	if !bytes.Contains(req.Params, []byte(`"subagents":{}`)) {
+		t.Errorf("initialize did not serialize subagents capability: %s", req.Params)
+	}
 
 	peer.writeJSON(struct {
 		JSONRPC string          `json:"jsonrpc"`

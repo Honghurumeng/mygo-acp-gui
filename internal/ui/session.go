@@ -724,6 +724,7 @@ func (a *App) resetConversation(chat *Chat) {
 		chat.turn.assistant.Done = true
 	}
 	chat.Messages = nil
+	chat.Subagents = nil
 	chat.turn = nil
 	chat.Streaming = false
 	chat.Cancelling = false
@@ -1117,6 +1118,9 @@ func (a *App) finishReplay(chat *Chat) {
 	for _, message := range chat.Messages {
 		message.Done = true
 	}
+	for _, sub := range chat.Subagents {
+		a.finishSubagentMessages(sub)
+	}
 	chat.turn = nil
 	chat.replaying = false
 	chat.replayKey = ""
@@ -1129,15 +1133,35 @@ func (a *App) applyUpdate(chat *Chat, ev session.Event) {
 	if chat.Info.SessionID == "" && chat.Busy == "" {
 		return
 	}
-	// Ignore late updates from a session we already switched away from.
-	// A new chat does not know its id before session/new answers, so it
-	// accepts everything until then; old sessions are idle at that point.
-	if chat.Busy != "new" && ev.SessionID != "" && chat.Info.SessionID != "" && ev.SessionID != chat.Info.SessionID {
-		return
-	}
 	if chat != a.activeChat() {
 		chat.Unread = true
 		a.updateDockBadge()
+	}
+	// A subagent_update is delivered on its parent session's envelope. The
+	// payload names the child session that subsequent updates use.
+	if ev.Subagent != nil {
+		a.applySubagentUpdate(chat, ev)
+		return
+	}
+	if ev.Kind == session.UpdateSessionMessage {
+		a.applySessionMessage(chat, ev)
+		return
+	}
+	// Root-session events keep the existing path. Child-session events share
+	// the ACP connection but need their own streaming and tool-call state.
+	// Anything else is a late update from a session this chat no longer owns.
+	if ev.SessionID != "" && chat.Info.SessionID != "" && ev.SessionID != chat.Info.SessionID {
+		sub := chat.subagent(ev.SessionID)
+		if sub == nil && (chat.Streaming || chat.replaying) {
+			// The standard protocol announces a child before its first update,
+			// but accepting a child-first stream keeps replay and future
+			// adapters from losing the first chunk.
+			sub = a.ensureSubagent(chat, ev.SessionID, chat.Info.SessionID)
+		}
+		if sub != nil {
+			a.applySubagentEvent(chat, ev)
+		}
+		return
 	}
 	if ev.Kind == session.UpdateMessageChunk {
 		if ev.StartupInfo {
@@ -1357,6 +1381,399 @@ func (a *App) closeAssistantForNotice(chat *Chat) {
 	}
 }
 
+// ensureSubagent creates the persistent transcript state for one child
+// session. The announcement normally arrives first; a child update can also
+// arrive first, so the lazy fallback keeps the stream usable.
+func (a *App) ensureSubagent(chat *Chat, sessionID, parentID string) *Subagent {
+	sessionID = strings.TrimSpace(sessionID)
+	if chat == nil || sessionID == "" {
+		return nil
+	}
+	if chat.Subagents == nil {
+		chat.Subagents = make(map[string]*Subagent)
+	}
+	if sub := chat.Subagents[sessionID]; sub != nil {
+		if parentID != "" && parentID != sessionID {
+			sub.ParentID = parentID
+		}
+		return sub
+	}
+	sub := &Subagent{
+		ID:       sessionID,
+		ParentID: parentID,
+		State:    "starting",
+	}
+	sub.Card = &Message{
+		ID:         a.nextID(),
+		Role:       RoleTool,
+		Title:      "Subagent · " + subagentName(sub),
+		Status:     "starting",
+		SubagentID: sub.ID,
+		DetailOpen: false,
+		Done:       true,
+	}
+	chat.Subagents[sessionID] = sub
+	a.addMessage(chat, sub.Card)
+	return sub
+}
+
+func (a *App) applySubagentUpdate(chat *Chat, ev session.Event) {
+	update := ev.Subagent
+	if update == nil || update.SessionID == "" {
+		return
+	}
+	sub := a.ensureSubagent(chat, update.SessionID, ev.SessionID)
+	if sub == nil {
+		return
+	}
+	if update.Title != nil {
+		sub.Title = strings.TrimSpace(*update.Title)
+	}
+	if update.Description != nil {
+		sub.Description = strings.TrimSpace(*update.Description)
+	}
+	if update.StateKnown {
+		sub.State = update.State
+		sub.StopReason = update.StopReason
+	}
+	if update.CWDKnown {
+		sub.CWD = update.CWD
+	}
+	if update.CancelKnown {
+		sub.CanCancel = update.CanCancel
+	}
+	a.refreshSubagent(chat, sub)
+	if subagentStateTerminal(sub.State) {
+		a.finishSubagentMessages(sub)
+	}
+}
+
+func (a *App) applySubagentEvent(chat *Chat, ev session.Event) {
+	sub := chat.subagent(ev.SessionID)
+	if sub == nil {
+		return
+	}
+	switch ev.Kind {
+	case session.UpdateSessionInfo:
+		if title := strings.TrimSpace(ev.Title); title != "" {
+			sub.Title = title
+			a.refreshSubagent(chat, sub)
+		}
+	case session.UpdateMessageChunk:
+		if ev.StartupInfo {
+			return
+		}
+		if ev.Notice != nil {
+			// Child notices are informational. Prefix the label rather than
+			// closing the root assistant row with a global notice.
+			text := strings.TrimSpace(ev.Text)
+			if text != "" {
+				a.addMessage(chat, &Message{
+					ID:           a.nextID(),
+					Role:         RoleSystem,
+					Text:         subagentName(sub) + ": " + text,
+					Done:         true,
+					NoticeKind:   ev.Notice.Kind,
+					NoticeLevel:  ev.Notice.Level,
+					SubagentID:   sub.ID,
+					SubagentName: subagentName(sub),
+				})
+			}
+			return
+		}
+		message := a.subagentAssistant(chat, sub)
+		message.Text += ev.Text
+		a.addMessageImages(chat, message, ev.Content)
+	case session.UpdateUserChunk:
+		message := a.subagentInbound(chat, sub)
+		message.Text += ev.Text
+		a.addMessageImages(chat, message, ev.Content)
+	case session.UpdateThoughtChunk:
+		message := a.subagentAssistant(chat, sub)
+		message.Thought += ev.Text
+	case session.UpdateToolCall, session.UpdateToolCallDone:
+		a.applySubagentToolCall(chat, sub, ev.ToolCall)
+	}
+}
+
+// applySessionMessage renders the recipient view of an inter-session message.
+// codex-acp emits the same task for both parent and child envelopes; only the
+// recipient envelope is needed, and it avoids duplicating the task row.
+func (a *App) applySessionMessage(chat *Chat, ev session.Event) {
+	message := ev.SessionMessage
+	if chat == nil || message == nil || message.RecipientSessionID == "" ||
+		ev.SessionID != message.RecipientSessionID ||
+		(ev.Text == "" && !hasImageContent(ev.Content)) {
+		return
+	}
+	rootID := chat.Info.SessionID
+	if message.RecipientSessionID == rootID {
+		senderID := message.SenderSessionID
+		if senderID == "" || senderID == rootID {
+			return
+		}
+		sub := chat.subagent(senderID)
+		if sub == nil && (chat.Streaming || chat.replaying) {
+			sub = a.ensureSubagent(chat, senderID, rootID)
+		}
+		a.closeAssistantForNotice(chat)
+		row := &Message{
+			ID:           a.nextID(),
+			Role:         RoleInbound,
+			Text:         ev.Text,
+			Done:         true,
+			SubagentID:   senderID,
+			SubagentName: subagentName(sub),
+		}
+		a.addMessage(chat, row)
+		a.addMessageImages(chat, row, ev.Content)
+		return
+	}
+
+	sub := chat.subagent(message.RecipientSessionID)
+	if sub == nil && (chat.Streaming || chat.replaying) {
+		sub = a.ensureSubagent(chat, message.RecipientSessionID, rootID)
+	}
+	if sub != nil {
+		a.addSubagentSessionMessage(chat, sub, ev.Text, ev.Content)
+	}
+}
+
+func (a *App) addSubagentSessionMessage(chat *Chat, sub *Subagent, text string, content []acp.ContentBlock) {
+	if sub == nil {
+		return
+	}
+	if sub.incoming != nil {
+		sub.incoming.Done = true
+		sub.incoming = nil
+	}
+	turn := a.ensureSubagentTurn(sub)
+	if turn.assistant != nil {
+		turn.assistant.Done = true
+		turn.assistant = nil
+	}
+	row := &Message{
+		ID:           a.nextID(),
+		Role:         RoleInbound,
+		Text:         text,
+		Done:         true,
+		SubagentID:   sub.ID,
+		SubagentName: subagentName(sub),
+	}
+	a.addMessage(chat, row)
+	a.addMessageImages(chat, row, content)
+}
+
+func (a *App) refreshSubagent(chat *Chat, sub *Subagent) {
+	if sub == nil {
+		return
+	}
+	name := subagentName(sub)
+	if sub.Card != nil {
+		sub.Card.Title = "Subagent · " + name
+		sub.Card.Status = subagentStatus(sub)
+		parts := make([]string, 0, 2)
+		if sub.Description != "" {
+			parts = append(parts, sub.Description)
+		}
+		if sub.CWD != "" {
+			parts = append(parts, "Workspace: "+sub.CWD)
+		}
+		sub.Card.Detail = strings.Join(parts, "\n")
+	}
+	if chat == nil {
+		return
+	}
+	for _, message := range chat.Messages {
+		if message != nil && message != sub.Card && message.SubagentID == sub.ID {
+			message.SubagentName = name
+		}
+	}
+}
+
+func subagentName(sub *Subagent) string {
+	if sub == nil {
+		return "Agent"
+	}
+	if title := strings.TrimSpace(sub.Title); title != "" {
+		return title
+	}
+	id := strings.TrimSpace(sub.ID)
+	if len(id) > 8 {
+		id = id[len(id)-8:]
+	}
+	if id == "" {
+		return "Agent"
+	}
+	return "Agent " + id
+}
+
+func subagentStatus(sub *Subagent) string {
+	if sub == nil {
+		return "starting"
+	}
+	state := strings.ToLower(strings.TrimSpace(sub.State))
+	switch state {
+	case "running", "in_progress":
+		return "in_progress"
+	case "requires_action", "waiting":
+		return "pending"
+	case "idle":
+		return "idle"
+	case "completed", "complete":
+		return "completed"
+	case "cancelled", "canceled":
+		return "cancelled"
+	case "failed", "error":
+		return "failed"
+	case "disconnected", "unknown":
+		return "disconnected"
+	default:
+		if state == "" {
+			return "starting"
+		}
+		return state
+	}
+}
+
+func subagentStateTerminal(state string) bool {
+	switch strings.ToLower(strings.TrimSpace(state)) {
+	case "idle", "completed", "complete", "cancelled", "canceled", "failed", "error", "disconnected", "unknown":
+		return true
+	default:
+		return false
+	}
+}
+
+func (a *App) ensureSubagentTurn(sub *Subagent) *turnState {
+	if sub.turn == nil {
+		sub.turn = &turnState{tools: make(map[string]*Message)}
+	}
+	return sub.turn
+}
+
+func (a *App) subagentAssistant(chat *Chat, sub *Subagent) *Message {
+	if sub == nil {
+		return &Message{}
+	}
+	if sub.incoming != nil {
+		sub.incoming.Done = true
+		sub.incoming = nil
+	}
+	turn := a.ensureSubagentTurn(sub)
+	if turn.assistant == nil || turn.assistant.Done {
+		turn.assistant = &Message{
+			ID:           a.nextID(),
+			Role:         RoleAssistant,
+			SubagentID:   sub.ID,
+			SubagentName: subagentName(sub),
+		}
+		a.addMessage(chat, turn.assistant)
+	}
+	return turn.assistant
+}
+
+func (a *App) subagentInbound(chat *Chat, sub *Subagent) *Message {
+	if sub == nil {
+		return &Message{}
+	}
+	turn := a.ensureSubagentTurn(sub)
+	if turn.assistant != nil {
+		turn.assistant.Done = true
+		turn.assistant = nil
+	}
+	if sub.incoming == nil || sub.incoming.Done {
+		sub.incoming = &Message{
+			ID:           a.nextID(),
+			Role:         RoleInbound,
+			SubagentID:   sub.ID,
+			SubagentName: subagentName(sub),
+		}
+		a.addMessage(chat, sub.incoming)
+	}
+	return sub.incoming
+}
+
+func (a *App) applySubagentToolCall(chat *Chat, sub *Subagent, call *session.ToolCall) {
+	if sub == nil || call == nil {
+		return
+	}
+	if sub.incoming != nil {
+		sub.incoming.Done = true
+		sub.incoming = nil
+	}
+	turn := a.ensureSubagentTurn(sub)
+	msg := turn.tools[call.ToolCallID]
+	if call.ToolCallID == "" {
+		msg = nil
+	}
+	created := false
+	if msg == nil {
+		created = true
+		msg = &Message{
+			ID:           a.nextID(),
+			Role:         RoleTool,
+			Done:         true,
+			ToolCallID:   call.ToolCallID,
+			SubagentID:   sub.ID,
+			SubagentName: subagentName(sub),
+		}
+		turn.tools[call.ToolCallID] = msg
+		a.addMessage(chat, msg)
+	}
+	if call.Title != "" {
+		msg.Title = call.Title
+	}
+	if msg.Title == "" {
+		msg.Title = "Tool call"
+	}
+	if call.Status != "" {
+		msg.Status = call.Status
+	}
+	if detail := toolDetail(*call); detail != "" {
+		msg.Detail = detail
+	}
+	if created && turn.assistant != nil {
+		turn.assistant.Done = true
+		turn.assistant = nil
+	}
+}
+
+func (a *App) finishSubagentMessages(sub *Subagent) {
+	if sub == nil {
+		return
+	}
+	if sub.incoming != nil {
+		sub.incoming.Done = true
+		sub.incoming = nil
+	}
+	if sub.turn != nil && sub.turn.assistant != nil {
+		sub.turn.assistant.Done = true
+		sub.turn.assistant = nil
+	}
+}
+
+func (a *App) finishSubagents(chat *Chat, stopReason string) {
+	if chat == nil {
+		return
+	}
+	for _, sub := range chat.Subagents {
+		if strings.EqualFold(strings.TrimSpace(sub.State), "idle") || !subagentStateTerminal(sub.State) {
+			switch stopReason {
+			case "cancelled":
+				sub.State = "cancelled"
+			case "refusal", "error":
+				sub.State = "failed"
+			default:
+				sub.State = "completed"
+			}
+			sub.StopReason = stopReason
+			a.refreshSubagent(chat, sub)
+		}
+		a.finishSubagentMessages(sub)
+	}
+}
+
 func (a *App) ensureTurn(chat *Chat, needAssistant bool) *turnState {
 	if chat.turn == nil {
 		chat.turn = &turnState{tools: make(map[string]*Message)}
@@ -1393,6 +1810,11 @@ func (a *App) applyPromptResult(chat *Chat, turn *turnState, res acp.PromptResul
 	if turn.assistant != nil {
 		turn.assistant.Done = true
 	}
+	subagentStop := res.StopReason
+	if err != nil && subagentStop == "" {
+		subagentStop = "error"
+	}
+	a.finishSubagents(chat, subagentStop)
 	chat.Streaming = false
 	chat.Cancelling = false
 	// A turn may end while a permission request is still waiting (for
@@ -1446,6 +1868,13 @@ func (a *App) applyExit(chat *Chat, exit session.Exit) {
 	chat.Info = session.Info{}
 	chat.replaying = false
 	chat.replayKey = ""
+	for _, sub := range chat.Subagents {
+		if !subagentStateTerminal(sub.State) {
+			sub.State = "disconnected"
+			a.refreshSubagent(chat, sub)
+		}
+		a.finishSubagentMessages(sub)
+	}
 	if chat.turn != nil {
 		if chat.turn.assistant != nil {
 			chat.turn.assistant.Done = true

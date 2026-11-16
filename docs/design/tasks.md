@@ -50,7 +50,7 @@
 1. `Run pending` 找到当前 workspace 第一个 pending，标记 `ongoing`，保存索引。
 2. 在启动 executor 前异步记录 work tree 快照（临时 Git index；非仓库跳过），用于失败回滚。
 3. 新建一个 `Chat` / agent 进程 / ACP 会话（聊天标题 `Task: …`），发送 executor prompt。
-4. executor 回合结束（`session/prompt` 返回、取消或进程退出）后取本轮最后一条 assistant 文本的最后一段，追加到本任务的 round 历史。
+4. executor 回合结束（`session/prompt` 返回、取消或进程退出）后取本轮最后一条 **root** assistant 文本的最后一段，追加到本任务的 round 历史；agent 子代理的 assistant 输出不参与任务完成摘要。
 5. 启动新的 checker agent 进程 / 新会话，发送任务标题、任务详情和完整 round 历史；checker 不允许使用工具，权限请求一律 cancelled。
 6. checker 返回严格 JSON：`{complete, reason, summary}`。
 7. `complete=false`：把 reason 记到本轮历史，再把 reason 发回同一个 executor 会话继续；轮次 +1，再次检查。
@@ -71,7 +71,7 @@
 - 继续 prompt 只包含 `TASK_EXECUTION`、checker reason 和“继续”，不新建会话。
 - checker prompt 标记 `TASK_COMPLETION_CHECK`，明确“没有工具、不要检查文件”，要求只输出 JSON，不能带 code fence。
 - checker 历史按轮次累积：第 1 轮是第 1 轮最后一段；第 2 轮是第 1 轮最后一段 + 第 1 轮 checker 反馈 + 第 2 轮最后一段；以后各轮依次追加。这样每次全新的 checker 也知道前几轮改了什么、为什么被退回。
-- 已知边界：判定只信任 executor 的总结，不验证真实成果；checker 可能误判，用户仍能在编辑器 / Git 面板里检查。最后一段由连续空行分隔，取最后一条有文本的 assistant 行的最后一段。
+- 已知边界：判定只信任 executor 的总结，不验证真实成果；checker 可能误判，用户仍能在编辑器 / Git 面板里检查。最后一段由连续空行分隔，取最后一条有文本的 root assistant 行的最后一段。checker 的临时 ACP 进程同样只累计 root session 文本，忽略标准子代理 child session。
 
 ## 失败回滚与 complete(failure)
 
