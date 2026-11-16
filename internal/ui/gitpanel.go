@@ -388,6 +388,7 @@ func (a *App) gitPanelHeader(c *mui.Context) {
 					a.gitCaption(c, a.Git.Busy+"…")
 				}
 				mui.Spacer(c)
+				a.gitBehindBadge(c)
 				a.gitHeaderStat(c)
 			})
 			line, tip := a.gitHeaderLine()
@@ -399,6 +400,25 @@ func (a *App) gitPanelHeader(c *mui.Context) {
 			}
 		})
 	})
+}
+
+// gitBehindBadge is the header's reminder that the upstream has commits the
+// branch has not pulled: after a fetch it appears with the count, and a pull
+// removes it. Without it the graph of a fetched branch and a pulled one can
+// look the same.
+func (a *App) gitBehindBadge(c *mui.Context) {
+	if a.Git.Behind <= 0 {
+		return
+	}
+	t := c.Theme()
+	commits := "commits"
+	if a.Git.Behind == 1 {
+		commits = "commit"
+	}
+	mui.Text(c, "↓"+strconv.Itoa(a.Git.Behind)).FontSize(a.gitFont(8)).
+		Padding(1, 5).Radius(4).Shrink(0).
+		Background(t.Warning.Alpha(0.14)).TextColor(t.Warning).
+		Tooltip(strconv.Itoa(a.Git.Behind) + " " + commits + " fetched; pull to merge")
 }
 
 // gitHeaderStat shows the changed file count and line changes beside the
@@ -444,8 +464,8 @@ func (a *App) gitHeaderLine() (string, string) {
 		if a.Git.Branch != "" {
 			line += " · ⑂ " + truncate(a.Git.Branch, 18)
 		}
-		if a.Git.Ahead > 0 || a.Git.Behind > 0 {
-			line += " ↑" + strconv.Itoa(a.Git.Ahead) + " ↓" + strconv.Itoa(a.Git.Behind)
+		if a.Git.Ahead > 0 {
+			line += " ↑" + strconv.Itoa(a.Git.Ahead)
 		}
 		return line, a.Git.RepoRoot
 	default:

@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -44,8 +45,27 @@ func TestParseCommitsSkipsNoiseAndFillsSubject(t *testing.T) {
 	if commits[0].Parents[0] != fakeHash("2") {
 		t.Errorf("parents = %q", commits[0].Parents)
 	}
+	if !commits[0].Head {
+		t.Error("the decorated commit is not marked as HEAD")
+	}
+	if commits[1].Head {
+		t.Error("a commit without a decoration is marked as HEAD")
+	}
 	if commits[1].Message != "(no subject)" {
 		t.Errorf("empty subject = %q", commits[1].Message)
+	}
+}
+
+func TestHasHeadRefIgnoresRemoteHead(t *testing.T) {
+	for _, raw := range []string{"HEAD -> main", "HEAD", "origin/main, HEAD -> main"} {
+		if !hasHeadRef(raw) {
+			t.Errorf("hasHeadRef(%q) = false", raw)
+		}
+	}
+	for _, raw := range []string{"", "origin/HEAD -> origin/main", "main, origin/main"} {
+		if hasHeadRef(raw) {
+			t.Errorf("hasHeadRef(%q) = true", raw)
+		}
 	}
 }
 
@@ -183,6 +203,58 @@ func hasRef(refs []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// TestReadCommitsMarksFetchedNotPulled keeps what a fetch alone brought
+// apart from the branch: only a pull makes those commits HEAD's own.
+func TestReadCommitsMarksFetchedNotPulled(t *testing.T) {
+	if !Available() {
+		t.Skip("git not installed")
+	}
+	ctx := context.Background()
+	origin := initRepo(t)
+	writeFile(t, origin, "a.txt", "one\n")
+	runTestGit(t, origin, "add", ".")
+	runTestGit(t, origin, "commit", "-q", "-m", "base")
+	base := headHash(t, origin)
+
+	clone := filepath.Join(t.TempDir(), "clone")
+	runTestGit(t, origin, "clone", "-q", origin, clone)
+
+	writeFile(t, origin, "b.txt", "two\n")
+	runTestGit(t, origin, "add", ".")
+	runTestGit(t, origin, "commit", "-q", "-m", "remote work")
+	tip := headHash(t, origin)
+	runTestGit(t, clone, "fetch", "-q", "origin")
+
+	commits, err := readCommits(ctx, clone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byHash := map[string]LogCommit{}
+	for _, commit := range commits {
+		byHash[commit.Hash] = commit
+	}
+	if got := byHash[tip]; !got.Incoming || got.Head {
+		t.Errorf("fetched tip = %+v, want incoming and not HEAD", got)
+	}
+	if got := byHash[base]; got.Incoming || !got.Head {
+		t.Errorf("branch tip = %+v, want HEAD and not incoming", got)
+	}
+
+	runTestGit(t, clone, "pull", "-q", "--ff-only")
+	commits, err = readCommits(ctx, clone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, commit := range commits {
+		if commit.Incoming {
+			t.Errorf("pulled commit %s still marked incoming", commit.Hash)
+		}
+		if commit.Hash == tip && !commit.Head {
+			t.Errorf("pulled tip = %+v, want HEAD", commit)
+		}
+	}
 }
 
 func TestCommitFilesListsChangesAgainstFirstParent(t *testing.T) {

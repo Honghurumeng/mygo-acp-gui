@@ -299,6 +299,71 @@ func TestGitGraphShowsOneShortRef(t *testing.T) {
 	}
 }
 
+// TestGitPanelShowsFetchedCommitsAsIncoming keeps a fetch that was not
+// pulled apart from a pull: the fetched commits are incoming (dashed lane,
+// hollow dot) with an outlined remote chip, while the branch chip keeps the
+// lane's color. Pulling makes them solid and puts the branch chip on top.
+func TestGitPanelShowsFetchedCommitsAsIncoming(t *testing.T) {
+	origin := initGitPanelRepo(t)
+	writeGitPanelFile(t, origin, "a.txt", "one\n")
+	runGitPanelCommand(t, origin, "add", ".")
+	runGitPanelCommand(t, origin, "commit", "-q", "-m", "base")
+
+	workspace := filepath.Join(t.TempDir(), "clone")
+	runGitPanelCommand(t, origin, "clone", "-q", origin, workspace)
+
+	writeGitPanelFile(t, origin, "b.txt", "two\n")
+	runGitPanelCommand(t, origin, "add", ".")
+	runGitPanelCommand(t, origin, "commit", "-q", "-m", "remote work")
+	runGitPanelCommand(t, workspace, "fetch", "-q", "origin")
+
+	app, tt := newGitPanelApp(t, workspace)
+	waitFor(t, app, tt, func() bool {
+		return app.Git.Checked && !app.Git.Loading && len(app.Git.Commits) == 2
+	})
+	tt.Frame()
+	remote := app.Git.Commits[0]
+	if remote.Message != "remote work" || !remote.Incoming || remote.Head {
+		t.Fatalf("top commit = %+v, want the fetched, unpulled commit", remote)
+	}
+	if !tt.HasText("↓1") {
+		t.Errorf("header is missing the behind badge; texts: %q", tt.Texts())
+	}
+	remoteChip := graphRef(remote)
+	if remoteChip == "" {
+		t.Fatal("the fetched commit shows no ref")
+	}
+	if chip, row := chipFills(t, tt, remoteChip); chip != row {
+		t.Errorf("remote chip fill = %v, want an outline on the row %v", chip, row)
+	}
+
+	runGitPanelCommand(t, workspace, "pull", "-q", "--ff-only")
+	app.startGitLoad(workspace, true)
+	waitFor(t, app, tt, func() bool {
+		return !app.Git.Loading && app.Git.Behind == 0 && len(app.Git.Commits) == 2 &&
+			app.Git.Commits[0].Head && !app.Git.Commits[0].Incoming
+	})
+	tt.Frame()
+	if tt.HasText("↓1") {
+		t.Errorf("behind badge survived the pull; texts: %q", tt.Texts())
+	}
+	if chip, row := chipFills(t, tt, graphRef(app.Git.Commits[0])); chip == row {
+		t.Errorf("current branch chip fill = %v, want the lane's tint", chip)
+	}
+}
+
+// chipFills samples a ref chip's inside and the row behind it.
+func chipFills(t *testing.T, tt *mui.Tester, ref string) (chip, row color.RGBA) {
+	t.Helper()
+	rect, ok := tt.Find(ref)
+	if !ok {
+		t.Fatalf("no chip shows %q; texts: %q", ref, tt.Texts())
+	}
+	img := tt.Image()
+	x := int(rect.X + 3)
+	return img.RGBAAt(x, int(rect.Y+3)), img.RGBAAt(x, int(rect.Y-3))
+}
+
 // TestGitListsShareScrollBarColumn keeps the changes list's and the history
 // list's overlay scroll bars in the panel's right gutter, in one column: both
 // scroll boxes run to the panel's right edge and both lists stop their rows

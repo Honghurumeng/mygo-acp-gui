@@ -94,7 +94,14 @@ func (a *App) gitGraphBody(c *mui.Context) {
 					)
 				}
 				path.LineTo(x(toLane), to)
-				p.StrokePath(path, 2, inks[toLane%len(inks)].Alpha(0.7))
+				// A fetched commit not yet pulled is dashed and dimmer, so
+				// the graph reads as having work the branch does not.
+				alpha := float32(0.7)
+				if commit.Incoming {
+					path.Dash(0, 3, 3)
+					alpha = 0.5
+				}
+				p.StrokePath(path, 2, inks[toLane%len(inks)].Alpha(alpha))
 			}
 		}
 		for i, commit := range commits {
@@ -107,6 +114,14 @@ func (a *App) gitGraphBody(c *mui.Context) {
 				X: x(commit.Lane) - rad - 2, Y: dot(i) - rad - 2,
 				W: 2*rad + 4, H: 2*rad + 4,
 			}, t.Background, 999)
+			if commit.Incoming {
+				// The same ring in the lane's ink: the commit is on the
+				// remote, not yet in the branch.
+				ring := &mui.Path{}
+				ring.Circle(x(commit.Lane), dot(i), rad)
+				p.StrokePath(ring, 1.5, ink.Alpha(0.8))
+				continue
+			}
 			p.Fill(mui.Rect{
 				X: x(commit.Lane) - rad, Y: dot(i) - rad,
 				W: 2 * rad, H: 2 * rad,
@@ -148,9 +163,18 @@ func (a *App) gitGraphCommit(c *mui.Context, commit git.LogCommit, indent float3
 	}
 	row.Children(func() {
 		if ref := graphRef(commit); ref != "" {
-			ink := inks[commit.Lane%len(inks)]
-			mui.Text(c, ref).FontSize(a.gitFont(8)).Padding(1, 4).Radius(4).
-				Background(ink.Alpha(0.16)).TextColor(ink).Shrink(0)
+			// Only the current branch wears the lane's color: another
+			// branch, a tag, or a remote-tracking ref is an outline, so
+			// after a fetch the incoming origin chip cannot pass for
+			// the branch that was pulled.
+			chip := mui.Text(c, ref).FontSize(a.gitFont(8)).Padding(1, 4).
+				Radius(4).Shrink(0)
+			if commit.Head {
+				ink := inks[commit.Lane%len(inks)]
+				chip.Background(ink.Alpha(0.16)).TextColor(ink)
+			} else {
+				chip.TextColor(t.TextMuted).Border(1, t.Border)
+			}
 		}
 		mui.Text(c, commit.Message).FontSize(a.gitFont(10)).Grow(1).MinWidth(0).SingleLine()
 		mark := "▸"

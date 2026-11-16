@@ -5,12 +5,16 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
 
 // GraphLanes is how many lanes a commit graph may draw.
 const GraphLanes = 8
+
+// commitLimit bounds the history the panel reads and draws.
+const commitLimit = 80
 
 // CommitFile is one path a commit changed against its first parent. Status
 // is git's one-letter code: A, M, D, R, C or T; a rename or copy keeps its
@@ -100,6 +104,11 @@ type LogCommit struct {
 	Time    time.Time
 	Parents []string
 	Refs    []string
+	// Head marks the commit HEAD points at, from its decoration.
+	Head bool
+	// Incoming marks a commit the current branch's upstream has and HEAD
+	// does not: a fetch brought it, and a pull would integrate it.
+	Incoming bool
 	// Lane is the column its line occupies, from 0 to GraphLanes-1.
 	Lane int
 }
@@ -108,14 +117,44 @@ type LogCommit struct {
 // order matters: a graph draws a parent under all of its children.
 func readCommits(ctx context.Context, root string) ([]LogCommit, error) {
 	out, err := run(ctx, root, []string{"GIT_OPTIONAL_LOCKS=0"},
-		"log", "--topo-order", "--all", "-n", "80",
+		"log", "--topo-order", "--all", "-n", strconv.Itoa(commitLimit),
 		"--pretty=format:%H%x1f%P%x1f%an%x1f%s%x1f%D%x1f%cI")
 	if err != nil {
 		return nil, err
 	}
 	commits := parseCommits(out)
 	assignLanes(commits)
+	markIncoming(commits, readIncoming(ctx, root))
 	return commits, nil
+}
+
+// readIncoming lists the commits the current branch's upstream has and HEAD
+// does not: what a fetch downloaded and a pull would integrate. A branch
+// without an upstream, or a detached HEAD, has none. The read is best effort:
+// a failure leaves the graph unmarked rather than costing it the history.
+func readIncoming(ctx context.Context, root string) map[string]bool {
+	out, err := run(ctx, root, []string{"GIT_OPTIONAL_LOCKS=0"},
+		"rev-list", "--max-count", strconv.Itoa(commitLimit), "HEAD..@{upstream}")
+	if err != nil {
+		return nil
+	}
+	incoming := make(map[string]bool)
+	for _, line := range strings.Split(string(out), "\n") {
+		if hash := strings.TrimSpace(line); isHash(hash) {
+			incoming[hash] = true
+		}
+	}
+	return incoming
+}
+
+// markIncoming flags the commits of a read history the upstream alone has.
+func markIncoming(commits []LogCommit, incoming map[string]bool) {
+	if len(incoming) == 0 {
+		return
+	}
+	for i := range commits {
+		commits[i].Incoming = incoming[commits[i].Hash]
+	}
 }
 
 // parseCommits reads the unit-separated log without trusting every line:
@@ -137,6 +176,7 @@ func parseCommits(out []byte) []LogCommit {
 			Author:  strings.TrimSpace(fields[2]),
 			Parents: strings.Fields(fields[1]),
 			Refs:    parseRefs(fields[4]),
+			Head:    hasHeadRef(fields[4]),
 		}
 		if len(fields) > 5 {
 			commit.Time, _ = time.Parse(time.RFC3339, strings.TrimSpace(fields[5]))
@@ -157,6 +197,19 @@ func isHash(s string) bool {
 		}
 	}
 	return true
+}
+
+// hasHeadRef reports HEAD's marker in a decoration list: "HEAD -> main" on
+// a branch, or "HEAD" alone when detached. The remote's origin/HEAD is a
+// different ref and does not count.
+func hasHeadRef(raw string) bool {
+	for _, part := range strings.Split(raw, ", ") {
+		part = strings.TrimSpace(part)
+		if part == "HEAD" || strings.HasPrefix(part, "HEAD -> ") {
+			return true
+		}
+	}
+	return false
 }
 
 // parseRefs turns git's decoration list into branch and tag names.

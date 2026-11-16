@@ -12,6 +12,9 @@
 - 标题行右侧显示未提交统计：`N files` 加绿色 `+新增`、红色 `−删除`，零变化或读取中不显示。
   数字由 `git diff --numstat -z HEAD` 得到（首个提交前用空树 hash），未跟踪文件按整文件新增行数计入；
   二进制或超过 512 KB 的未跟踪文件只计文件数。统计是装饰性的，失败只清空数字，不阻塞面板。
+- 标题行在 `behind > 0` 时显示 warning 色的 `↓N` 芯片，提示还有已 fetch 未 pull 的提交
+  （tooltip 为 `N commits fetched; pull to merge`）；pull 或快进后 behind 归零，芯片消失。
+  分支行只再追加 `↑N`（尚未推送的提交数）。
 - 变更行可点：点文件名在 Git 面板左侧弹出 diff 卡片（见下节），右侧 `＋`/`－` 仍只做暂存/取消暂存。
 - 变更区域和图表区域用 `ui.SplitVertical` 分隔，可拖动调整高度，二者总高度不变。
 - 状态区在 workspace 切换时立即清空并异步重读，避免显示上一个仓库的内容。
@@ -63,7 +66,14 @@
   generation + workspace + hash 三重守卫防止旧结果落到新行；刷新后发现该提交已不在 80 条历史里时自动收起。
 - 必须用 `--topo-order`：绘图要求父提交排在所有子提交之后，普通逆时间顺序不保证这一点。
 - lane 最多 8 条（`GraphLanes`）。算法维护“仍等待的父提交”列表：子树在父子的 lane 上继续，合并的第二个及以后的父提交占用空闲 lane；超过 8 条并发时共用最后一条，不报错、不 panic。
-- refs 来自 `%D`：去掉 `HEAD ->` / `origin/HEAD ->` 的目标前缀和 `tag:` 前缀，去重。面板只有 300 DIP，提交行只保留第一个 ref（通常是当前分支）并截到 12 个字符；作者不在行内显示，把宽度留给 subject，详情卡里列出全部 refs。
+- 区分“fetch 了但没 pull”和“已经 pull”：除 `git log` 外再执行一次
+  `git rev-list --max-count=80 HEAD..@{upstream}`（无 upstream、detached HEAD 或执行失败时静默跳过），
+  命中的提交记 `LogCommit.Incoming`。`Incoming` 提交的泳道线画成虚线（`Path.Dash(0, 3, 3)`）并降低透明度，
+  圆点画成空心环；其余提交保持实线和实心圆点。`HEAD` 所在提交由 `%D` 里的 `HEAD` / `HEAD ->` 标记得到，
+  只有它的 ref 芯片使用泳道色的实底强调芯片；远端跟踪分支、其他本地分支和 tag 都用灰色文字的描边芯片。
+  因此 fetch 后顶部是描边的 `origin/main`、当前分支芯片在下面的提交上；pull 后 HEAD 移到顶部，
+  芯片变成泳道色，线条和圆点恢复实线。
+- refs 来自 `%D`：去掉 `HEAD ->` / `origin/HEAD ->` 的目标前缀和 `tag:` 前缀，去重。面板只有 300 DIP，提交行只保留第一个 ref（HEAD 提交即当前分支）并截到 12 个字符；作者不在行内显示，把宽度留给 subject，详情卡里列出全部 refs。
 - 提交 subject 为空时显示 `(no subject)`（提交行必须有文字）；无法识别的日志行（例如混入的 warning）直接跳过。
 - merge 提交只按第一父提交展开和预览，不展示相对每个父的 combined diff；也不画 rebase/merge/revert 进行中的状态。
 - 没有提交时显示 “No commits yet.”；`Undo` 对首个提交也有效（`update-ref -d HEAD`），其余提交用 `reset --soft HEAD~1`。
@@ -132,5 +142,5 @@ go test ./internal/git -v
 go test ./internal/ui -run 'TestGitPanel' -v -count=1
 ```
 
-`internal/git` 测试覆盖状态/重命名解析、分支头解析、init、stage/unstage、commit、首提交撤销、discard all（已暂存/未暂存/未跟踪/首提交前、忽略文件保留）、嵌套工作区，以及 diff 两侧（未暂存/已暂存/未跟踪/新增/删除/重命名、二进制与超大文件、越界路径）、提交日志解析（含 committer time）、refs 解析、commit 文件列表与提交 diff 两侧（首提交/单文件/重命名/删除）、提交文件数与增删行数统计、merge 的 lane 分配与 8 lane 上限、父提交必须在子提交之后；UI 测试覆盖无仓库提示与 init、无 git 提示、窗口获得焦点后刷新、一轮对话结束后刷新、Stage all + Commit 全链路、Discard all 确认/取消与位置、共享卡片打开（位于 Git 面板左侧、面板仍可见、点外部关闭）、响应式布局（窄卡片
-Unified/宽卡片 Split、点阈值宽度）、未暂存文件编辑保存、暂存与历史只读，以及二进制报错、提交图渲染与窄面板裁剪、点击提交展开/收起文件列表、从展开列表打开提交 diff、hover 详情卡（位于图表左侧、无短 hash/父提交、含文件与行数统计）与复制 hash。
+`internal/git` 测试覆盖状态/重命名解析、分支头解析、init、stage/unstage、commit、首提交撤销、discard all（已暂存/未暂存/未跟踪/首提交前、忽略文件保留）、嵌套工作区，以及 diff 两侧（未暂存/已暂存/未跟踪/新增/删除/重命名、二进制与超大文件、越界路径）、提交日志解析（含 committer time、HEAD 标记）、refs 解析、fetch 未 pull 的 `Incoming` 标记与 pull 后清除、commit 文件列表与提交 diff 两侧（首提交/单文件/重命名/删除）、提交文件数与增删行数统计、merge 的 lane 分配与 8 lane 上限、父提交必须在子提交之后；UI 测试覆盖无仓库提示与 init、无 git 提示、窗口获得焦点后刷新、一轮对话结束后刷新、Stage all + Commit 全链路、Discard all 确认/取消与位置、共享卡片打开（位于 Git 面板左侧、面板仍可见、点外部关闭）、响应式布局（窄卡片
+Unified/宽卡片 Split、点阈值宽度）、未暂存文件编辑保存、暂存与历史只读、fetch 后 `↓N` 芯片与描边远端芯片、pull 后芯片和徽标消失，以及二进制报错、提交图渲染与窄面板裁剪、点击提交展开/收起文件列表、从展开列表打开提交 diff、hover 详情卡（位于图表左侧、无短 hash/父提交、含文件与行数统计）与复制 hash。
