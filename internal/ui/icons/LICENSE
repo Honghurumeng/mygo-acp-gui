@@ -4,8 +4,11 @@ The SVGs in this directory
 - command-code.svg: the Command Code mark, from the commandcode-vscode extension.
 - codex.svg: Lucide's square-terminal icon, used as the Codex adapter mark.
 - message-square.svg, messages-square.svg, unplug.svg, sparkles.svg,
-  git-compare.svg, git-branch.svg, list-checks.svg, circle-x.svg, code.svg,
-  copy.svg, check.svg, settings.svg: Lucide icons,
+  git-compare.svg, git-branch.svg, list-checks.svg, folder-tree.svg,
+  folder.svg, folder-open.svg, file.svg, file-plus.svg, folder-plus.svg,
+  refresh-cw.svg, circle-x.svg, code.svg, copy.svg, check.svg, settings.svg,
+  text.svg, braces.svg, image.svg, terminal.svg:
+  Lucide icons,
   unmodified except that the class attribute and license comment are dropped.
   Source: https://lucide.dev
 

@@ -539,6 +539,7 @@ func (a *App) completeTask(gen int, taskID string, verdict taskVerdict, agentSum
 			a.TaskRun.SnapshotOK = false
 			a.TaskRun.SnapshotErr = ""
 			a.refreshGitAfterTask(task.Workspace)
+			a.refreshFilesAfterTask(task.Workspace)
 			if queue {
 				a.TaskRun.Queue = true
 				a.startNextTaskIn(workspace)
@@ -655,6 +656,7 @@ func (a *App) finishTaskFailure(reason string) {
 			a.TaskRun.SnapshotOK = false
 			a.TaskRun.SnapshotErr = ""
 			a.refreshGitAfterTask(workspace)
+			a.refreshFilesAfterTask(workspace)
 			if queue {
 				a.TaskRun.Queue = true
 				a.startNextTaskIn(workspace)

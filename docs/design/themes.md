@@ -83,7 +83,7 @@ One Light，Tokyo Night 浅色版为 Tokyo Night Day。Tokyo Night Day 的正文
 
 ## 派生色
 
-右侧图标栏（Git / Tasks 窄栏）的底色不写进 palette，而是由 `sunkenSurface(t)`（`widgets.go`）从 Surface 派生，
+右侧图标栏（Git / Tasks / Files 窄栏）的底色不写进 palette，而是由 `sunkenSurface(t)`（`widgets.go`）从 Surface 派生，
 比右侧面板深一阶，看起来像面板旁的凹槽：
 
 - 浅色：`Surface.Mix(black, 0.07)`；深色：`Surface.Mix(black, 0.18)`。深色色域被压缩（Surface 只比 Background

@@ -43,8 +43,9 @@ a.gitFont(size)       // Git 面板
   这样 MyGo 的系统字号缩放不会被覆盖。
 - Git 面板例外：commit message 输入框与 Staged/Changes 行同为内置 10 DIP 基准，只乘 Git 百分比，
   一个设置管住整个面板的正文。
-- 右侧 `Tasks` tab 与 Git 共用同一个 `gitFont` 缩放，包括任务行、Run/Stop 按钮和 Markdown / Diff
-  总结卡片；任务编辑/删除模态沿用全局模态字号。仍只有四个设置项，不新增第五个区域。
+- 右侧 `Tasks` 和 `Files` tab 与 Git 共用同一个 `gitFont` 缩放，包括任务行、Run/Stop 按钮、
+  Markdown / Diff 总结卡片，以及 Files 的面板标题、目录行和状态字母。任务与 Files 的新建/重命名/
+  删除模态沿用全局模态字号。仍只有四个设置项，不新增第五个区域。
 - Markdown 只设置 `a.MD.Theme = &markdown.Theme{FontSize: ...}`，颜色和间距仍由当前主题的
   `markdown.DefaultTheme` 解析；标题和代码块按 em 跟随正文字号。
 - 区域内的 `mutedText` / `caption` / `sectionLabel` 用 `workspaceFont`、`chatFont`、
@@ -62,7 +63,7 @@ a.gitFont(size)       // Git 面板
 | Workspace list | `sidebar.go`、`saved.go` | 标题、分组、打开/存档会话行、筛选、展开/收起、侧栏底部 agent 状态 |
 | Conversation | `app.go`、`jump.go`、`scrollbottom.go`、`turntimer.go`、`attachments.go` | 用户/assistant/系统/错误消息、Markdown、thinking、tool card、plan、Took 行、跳转列表、Latest 和运行计时 |
 | Input box | `composer.go`、`mentions.go`、`jump.go` | 输入框正文、附件/Jump/分支/mode/usage/model chip、模型面板、斜杠命令、@ 文件面板 |
-| Git panel | `gitpanel.go`、`gitgraph.go` | 面板头、提交框、暂存/更改行、提交图、提交详情卡、diff 卡片和 diff 编辑器字号 |
+| Git panel | `gitpanel.go`、`gitgraph.go`、`filepanel.go` | 面板头、提交框、暂存/更改行、提交图、提交详情卡、diff 卡片和 diff 编辑器字号；Files 文件树和状态字母 |
 
 固定不缩放：顶部会话标题栏、右侧图标栏（只有图标，尺寸固定 16 DIP）、错误/警告 banner、
 设置/权限等全局模态标题、空状态组件和 MyGo 自带的菜单/提示。它们属于窗口 chrome 或跨区域组件。

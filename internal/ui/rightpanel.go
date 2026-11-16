@@ -4,10 +4,11 @@ import (
 	mui "github.com/egoist/mygo/ui"
 )
 
-// The right column has two tabs that share its width and open state.
+// The right column has three tabs that share its width and open state.
 const (
 	rightTabGit   = "git"
 	rightTabTasks = "tasks"
+	rightTabFiles = "files"
 )
 
 // The rail is the narrow strip at the window's right edge that switches the
@@ -20,7 +21,8 @@ const (
 )
 
 // rightRail draws the tab buttons to the right of the column. They replaced
-// the Git / Tasks text buttons that used to sit in the conversation header.
+// the Git / Tasks text buttons that used to sit in the conversation header;
+// Files joined them as a third icon-only tab.
 func (a *App) rightRail(c *mui.Context) {
 	t := c.Theme()
 	mui.Column(c).Width(rightRailWidth).FillHeight().Gap(2).Padding(8, 0).
@@ -29,6 +31,7 @@ func (a *App) rightRail(c *mui.Context) {
 		Role(mui.RoleTabList).Label("Right panel tabs").Children(func() {
 		a.rightRailButton(c, gitBranchIcon, "Git", rightTabGit)
 		a.rightRailButton(c, listChecksIcon, "Tasks", rightTabTasks)
+		a.rightRailButton(c, folderTreeIcon, "Files", rightTabFiles)
 	})
 }
 
@@ -78,7 +81,7 @@ func (a *App) rightPanelName(c *mui.Context, name string) {
 // setRightTab switches the visible right panel and closes floating cards
 // that belong to the other tab. It does not open a closed panel.
 func (a *App) setRightTab(tab string) {
-	if tab != rightTabGit && tab != rightTabTasks {
+	if tab != rightTabGit && tab != rightTabTasks && tab != rightTabFiles {
 		return
 	}
 	if a.RightTab == tab {
@@ -88,9 +91,18 @@ func (a *App) setRightTab(tab string) {
 	a.Git.DiscardOpen = false
 	a.closeGitOverlays()
 	a.closeTaskSummary()
-	if tab == rightTabGit && a.Git.Workspace != "" {
-		// The repository may have changed while the Tasks tab was visible.
-		a.Git.Checked = false
+	a.closeFileDialogs()
+	switch tab {
+	case rightTabGit:
+		if a.Git.Workspace != "" {
+			// The repository may have changed while another tab was visible.
+			a.Git.Checked = false
+		}
+	case rightTabFiles:
+		if a.Files.Workspace != "" {
+			// Files may have changed while another tab was visible.
+			a.Files.Checked = false
+		}
 	}
 }
 
@@ -102,7 +114,9 @@ func (a *App) toggleRightPanel(tab string) {
 		a.GitPanelOpen = false
 		a.closeGitOverlays()
 		a.closeTaskSummary()
+		a.closeFileDialogs()
 		a.Git.DiscardOpen = false
+		a.Files.Checked = false
 		return
 	}
 	a.GitPanelOpen = true

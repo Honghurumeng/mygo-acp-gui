@@ -2,7 +2,7 @@
 
 ## 目标
 
-原生桌面 ACP GUI：Go + [MyGo](https://github.com/egoist/mygo) 写界面，检测内置 agent（目前 pi、command-code、codex）是否可用，选择 agent 和工作区后聊天；右侧还有 Git 与串行 Tasks 面板。
+原生桌面 ACP GUI：Go + [MyGo](https://github.com/egoist/mygo) 写界面，检测内置 agent（目前 pi、command-code、codex）是否可用，选择 agent 和工作区后聊天；右侧还有 Git、串行 Tasks 与 Files 文件面板。
 
 早期 Node 原型（`server/` + `public/`）已移除，只保留在 git 历史中；当前实现是仓库根目录的 Go + MyGo 工程。
 
@@ -15,10 +15,11 @@ MyGo 原生窗口 (Go + ui)
   ├─ 消息区 + 可拖动高度的 composer
   ├─ composer 底栏：附件、Jump、git 分支、mode、上下文环、agent/model/thinking、发送
   ├─ @ 文件面板：workspace 索引 → 只把 @相对路径 文本写进 prompt（agent 自读）
-  ├─ 右侧面板（可折叠，Git / Tasks 两个 tab）
+  ├─ 右侧面板（可折叠，Git / Tasks / Files 三个 tab）
   │    ├─ Git：提交、暂存/更改、分支图与 fetch/pull/push
-  │    └─ Tasks：任务队列、executor / checker 双 agent、成功总结 + 每任务一次 commit、失败回滚
-  ├─ 窗口最右缘 38 DIP 图标栏：Git / Tasks 无文字图标按钮，切换或关闭右侧面板
+  │    ├─ Tasks：任务队列、executor / checker 双 agent、成功总结 + 每任务一次 commit、失败回滚
+  │    └─ Files：workspace 文件树、Git 状态、新建/重命名/删除、拖动移动
+  ├─ 窗口最右缘 38 DIP 图标栏：Git / Tasks / Files 无文字图标按钮，切换或关闭右侧面板
   ├─ ui/markdown.Stream / View      ← agent_message_chunk
   ├─ ui.List(FollowEnd)             ← 消息列表
   ├─ ui.Collapsible                 ← thought / tool_call
@@ -42,10 +43,11 @@ MyGo 原生窗口 (Go + ui)
   internal/session/        进程组 + ACP 会话生命周期 + update/permission 分发（已实现）
   internal/settings/       settings.json 读写、容错与原子落盘（已实现）
   internal/archive/        sessions.json 本地会话存档（agent/session 关系、show/showName）
+  internal/files/          workspace 文件树读取与新建/重命名/移动/删除（不经过 shell）
   internal/tasks/          tasks.json 任务索引 + workspace/tasks/*.md 总结读写
   internal/logs/           每个 agent 的滚动日志文件（已实现）
   internal/git/            Git 探测、status 解析、提交与远端操作、任务失败回滚快照（不经过 shell）
-  internal/ui/             多会话侧栏、聊天、流式 Markdown、权限队列、系统通知、Dock 角标、Git 面板、主题系统、窗口更新（已实现）
+  internal/ui/             多会话侧栏、聊天、流式 Markdown、权限队列、系统通知、Dock 角标、Git / Files 面板、主题系统、窗口更新（已实现）
   internal/ui/icons/       pi / Command Code / Codex 图标（SVG，侧栏 + 标题栏）
   resources/
     agents/pi-acp/
@@ -86,6 +88,7 @@ MyGo 原生窗口 (Go + ui)
   → session/set_config_option / set_mode
   → 点击存档行 → 按记录里的 agent + sessionId 执行 session/load 重放历史；cwd 不同则新建进程
   → 右侧 Git 面板 → 异步探测 workspace 仓库 → status/log 展示与 stage/commit/fetch/pull/push
+  → 右侧 Files 面板 → 懒加载 workspace 文件树 + 只读 Git status → 新建/重命名/删除/拖动移动
   → 右侧 Tasks 面板 → 串行任务：新 executor 会话 → 回合结束取最后一段 → 隔离 checker 进程携带前几轮上下文判定
       → incomplete 回复继续；complete 写 tasks/<id>-<slug>.md → git add -A + commit（不 push）→ 下一个
       → 失败 / 8 轮未过 → 恢复任务快照丢弃成果 → 写总结并标记 complete/failure，不 commit → 继续下一个 pending
@@ -164,6 +167,7 @@ pi 自己的工具在工作区内读写执行；客户端只负责展示和审�
 - 历史：启动直接从 `sessions.json` 展示；点击存档行按记录的 agent + sessionId 执行 `session/load` 重放历史。已打开会话不重复显示，当前会话已有消息或流式时在新标签页打开。`⋯` 可重命名（showName）或软删除（show=false），删除项通过 “Show deleted” 恢复。
 - MCP：尚未提供配置 UI；`session/new` / `session/load` 仍按 ACP 要求发送空 `mcpServers` 数组。输入 `/` 时 composer 上方出现命令面板，解析 `available_commands_update`。
 - Git 面板：右侧 300 DIP、可折叠，跟随当前会话 workspace；`internal/git` 异步执行 status/log 与 stage/commit/fetch/pull/push，无 git 或非仓库时只显示安装/`git init` 提示（见 [git.md](git.md)）。
+- Files 面板与 Git / Tasks 共用右侧列：懒加载 workspace 文件树，用 `internal/git.LoadStatus` 读取只读状态，支持新建/重命名/删除、右键揭示和拖动移动；只操作当前 workspace，不经过 shell（见 [files.md](files.md)）。
 - Tasks 面板与 Git 共用右侧列：同一时间一个串行 runner；每个任务新建 executor Chat/session，回合结束后另起隔离 checker 进程，只按任务文本、本轮最后一段和此前轮次上下文判断。checker 通过后写 `tasks/<id>-<slug>.md`、执行一次 `git add -A` + commit（不 push），再开始下一个 pending；失败恢复任务开始前的 work tree 快照、写总结并标记 complete/failure（不 commit），然后继续下一个 pending；只有 Stop 会停队列并退回 pending；支持 pending 编辑/排序/删除和跨重启持久化（见 [tasks.md](tasks.md)）。
 - 诊断：暂无查看面板；agent stderr、协议错误与探测失败仍写入 `logs/<agent>.log`。
 - 计划/用量：composer 上方 plan；上下文环形进度、turn token 用量和会话标题在 composer/标题栏显示。
@@ -228,5 +232,6 @@ logs/                每个 agent 的 stderr / 协议日志（1 MiB 滚动，保
 - [会话能力与 UI](features.md)
 - [UI 组件库](components.md)
 - [右侧 Git 面板](git.md)
+- [右侧 Files 文件面板](files.md)
 - [右侧任务面板与串行 runner](tasks.md)
 - [测试与计划](plan.md)

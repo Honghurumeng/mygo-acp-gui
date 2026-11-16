@@ -90,8 +90,13 @@ type State struct {
 	Behind     int
 	HasCommits bool
 	Files      []File
-	Commits    []LogCommit
-	Stat       DiffStat
+	// Ignored lists workspace paths Git ignores, slash-separated and relative
+	// to Root. A directory is listed once, without a trailing slash, so the
+	// whole subtree counts as ignored. Only LoadStatus fills it; the Git panel
+	// does not show ignored files.
+	Ignored []string
+	Commits []LogCommit
+	Stat    DiffStat
 }
 
 // Staged returns the files with staged changes, in status order.
@@ -166,6 +171,40 @@ func Load(ctx context.Context, workspace string) (State, error) {
 	return state, nil
 }
 
+// LoadStatus reads only the repository root, branch and changed paths. The
+// Files panel needs statuses for the tree, and the commit graph's extra reads
+// would make opening it needlessly slow. A missing repository is
+// ErrNotRepository.
+func LoadStatus(ctx context.Context, workspace string) (State, error) {
+	if _, err := exec.LookPath("git"); err != nil {
+		return State{}, ErrGitNotFound
+	}
+	workspace = strings.TrimSpace(workspace)
+	if workspace == "" || !filepath.IsAbs(workspace) {
+		return State{}, ErrNotRepository
+	}
+	root, err := RepoRoot(ctx, workspace)
+	if err != nil {
+		return State{}, err
+	}
+	status, err := readStatus(ctx, root)
+	if err != nil {
+		return State{}, err
+	}
+	// The ignored list only decorates the tree, so a failure here must not
+	// cost the statuses: the panel just shows every path as tracked.
+	ignored, _ := readIgnored(ctx, root)
+	return State{
+		Root:       root,
+		Branch:     status.branch,
+		Ahead:      status.ahead,
+		Behind:     status.behind,
+		HasCommits: status.hasCommits,
+		Files:      status.files,
+		Ignored:    ignored,
+	}, nil
+}
+
 // RepoRoot returns the top-level work tree that contains dir.
 func RepoRoot(ctx context.Context, dir string) (string, error) {
 	out, err := run(ctx, dir, nil, "rev-parse", "--show-toplevel")
@@ -201,6 +240,28 @@ func readStatus(ctx context.Context, root string) (statusResult, error) {
 		return statusResult{}, err
 	}
 	return parseStatus(out), nil
+}
+
+// readIgnored lists the paths Git ignores, using the same rules as status:
+// .gitignore files, .git/info/exclude and the global excludes file.
+// --directory reports a fully ignored folder once instead of every file in
+// it, which keeps node_modules-sized trees to one line.
+func readIgnored(ctx context.Context, root string) ([]string, error) {
+	out, err := run(ctx, root, []string{"GIT_OPTIONAL_LOCKS=0"},
+		"ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory")
+	if err != nil {
+		return nil, err
+	}
+	paths := make([]string, 0, bytes.Count(out, []byte{0}))
+	for _, record := range bytes.Split(out, []byte{0}) {
+		if len(record) == 0 {
+			continue
+		}
+		// A folder arrives as "build/"; dropping the slash lets the tree mark
+		// the folder and, through it, every path below.
+		paths = append(paths, strings.TrimSuffix(filepath.ToSlash(string(record)), "/"))
+	}
+	return paths, nil
 }
 
 func parseStatus(out []byte) statusResult {

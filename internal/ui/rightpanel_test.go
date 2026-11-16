@@ -22,8 +22,8 @@ func TestRightRailSwitchesRightColumn(t *testing.T) {
 	if !app.GitPanelOpen || app.RightTab != rightTabGit {
 		t.Fatalf("right column did not start on Git: open=%v tab=%q", app.GitPanelOpen, app.RightTab)
 	}
-	if !tt.HasText("Hide Git panel") || !tt.HasText("Show Tasks panel") {
-		t.Fatalf("rail does not show both tabs; texts: %q", tt.Texts())
+	if !tt.HasText("Hide Git panel") || !tt.HasText("Show Tasks panel") || !tt.HasText("Show Files panel") {
+		t.Fatalf("rail does not show every tab; texts: %q", tt.Texts())
 	}
 	git, ok := tt.Find("Hide Git panel")
 	if !ok {
@@ -33,11 +33,15 @@ func TestRightRailSwitchesRightColumn(t *testing.T) {
 	if !ok {
 		t.Fatalf("Tasks rail button missing; texts: %q", tt.Texts())
 	}
-	if git.X != tasks.X {
-		t.Errorf("rail buttons not in one column: git X=%v tasks X=%v", git.X, tasks.X)
+	files, ok := tt.Find("Show Files panel")
+	if !ok {
+		t.Fatalf("Files rail button missing; texts: %q", tt.Texts())
 	}
-	if tasks.Y <= git.Y {
-		t.Errorf("rail buttons not stacked: git Y=%v tasks Y=%v", git.Y, tasks.Y)
+	if git.X != tasks.X || git.X != files.X {
+		t.Errorf("rail buttons not in one column: git X=%v tasks X=%v files X=%v", git.X, tasks.X, files.X)
+	}
+	if tasks.Y <= git.Y || files.Y <= tasks.Y {
+		t.Errorf("rail buttons not stacked: git Y=%v tasks Y=%v files Y=%v", git.Y, tasks.Y, files.Y)
 	}
 	// The rail is the narrow column at the window's right edge, not the
 	// conversation header the text buttons used to sit in.
@@ -53,12 +57,12 @@ func TestRightRailSwitchesRightColumn(t *testing.T) {
 		t.Fatal("rail button did not close the right column")
 	}
 	for _, text := range tt.Texts() {
-		if text == "Git" || text == "Tasks" {
+		if text == "Git" || text == "Tasks" || text == "Files" {
 			t.Fatalf("closed column still draws %q; texts: %q", text, tt.Texts())
 		}
 	}
-	if !tt.HasText("Show Git panel") {
-		t.Fatalf("rail lost the Git button while closed; texts: %q", tt.Texts())
+	if !tt.HasText("Show Git panel") || !tt.HasText("Show Files panel") {
+		t.Fatalf("rail lost a button while closed; texts: %q", tt.Texts())
 	}
 
 	if err := tt.Click("Show Tasks panel"); err != nil {

@@ -1392,6 +1392,7 @@ func (a *App) applyPromptResult(chat *Chat, turn *turnState, res acp.PromptResul
 	// example after an agent-side cancel). Do not leave a dead dialog.
 	a.cancelPermissionsFor(chat)
 	a.refreshGitAfterTurn(chat)
+	a.refreshFilesAfterTurn(chat)
 	if res.StopReason != "" {
 		chat.LastStop = res.StopReason
 	}

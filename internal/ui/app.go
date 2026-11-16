@@ -52,6 +52,9 @@ type Options struct {
 	// FileIndex lists workspace-relative files for @ mentions. Nil uses the
 	// built-in workspace walker; tests inject a small deterministic list.
 	FileIndex func(string) ([]string, error)
+	// RevealItem shows a file or folder in the system file manager. Nil uses
+	// mygo.Shell.ShowItemInFolder; tests replace it to capture the path.
+	RevealItem func(string)
 }
 
 // MessageRole is how a chat row is drawn.
@@ -190,10 +193,11 @@ type App struct {
 	WorkspaceMenuOpen     string
 	SidebarOpen           bool
 	GitPanelOpen          bool
-	// RightTab selects the right column: "git" or "tasks". The panel width
-	// and open/closed state are shared, so the two tabs never stack.
+	// RightTab selects the right column: "git", "tasks" or "files". The
+	// panel width and open/closed state are shared, so tabs never stack.
 	RightTab string
 	Git      gitPanelState
+	Files    filePanelState
 
 	// Tasks is the ordered task index. It is loaded before the first frame
 	// and persisted in <data>/tasks.json; summaries go to the task
@@ -330,6 +334,7 @@ type App struct {
 	probeModels        func(context.Context, agent.LaunchSpec, session.ModelProbe) (session.Info, error)
 	readClipboardImage func() []byte
 	fileIndexer        func(string) ([]string, error)
+	revealItem         func(string)
 	// notify shows a desktop notification. Nil uses mygo (see notify.go);
 	// tests replace it to capture what the app would show.
 	notify func(desktopNotification)
@@ -389,6 +394,7 @@ func New(opts Options) *App {
 		GitPanelOpen:       true,
 		RightTab:           rightTabGit,
 		Git:                gitPanelState{ChangesHeight: defaultGitChangesHeight},
+		Files:              newFilePanelState(""),
 		MD:                 markdown.Options{},
 		sessions:           make(map[*session.Session]struct{}),
 		logs:               make(map[string]*logs.Log),
@@ -440,6 +446,10 @@ func New(opts Options) *App {
 	a.fileIndexer = opts.FileIndex
 	if a.fileIndexer == nil {
 		a.fileIndexer = scanWorkspaceFiles
+	}
+	a.revealItem = opts.RevealItem
+	if a.revealItem == nil {
+		a.revealItem = func(path string) { mygo.Shell.ShowItemInFolder(path) }
 	}
 	a.loadSettings(opts.DataDir, strings.TrimSpace(opts.Workspace) == "")
 	a.loadSessionArchive(opts.DataDir)
@@ -556,6 +566,7 @@ func (a *App) Attach(win *mygo.Window) {
 	win.OnFocus(func() {
 		a.clearActiveUnread()
 		a.refreshGitOnFocus()
+		a.refreshFilesOnFocus()
 	})
 	// Repaint the badge for this run: a count cached before the first
 	// window would otherwise look unchanged and never reach the platform.
@@ -707,6 +718,8 @@ func (a *App) View(c *mui.Context) {
 			switch a.RightTab {
 			case rightTabTasks:
 				a.taskSummaryPopover(c, a.taskPanel(c))
+			case rightTabFiles:
+				a.filePanel(c)
 			default:
 				// The diff floats over the conversation with its right edge on
 				// the panel's left edge, so the panel stays visible and usable.
@@ -725,6 +738,9 @@ func (a *App) View(c *mui.Context) {
 	a.renameDialog(c)
 	a.taskEditorDialog(c)
 	a.taskDeleteDialog(c)
+	a.fileCreateDialog(c)
+	a.fileRenameDialog(c)
+	a.fileDeleteDialog(c)
 	a.imagePreviewDialog(c)
 }
 

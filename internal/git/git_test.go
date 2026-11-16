@@ -347,3 +347,67 @@ func TestCommitAllStagesAndCommitsOnlyWhenDirty(t *testing.T) {
 		t.Fatalf("commits = %+v", state.Commits)
 	}
 }
+
+func TestLoadStatusSkipsCommitsAndStats(t *testing.T) {
+	if !Available() {
+		t.Skip("git not installed")
+	}
+	dir := initRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "one.txt"), []byte("one\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "two.txt"), []byte("two\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state, err := LoadStatus(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !samePath(state.Root, dir) {
+		t.Errorf("root = %q, want %q", state.Root, dir)
+	}
+	if len(state.Commits) != 0 || state.Stat != (DiffStat{}) {
+		t.Errorf("status read loaded the graph or stat: %+v", state)
+	}
+	if len(state.Files) != 2 {
+		t.Fatalf("files = %+v", state.Files)
+	}
+}
+
+func TestLoadStatusListsIgnoredPaths(t *testing.T) {
+	if !Available() {
+		t.Skip("git not installed")
+	}
+	dir := initRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("build/\n*.log\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"build/out.bin", "debug.log", "keep.txt"} {
+		path := filepath.Join(dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("x\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	state, err := LoadStatus(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, path := range state.Ignored {
+		got[path] = true
+	}
+	if !got["build"] || !got["debug.log"] {
+		t.Errorf("ignored = %v, want build and debug.log", state.Ignored)
+	}
+	if got["keep.txt"] || got[".gitignore"] {
+		t.Errorf("ignored = %v, want neither the kept file nor .gitignore", state.Ignored)
+	}
+	for _, path := range state.Ignored {
+		if strings.HasSuffix(path, "/") {
+			t.Errorf("ignored path %q keeps a trailing slash", path)
+		}
+	}
+}

@@ -23,14 +23,27 @@
 | `gitCompareIcon` | Lucide `git-compare` | Git diff：两边相同 |
 | `gitBranchIcon` | Lucide `git-branch` | 右侧图标栏：Git |
 | `listChecksIcon` | Lucide `list-checks` | 右侧图标栏：Tasks |
+| `folderTreeIcon` | Lucide `folder-tree` | 右侧图标栏：Files；空 workspace |
+| `folderIcon` / `folderOpenIcon` | Lucide `folder`、`folder-open` | Files：折叠/展开文件夹 |
+| `fileIcon` | Lucide `file` | Files：未知类型的文件 |
+| `textIcon` | Lucide `text` | Files：文档（md、txt、rst…） |
+| `bracesIcon` | Lucide `braces` | Files：JSON 等结构化数据 |
+| `imageIcon` | Lucide `image` | Files：图片（png、jpg、svg…） |
+| `terminalIcon` | Lucide `terminal` | Files：shell 脚本（sh、bash、ps1…） |
+| `filePlusIcon` / `folderPlusIcon` | Lucide `file-plus`、`folder-plus` | Files：New file / New folder |
+| `refreshIcon` | Lucide `refresh-cw` | Files：Refresh files |
 | `circleXIcon` | Lucide `circle-x` | danger alert |
-| `codeIcon` | Lucide `code` | code block 标题栏 |
+| `codeIcon` | Lucide `code` | code block 标题栏；Files：代码文件 |
 | `copyIcon` / `checkIcon` | Lucide `copy`、`check` | code block 复制/已复制 |
-| `settingsIcon` | Lucide `settings` | 侧栏左下角设置按钮 |
+| `settingsIcon` | Lucide `settings` | 侧栏左下角设置按钮；Files：配置/构建文件 |
 
 - SVG 用 `stroke="currentColor"`，由 `mui.Icon(...).TextColor(...)` 跟随主题，深浅色不用分支。
 - 新增图标时同时改 `icons/LICENSE`（Lucide ISC；部分图标来自 Feather，MIT）。
 - `emptyStateCopy` 直接返回 `*mui.SVG`，不再用字符串图标名，拼错名会编译失败而不是运行时 panic。
+- Files 的类型图标由 `internal/ui/fileicons.go` 的 `fileIconFor(name)` 按文件名映射（只看 basename，不读文件、
+  不 stat），未知扩展名回退 `fileIcon`；配置/构建文件复用 `settingsIcon`，代码文件复用 `codeIcon`。
+- 文件行图标一律用整块字形（`{}`、`<>`、画框），不用「页面轮廓 + 内部小标记」：13 DIP 下页框会挤掉内部标记，
+  变成一团灰点。
 
 ## widgets.go
 
@@ -109,6 +122,9 @@
 - 不做组件音效：`mygo/audio` 只为几处点击声引入并不值得，交互反馈靠 hover/pressed 和图标变化。
 - 可交互组件通过 `.Label()` 暴露标签，`tt.Click("Allow once")` 这类按标签点击仍然有效。
 - 事件返回值与 ACP 语义解耦：先拿到点击/变更，再调用 `finishPermission` 等现有函数。
+- 文件面板的行右键用 MyGo `ContextMenu`（原生菜单），不另画 popover；行的 `.Drag(fileDragValue)` 和
+  文件夹/文件行/树根的 `ui.Drop` 负责移动，拖动与右键互不触发普通点击。`ContextMenu` 的 item label
+  直接作为测试与无障碍名称（`Reveal in folder`、`Rename`、`Delete`）。
 - `ui.DialogBase` 在点遮罩或 Esc 时会把 `*open` 置 false 并标记 `Dismissed()`；权限弹窗传入只存在于当前帧的
   `open`，所以这些关闭动作被吞掉。只有 `finishPermission`（选项或 `Cancel`）会结束请求，
   不要复用 `a.PermissionOpen` 指针。

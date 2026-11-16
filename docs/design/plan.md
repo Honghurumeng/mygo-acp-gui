@@ -8,6 +8,7 @@
 - `internal/agent`：内置表、launch spec 解析、路径解析、探测超时与进程组清理
 - `internal/settings`：缺失/损坏/未来版本、相对路径、原子写入
 - `internal/logs`：追加、1 MiB 滚动与备份、超大 chunk、并发写入
+- `internal/files`：排序、跳过 `.git`、新建/重命名/移动/删除、重名、非法名字、越界路径、符号链接
 - 探测 fixture：正常 agent、慢 agent、只打印 stderr 的 agent、立即退出的 agent、stdout 混入日志的 agent
 
 复用 `scripts/fake-agent.mjs` 作为假 agent，跑 UI/客户端集成测试；fixture 放在 `testdata/`。
@@ -27,7 +28,7 @@
 ```bash
 go test ./... -race
 go test ./internal/session -run 'TestFakeAgent|TestCloseKillsProcessGroup' -v
-go test ./internal/ui -run 'TestChatWithFakeAgent|TestMultipleChats|TestBackgroundChat|TestPermissionFrom|TestCloseTab|TestSavedSessionOpensNewTab|TestGitPanel' -v
+go test ./internal/ui -run 'TestChatWithFakeAgent|TestMultipleChats|TestBackgroundChat|TestPermissionFrom|TestCloseTab|TestSavedSessionOpensNewTab|TestGitPanel|TestFilePanel' -v
 ```
 
 pi-acp bundle 冒烟（只 `initialize`，不 spawn pi、不碰凭据）：

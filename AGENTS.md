@@ -19,6 +19,7 @@
 - `docs/design/features.md`：多会话、发现探测、配置/模式、历史、图片、MCP、命令面板、消息跳转、计划/用量。
 - `docs/design/multi-session.md`：pi / Command Code 单进程多会话能力调查与结论。
 - `docs/design/git.md`：右侧 Git 面板、仓库探测、状态/图表、提交与 fetch/pull/push、异步与安全。
+- `docs/design/files.md`：右侧 Files 文件树、懒加载、Git 状态、右键操作、拖动移动与异步/安全。
 - `docs/design/tasks.md`：右侧 Tasks 面板、任务持久化、串行执行/检查双 agent、成功提交与失败回滚。
 - `docs/design/components.md`：本地 UI 组件层（widgets.go 样式、components.go 有状态组件、图标子集）、交互约定。
 - `docs/design/themes.md`：外观（system/light/dark）、主题目录（default/nord/solarized/catppuccin/claude/green/green-soft/vscode/everforest/one-dark/tokyo-night）、持久化、原生外观同步。
