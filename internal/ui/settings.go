@@ -18,6 +18,7 @@ func (a *App) openSettings() {
 		a.SettingsSection = settingsSectionNotifications
 	}
 	a.NotificationTestNotice = ""
+	a.loadCodexProviderDraft()
 	a.SettingsOpen = true
 }
 
@@ -38,6 +39,7 @@ func (a *App) settingsDialog(c *mui.Context) {
 						a.settingsCategory(c, settingsSectionAppearance, "Appearance")
 						a.settingsCategory(c, settingsSectionFonts, "Fonts")
 						a.settingsCategory(c, settingsSectionNotifications, "Notifications")
+						a.settingsCategory(c, settingsSectionCodexProvider, "Codex provider")
 					})
 				mui.Column(c).Grow(1).FillHeight().Children(func() {
 					// The appearance list keeps growing with the theme catalog,
@@ -50,6 +52,8 @@ func (a *App) settingsDialog(c *mui.Context) {
 							a.fontSettings(c)
 						case settingsSectionNotifications:
 							a.notificationSettings(c)
+						case settingsSectionCodexProvider:
+							a.codexProviderSettings(c)
 						}
 					})
 				})

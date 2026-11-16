@@ -23,6 +23,7 @@ func (a *App) persistSettings() {
 		ViewerWidth:   normalizeViewerWidth(a.ViewerWidth),
 		Notifications: a.NotificationsEnabled,
 		DockBadge:     a.DockBadgeEnabled,
+		CodexProvider: a.CodexProvider.Normalize(),
 	}
 	if len(a.lastSelections) > 0 {
 		file.LastSelections = make(map[string]settings.Selection, len(a.lastSelections))

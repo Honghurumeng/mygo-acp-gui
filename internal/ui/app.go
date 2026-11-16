@@ -20,6 +20,7 @@ import (
 	"github.com/reed/acp-gui/internal/acp"
 	"github.com/reed/acp-gui/internal/agent"
 	"github.com/reed/acp-gui/internal/archive"
+	"github.com/reed/acp-gui/internal/codexprovider"
 	"github.com/reed/acp-gui/internal/logs"
 	"github.com/reed/acp-gui/internal/modelconfig"
 	"github.com/reed/acp-gui/internal/session"
@@ -150,8 +151,11 @@ type turnState struct {
 
 // App is the root UI state.
 type App struct {
-	Version       string
-	Resources     string
+	Version   string
+	Resources string
+	// DataDir is the persistent app directory, empty for in-memory runs. It
+	// is also where the generated Codex model catalog is written.
+	DataDir       string
 	Agents        []agent.LaunchSpec
 	AgentIndex    int
 	AgentStatuses []AgentStatus
@@ -249,6 +253,15 @@ type App struct {
 	// category in its left column.
 	SettingsOpen    bool
 	SettingsSection string
+	// CodexProvider is the saved custom provider for Codex. CodexProviderDraft
+	// is the panel's editable copy; CodexProviderModelsText is its one-model-
+	// per-line editor and CodexProviderEfforts holds the checked reasoning
+	// levels. Saving validates and applies the draft to new Codex processes.
+	CodexProvider           codexprovider.Config
+	CodexProviderDraft      codexprovider.Config
+	CodexProviderModelsText string
+	CodexProviderEfforts    map[string]bool
+	CodexProviderNotice     string
 	// Appearance is the light/dark choice (system, light or dark). Theme
 	// names the colors (default, nord, solarized, catppuccin, claude, green,
 	// green-soft, vscode, everforest, one-dark or tokyo-night). Both are
@@ -394,6 +407,7 @@ func New(opts Options) *App {
 		lifeCtx:            lifeCtx,
 		lifeCancel:         lifeCancel,
 		Resources:          opts.Resources,
+		DataDir:            strings.TrimSpace(opts.DataDir),
 		Workspace:          workspace,
 		Active:             -1,
 		SidebarOpen:        true,
@@ -507,6 +521,10 @@ func (a *App) loadSettings(dataDir string, workspaceDefault bool) {
 	}
 	a.settingsPaths = file.Paths
 	a.preferredAgentID = file.LastAgent
+	a.CodexProvider = file.CodexProvider
+	if err := a.refreshCodexCatalog(); err != nil {
+		a.SettingsWarning = strings.TrimSpace(strings.Join([]string{a.SettingsWarning, err.Error()}, "\n"))
+	}
 	if len(file.LastSelections) > 0 {
 		a.lastSelections = file.LastSelections
 	}

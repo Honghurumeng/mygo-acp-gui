@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/reed/acp-gui/internal/codexprovider"
 )
 
 // CurrentVersion is the schema version this build writes.
@@ -118,6 +120,10 @@ type File struct {
 	// last used with it, so a new draft opens with the same model, thinking
 	// level and mode instead of the agent's defaults.
 	LastSelections map[string]Selection `json:"lastSelections,omitempty"`
+	// CodexProvider is the optional custom OpenAI-compatible provider the app
+	// gives to Codex. It is applied to child processes only; ~/.codex is not
+	// read or written.
+	CodexProvider codexprovider.Config `json:"codexProvider,omitzero"`
 }
 
 // Store reads and writes one settings file. A nil Store or an empty path is
@@ -182,6 +188,7 @@ func (s *Store) Save(file File) error {
 	}
 	file.Fonts = file.Fonts.withDefaults()
 	file.LastSelections = sanitizeSelections(file.LastSelections)
+	file.CodexProvider = file.CodexProvider.Normalize()
 	data, err := json.MarshalIndent(file, "", "  ")
 	if err != nil {
 		return fmt.Errorf("settings: encode: %w", err)
@@ -248,6 +255,8 @@ type rawFile struct {
 	ViewerWidth float32 `json:"viewerWidth"`
 	// Raw keeps one malformed selection from discarding the other fields.
 	LastSelections json.RawMessage `json:"lastSelections"`
+	// CodexProvider is a pointer so a missing object keeps the zero value.
+	CodexProvider *codexprovider.Config `json:"codexProvider"`
 }
 
 func decode(data []byte) (File, error) {
@@ -286,6 +295,14 @@ func decode(data []byte) (File, error) {
 		file.ViewerWidth = raw.ViewerWidth
 	}
 	file.LastSelections = decodeSelections(raw.LastSelections, &problems)
+	if raw.CodexProvider != nil {
+		provider := raw.CodexProvider.Normalize()
+		if err := provider.Validate(); err != nil {
+			problems = append(problems, fmt.Errorf("settings: ignoring codexProvider: %w", err))
+			provider.Enabled = false
+		}
+		file.CodexProvider = provider
+	}
 	return file, errors.Join(problems...)
 }
 

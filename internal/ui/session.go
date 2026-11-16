@@ -48,7 +48,7 @@ func (a *App) cancelDiscovery() {
 
 func (a *App) discover(ctx context.Context) {
 	env := agent.ResolveEnvironment(ctx, a.resolveOpts)
-	results := agent.BuiltinLaunchResults(a.Resources, env)
+	results := agent.BuiltinLaunchResults(a.Resources, env, a.codexProvider())
 	statuses := make([]AgentStatus, len(results))
 
 	var wg sync.WaitGroup

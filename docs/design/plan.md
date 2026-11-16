@@ -99,6 +99,7 @@ go test ./internal/ui -run 'TestSettings|TestShutdownPersists|TestCorruptSetting
 9. 退出再启动：上次 agent / 工作区恢复。
 10. pi 未登录：只显示 `authMethods` / 登录命令，应用不尝试登录、不打开内嵌终端。
 10b. codex：已装 Codex CLI 时应出现在列表；`codex login` 后能 Connect、流式回复、取消；未登录时只显示 `authMethods` + `codex login`，不代登录。
+10c. codex 自定义供应商：设置里填 Base URL、key 和模型，勾选推理档位，保存后新会话的模型面板出现这些模型且 Thinking 列出现勾选的档位；切换模型/档位后 `session/prompt` 使用新值；标题生成使用设置里的标题模型（空则跟随当前模型）；关闭供应商后 provider 路由回到 Codex 自己的配置，但模型/推理档位/标题覆盖仍生效；清空模型列表后模型目录才回到 Codex 自己的目录；非法 URL/模型 id 或一个档位都没勾选时不保存并显示错误。
 11. 多会话：在侧栏开两个会话分别发 `/slow` 和普通消息，切换会话时后台继续流式；后台会话请求权限时弹窗标明会话，回答不影响另一个会话。
 12. 已保存会话：重启后在对应 workspace 下直接从 `sessions.json` 看到历史会话，不等 agent；点击按存档的 agent + sessionId 用 `session/load` 重放历史。重命名后重启仍显示 `showName`；删除后自动同步/重启都不再出现，可从 “Show deleted” 恢复。
 12b. 工作区软删除：工作区 `⋯` → `Remove workspace` 后分组隐藏但存档/会话不变，重启仍不出现；“Show removed (N)” → `Restore workspace` 恢复。
@@ -118,7 +119,8 @@ go tool mygo build -skip-dmg   # 本地快速打包
 node scripts/pi-acp-smoke.mjs        # vendored pi-acp 冒烟
 node scripts/codex-acp-smoke.mjs     # vendored codex-acp 冒烟
 scripts/vendor-pi-acp.sh             # 仅在升级 pi-acp 时运行
-scripts/vendor-codex-acp.sh          # 仅在升级 codex-acp 时运行
+scripts/vendor-codex-acp-local.sh    # 重打本地补丁 codex-acp（日常）
+scripts/vendor-codex-acp.sh          # 官方 codex-acp，不含补丁
 ```
 
 ## MVP
@@ -141,7 +143,7 @@ scripts/vendor-codex-acp.sh          # 仅在升级 codex-acp 时运行
 - [x] codex-acp 官方单文件 bundle vendored（`resources/agents/codex-acp/`）+ 系统 Codex CLI（`CODEX_PATH`）
 - [x] 系统 Node / pi / command-code / codex 定位（登录 shell + 绝对路径覆盖）+ 登录指引（只展示，不代登录）
 - [x] Command Code 启动与完整聊天流程：initialize、session/new、流式、权限、取消、退出清理
-- [x] Codex 启动与完整聊天流程：官方 codex-acp bundle + 系统 codex、initialize、session/new、流式、取消、退出清理
+- [x] Codex 启动与完整聊天流程：本地补丁 codex-acp bundle + 系统 codex、initialize、session/new、流式、取消、退出清理
 - [x] 退出清理（Setpgid + 进程组 SIGTERM/SIGKILL）
 - [x] settings.json 持久化（上次 agent/工作区、每个 agent 的模型/thinking/mode、侧栏工作区列表 + `removedWorkspaces` 软删除、paths 覆盖、外观/主题；原子写入 + 容错加载）
 - [ ] 诊断面板（stderr / 日志查看；目前只有 `logs/<agent>.log` 文件写入）

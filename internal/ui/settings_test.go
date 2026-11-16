@@ -1,10 +1,13 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	mui "github.com/egoist/mygo/ui"
 	"github.com/reed/acp-gui/internal/agent"
+	"github.com/reed/acp-gui/internal/codexprovider"
+	"github.com/reed/acp-gui/internal/settings"
 )
 
 func TestSidebarShowsAgentCLIVersions(t *testing.T) {
@@ -193,5 +196,138 @@ func TestSettingsTestNotification(t *testing.T) {
 	}
 	if app.NotificationTestNotice == "" {
 		t.Error("test notification result is not shown")
+	}
+}
+
+func TestSettingsCodexProviderPersists(t *testing.T) {
+	dataDir := t.TempDir()
+	app, tt := newSettingsApp(t, dataDir, t.TempDir())
+	tt.Frame()
+
+	if err := tt.Click("Settings"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if err := tt.Click("Codex provider"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	for _, want := range []string{"Codex provider", "Provider name", "Base URL", "API key", "Models", "Reasoning levels", "Minimal", "Medium", "High", "Title model", "Save provider"} {
+		if !tt.HasText(want) {
+			t.Errorf("Codex provider settings missing %q; texts: %q", want, tt.Texts())
+		}
+	}
+	if !app.CodexProviderEfforts["medium"] {
+		t.Fatal("medium should be checked by default")
+	}
+
+	app.lastSelections[agent.CodexID] = settings.Selection{
+		ConfigOptions: map[string]string{"model": "gpt-5.6-luna", "reasoning_effort": "high"},
+		Mode:          "agent",
+	}
+	app.CodexProviderDraft = codexprovider.Config{
+		Enabled: true,
+		Name:    "DeepSeek",
+		BaseURL: "https://api.example.com/v1",
+		APIKey:  "sk-test",
+	}
+	app.CodexProviderModelsText = "deepseek-chat\ndeepseek-reasoner\n"
+	app.CodexProviderDraft.TitleModel = "deepseek-chat"
+	tt.Frame()
+	tt.Scroll(650, 400, 0, 500)
+	tt.Frame()
+	if err := tt.Click("High"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if err := tt.Click("Medium"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if app.CodexProviderEfforts["medium"] || !app.CodexProviderEfforts["high"] {
+		t.Fatalf("reasoning checkboxes = %+v, want high only", app.CodexProviderEfforts)
+	}
+	tt.Scroll(650, 400, 0, 400)
+	tt.Frame()
+	if err := tt.Click("Save provider"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if !app.CodexProvider.Enabled || app.CodexProvider.BaseURL != "https://api.example.com/v1" {
+		t.Fatalf("provider = %+v", app.CodexProvider)
+	}
+	if len(app.CodexProvider.Models) != 2 || app.CodexProvider.Models[0] != "deepseek-chat" {
+		t.Fatalf("provider models = %+v", app.CodexProvider.Models)
+	}
+	if len(app.CodexProvider.ReasoningEfforts) != 1 || app.CodexProvider.ReasoningEfforts[0] != "high" {
+		t.Fatalf("provider reasoning levels = %+v, want high only", app.CodexProvider.ReasoningEfforts)
+	}
+	if app.CodexProviderNotice == "" || strings.HasPrefix(app.CodexProviderNotice, "⚠") {
+		t.Errorf("save notice = %q", app.CodexProviderNotice)
+	}
+	if selection := app.lastSelections[agent.CodexID]; len(selection.ConfigOptions) != 0 || selection.Mode != "agent" {
+		t.Errorf("provider change kept stale model choices: %+v", selection)
+	}
+
+	file := loadPersistedSettings(t, dataDir)
+	if !file.CodexProvider.Enabled || file.CodexProvider.APIKey != "sk-test" ||
+		len(file.CodexProvider.Models) != 2 || file.CodexProvider.TitleModel != "deepseek-chat" ||
+		len(file.CodexProvider.ReasoningEfforts) != 1 || file.CodexProvider.ReasoningEfforts[0] != "high" {
+		t.Fatalf("persisted provider = %+v", file.CodexProvider)
+	}
+
+	restarted := New(Options{
+		Version:   "test",
+		Workspace: app.Workspace,
+		DataDir:   dataDir,
+		Agents:    app.Agents,
+	})
+	t.Cleanup(func() {
+		restarted.Shutdown()
+		restarted.Flush()
+	})
+	if !restarted.CodexProvider.Enabled || restarted.CodexProvider.Name != "DeepSeek" ||
+		len(restarted.CodexProvider.ReasoningEfforts) != 1 || restarted.CodexProvider.ReasoningEfforts[0] != "high" {
+		t.Fatalf("restored provider = %+v", restarted.CodexProvider)
+	}
+}
+
+func TestSettingsCodexProviderRejectsBadBaseURL(t *testing.T) {
+	app, tt := newSettingsApp(t, t.TempDir(), t.TempDir())
+	tt.Frame()
+	app.openSettings()
+	app.SettingsSection = settingsSectionCodexProvider
+	tt.Frame()
+
+	app.CodexProviderDraft = codexprovider.Config{Enabled: true, BaseURL: "api.example.com"}
+	tt.Frame()
+	tt.Scroll(650, 400, 0, 900)
+	tt.Frame()
+	if err := tt.Click("Save provider"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if app.CodexProvider.Enabled {
+		t.Fatal("invalid provider was saved")
+	}
+	if !strings.HasPrefix(app.CodexProviderNotice, "⚠") {
+		t.Errorf("notice = %q, want an error", app.CodexProviderNotice)
+	}
+}
+
+func TestSettingsCodexProviderRequiresReasoningLevel(t *testing.T) {
+	app, _ := newSettingsApp(t, t.TempDir(), t.TempDir())
+	app.CodexProviderDraft = codexprovider.Config{
+		Enabled: true,
+		BaseURL: "https://api.example.com/v1",
+		Models:  []string{"deepseek-chat"},
+	}
+	app.CodexProviderEfforts = map[string]bool{}
+	app.saveCodexProvider()
+	if app.CodexProvider.Enabled {
+		t.Fatal("provider with no reasoning level was saved")
+	}
+	if !strings.Contains(app.CodexProviderNotice, "Select at least one reasoning level") {
+		t.Errorf("notice = %q, want a reasoning-level error", app.CodexProviderNotice)
 	}
 }

@@ -1,6 +1,10 @@
 package agent
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/reed/acp-gui/internal/codexprovider"
+)
 
 // BuiltinAgent is the hand-maintained agent table. Adding an agent is a code
 // change plus a release, never runtime discovery.
@@ -49,7 +53,7 @@ type LaunchResult struct {
 
 // BuiltinLaunchResults resolves every builtin agent independently. A
 // missing or invalid agent does not hide the others.
-func BuiltinLaunchResults(resourcesDir string, env Environment) []LaunchResult {
+func BuiltinLaunchResults(resourcesDir string, env Environment, codexProvider *codexprovider.Config) []LaunchResult {
 	results := make([]LaunchResult, 0, len(Builtins))
 	for _, builtin := range Builtins {
 		var spec LaunchSpec
@@ -60,7 +64,7 @@ func BuiltinLaunchResults(resourcesDir string, env Environment) []LaunchResult {
 		case CommandCodeID:
 			spec, err = CommandCodeLaunchSpec(env)
 		case CodexID:
-			spec, err = CodexLaunchSpec(resourcesDir, env)
+			spec, err = CodexLaunchSpec(resourcesDir, env, codexProvider)
 		default:
 			err = fmt.Errorf("unknown builtin agent: %s", builtin.ID)
 		}

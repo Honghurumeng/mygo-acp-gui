@@ -55,7 +55,7 @@ MyGo 原生窗口 (Go + ui)
       pi-acp.bundle.mjs    单文件 bundle，启动时直接 node 执行（见 pi.md）
       package.json/VERSION/LICENSE/licenses/THIRD_PARTY_NOTICES.md/SHA256SUMS
     agents/codex-acp/
-      codex-acp.bundle.mjs 官方 codex-acp 单文件 bundle，CODEX_PATH 指向系统 codex（见 codex.md）
+      codex-acp.bundle.mjs 本地补丁 codex-acp 单文件 bundle，CODEX_PATH 指向系统 codex（见 codex.md）
       VERSION/LICENSE/licenses/THIRD_PARTY_NOTICES.md/SHA256SUMS
 ```
 
@@ -66,7 +66,7 @@ MyGo 原生窗口 (Go + ui)
 - `go.mod`：module `github.com/reed/acp-gui`，Go 1.27.3（`GOTOOLCHAIN=auto` 会自动拉取）。
 - MyGo CLI 通过 `tool github.com/egoist/mygo/cmd/mygo` 固定在 `go.mod`，统一用 `go tool mygo`。
 - 无前端构建：原生 UI，入口 `main.go`，配置在 `mygo.json`。
-- App：name `ACP GUI`、slug `acp-gui`、identifier `dev.reed.acp-gui`、version `0.4.0`。
+- App：name `ACP GUI`、slug `acp-gui`、identifier `dev.reed.acp-gui`、version `0.5.0`。
 - `go tool mygo build` 产物在 `build/<os>-<arch>/`（已 gitignore）；`resources/` 整目录进 `.app`。
 - 当前已实现 `internal/acp`、`internal/agent`、`internal/session`、`internal/archive`、`internal/ui` 的 MVP 链路（见下方“当前链路”）。
 
@@ -81,6 +81,7 @@ MyGo 原生窗口 (Go + ui)
       pi: vendored bundle + Node 22+
       command-code: <绝对路径>/command-code acp
       codex: vendored bundle + CODEX_PATH=<绝对路径>/codex + Node 22+
+             可选自定义供应商：CODEX_CONFIG/MODEL_PROVIDER + CODEX_CONFIG.model_catalog_json（<data>/codex-models.json） + CODEX_ACP_MODELS/CODEX_ACP_REASONING_EFFORTS/CODEX_ACP_TITLE_MODEL（见 codex-provider.md）
   → internal/session.Probe（initialize，5 秒，逐 agent 并行）
   → 侧栏工作区/会话 + 工作区 ＋：每个会话各自 internal/session.Start
       session/new | session/load（DeferUpdates 缓冲历史）
@@ -161,7 +162,7 @@ pi 自己的工具在工作区内读写执行；客户端只负责展示和审�
 - 思考/工具：`ui.Collapsible`；工具卡片用 `ui.CollapsibleBase` 做成整卡可点击：默认折叠，标题（指令）单行省略，展开后显示完整指令与入参/输出，再次点击重新折叠。
 - 权限：`session/request_permission` 回调阻塞；弹窗用 MyGo `ui.DialogBase` + 本地 `arrive`/`shade` 做遮罩与入场，展示工具名、入参和 agent 给出的 `options`；`rawInput.description` 存在时作为主标题，工具 `title` 降为次行；只有弹窗按钮会作答（选项回 `optionId`，`Cancel` 回 `cancelled`），点遮罩或按 Esc 被吞掉，避免误拒绝。
 - 通用外观（按钮、弹窗、空状态、代码块、图标）都在 `internal/ui` 的 `widgets.go` 与 `components.go`，不依赖第三方 UI 库；见 [components.md](components.md)。
-- 配置：模型面板按 agent → provider → model → thinking 选择；模型/思考来自 `configOptions`（切换模型时由响应/`config_option_update` 整组替换），mode 来自真实 `modes`，不硬编码。pi-acp v1 把 thinking levels 同时放进 `modes` 的兼容块会被过滤。agent 只在会话开始前可选；未连接的草稿用发现阶段的配置探测缓存显示模型、thinking 和 mode，选择在 Connect 后补发。每个 agent 的 model/thinking/mode 存入 `settings.json` 的 `lastSelections`，新建草稿和切换 agent 时恢复，Connect 时用 agent 返回的列表校验。ACP 只报告当前模型的档位，所以配置探测会在同一个临时进程里把未缓存模型逐个切换并存入 `<data>/model-config.json`（`internal/modelconfig`）；下次启动用模型列表对照该文件，只扫新模型。草稿切到已缓存的 model 直接显示其档位，未缓存时才隐藏并等 Connect 后由 agent 给出。
+- 配置：模型面板按 agent → provider → model → thinking 选择；模型/思考来自 `configOptions`（切换模型时由响应/`config_option_update` 整组替换），mode 来自真实 `modes`，不硬编码。Codex 还可在设置里配置一个自定义 provider 和额外模型；provider 只写入本次启动的 Codex 子进程环境，模型列表由 `CODEX_ACP_MODELS` 追加，DeepSeek 目标（provider 名称、Base URL 或模型 id 含 deepseek）另生成 `<data>/codex-models.json` 并通过 `CODEX_CONFIG.model_catalog_json` 提供 DeepSeek 模型元数据（slug 使用设置里的 id），自定义模型的推理档位由设置里的复选框生成 `CODEX_ACP_REASONING_EFFORTS`，标题模型由 `CODEX_ACP_TITLE_MODEL` 覆盖（见 [codex-provider.md](codex-provider.md)）。pi-acp v1 把 thinking levels 同时放进 `modes` 的兼容块会被过滤。agent 只在会话开始前可选；未连接的草稿用发现阶段的配置探测缓存显示模型、thinking 和 mode，选择在 Connect 后补发。每个 agent 的 model/thinking/mode 存入 `settings.json` 的 `lastSelections`，新建草稿和切换 agent 时恢复，Connect 时用 agent 返回的列表校验。ACP 只报告当前模型的档位，所以配置探测会在同一个临时进程里把未缓存模型逐个切换并存入 `<data>/model-config.json`（`internal/modelconfig`）；下次启动用模型列表对照该文件，只扫新模型。草稿切到已缓存的 model 直接显示其档位，未缓存时才隐藏并等 Connect 后由 agent 给出。
 - 输入：`ui.TextAreaBase` 嵌在可拖动高度的 composer 卡片中；Enter 发送、Shift+Enter 换行；流式期间 Send 切换为 Stop；支持图片附件。
 - 多会话：左侧栏按 workspace 分组，先显示打开会话，再显示该目录的已保存会话；打开会话的状态用行背景表达：流式为移动的绿色斜线，其他会话结束/报错为绿底，当前会话结束为蓝底，权限请求为蓝/白闪烁。两类会话合并后默认只列前 5 条，`Show N more` / `Show less` 展开收起，展开状态不落盘（启动时默认折叠）。会话名前的内联图标标明 agent（pi 的方块 mark、Command Code 的 # 徽标、Codex 的终端 mark，`internal/ui/agenticons.go`，随主题变色）；已保存会话用存档里的 `agentId` 画同一个图标，标题栏也用同一图标标当前会话，模型 chip 左侧也用它标当前 agent。工作区头部 `⋯` 可移除该分组（软删除，只隐藏不删记录/会话），移除项通过 “Show removed (N)” 查看并从同一菜单恢复。工作区的 `＋` 新建独立进程；连接在首条消息或打开存档时自动发生。打开会话的 `⋯` 菜单还可 `Close process`：只关闭该会话的 agent 进程，标签页保留为草稿，会话回到存档列表；没有已连接或连接中的进程时该项置灰。
 - 权限：模态只显示当前会话的请求并标注 `Chat: …`；后台请求只排队，由侧栏 `!` 提醒，用户切到该会话时才显示，切走时隐藏但保留；回答按所属 `Chat` 路由；遮罩/Esc 不关闭。
@@ -182,7 +183,8 @@ pi 自己的工具在工作区内读写执行；客户端只负责展示和审�
 存储在 `mygo.App.Path(mygo.PathUserData)`：
 
 ```
-settings.json        lastAgent、lastWorkspace、workspaces、removedWorkspaces、lastSelections（每个 agent 的模型/thinking/mode）、appearance、theme、fonts、viewerWidth、notifications、paths 覆盖
+settings.json        lastAgent、lastWorkspace、workspaces、removedWorkspaces、lastSelections（每个 agent 的模型/thinking/mode）、appearance、theme、fonts、viewerWidth、notifications、paths 覆盖、codexProvider（可选自定义供应商）
+codex-models.json    provider 开启且目标是 DeepSeek 时生成的 Codex 模型 catalog（CODEX_CONFIG.model_catalog_json）
 sessions.json        本地会话存档：agentId、sessionId、cwd、title、showName、show、会话时间、用户消息发送时间与每轮运行时间、最近一次上下文用量
 tasks.json           任务索引：workspace、title/text、pending/ongoing/complete、result、顺序、session、轮次、note、summaryPath
 <workspace>/tasks/   每个完成任务一份 Markdown 总结（tasks/<id>-<slug>.md）；成功的随任务 commit，失败的只保留文件
@@ -191,10 +193,11 @@ logs/                每个 agent 的 stderr / 协议日志（1 MiB 滚动，保
 
 `settings.json` 由 `internal/settings` 读写：
 
-- 结构：`{version, lastAgent, lastWorkspace, workspaces, removedWorkspaces, lastSelections, appearance, theme, notifications, dockBadge, paths:{shell,node,pi,commandCode,codex}}`。`workspaces` 保留全部已知目录（含软删除项），`removedWorkspaces` 是软删除标记，二者都按侧栏顺序保存；`lastSelections` 按 agent ID 保存 `{configOptions:{id:value}, mode}`（模型、thinking、其他 select 和 session mode，见 [features.md](features.md)）；`appearance`/`theme` 缺省为 `system`/`default`（见 [themes.md](themes.md)）；`notifications` 和 `dockBadge` 缺省为 true，显式 false 会持久化。
-- 保存时机：切换会话、选择 agent/目录/model/thinking/mode、添加/移除/恢复工作区、切换设置面板里的外观/主题/系统通知/Dock 角标、Connect 校验成功、退出。写入是原子的（同目录临时文件 + rename，0600），父目录不存在时创建。
+- 结构：`{version, lastAgent, lastWorkspace, workspaces, removedWorkspaces, lastSelections, appearance, theme, notifications, dockBadge, paths:{shell,node,pi,commandCode,codex}, codexProvider:{enabled,name,baseURL,apiKey,models,reasoningEfforts,titleModel}}`。`workspaces` 保留全部已知目录（含软删除项），`removedWorkspaces` 是软删除标记，二者都按侧栏顺序保存；`lastSelections` 按 agent ID 保存 `{configOptions:{id:value}, mode}`（模型、thinking、其他 select 和 session mode，见 [features.md](features.md)）；`appearance`/`theme` 缺省为 `system`/`default`（见 [themes.md](themes.md)）；`notifications` 和 `dockBadge` 缺省为 true，显式 false 会持久化。
+- 保存时机：切换会话、选择 agent/目录/model/thinking/mode、添加/移除/恢复工作区、切换设置面板里的外观/主题/系统通知/Dock 角标、保存 Codex 自定义供应商（含推理档位复选框）、Connect 校验成功、退出。写入是原子的（同目录临时文件 + rename，0600），父目录不存在时创建。
 - 加载容错：文件缺失用默认值；JSON 损坏、相对路径、未来版本只产生警告（标题栏/侧栏显示），其余字段照常使用，绝不阻塞启动。
 - 路径优先级：`ACP_GUI_*` 环境变量 > `settings.json` 的 `paths` > 登录 shell 解析。显式覆盖无效时保留 shell 结果并警告，不会把可用的路径清空。
+- `codexProvider` 只对新建的 Codex 子进程生效，不写 `~/.codex/config.toml`；`apiKey` 存在 0600 的 settings.json 中，只通过 `ACP_GUI_CODEX_PROVIDER_API_KEY` 传给孩子进程。provider 开启且模型非空时，`settings.json` 之外的 `<data>/codex-models.json` 由 `internal/codexprovider` 原子生成，路径写入子进程的 `CODEX_CONFIG.model_catalog_json`；关闭 provider 或清空模型时删除该文件。`reasoningEfforts` 缺省为单一的 `medium`，保存时至少勾选一项。非法 Base URL/模型 id 在加载时警告并禁用该条，保存时拒绝。详见 [codex-provider.md](codex-provider.md)。
 - 保存最后一次状态（当前会话的 agent/工作区）、每个 agent 的模型/thinking/mode、侧栏工作区列表和每个工作区的折叠状态；不保存会话布局、图片草稿或消息。
 - 会话索引单独放在 `sessions.json`，由 `internal/archive` 读写：`{version, sessions:[{agentId,sessionId,cwd,title,showName,createdAt,updatedAt,userTurns:[{number,sentAt,durationMs}],usage:{used,size,cost:{amount,currency}},show}]}`。`(agentId, sessionId)` 唯一；`show=false` 是软删除，`showName` 是本地重命名；`userTurns` 按用户轮次保存本地发送时间和该轮运行时间（prompt 发送到结果返回），供 Jump 和会话流在 `session/load` 重放后显示。pi 的 fork 回放会带每条消息的发送时间；Command Code 和旧 bundle 没有时间元数据，退回本地 `userTurns`（ACP 本身不提供消息时间或耗时）。`usage` 是最近一次 `usage_update` 的上下文快照；agent 在 `session/load` 时通常不重放 usage，所以重启后先用它显示上下文环，新报告到达后覆盖。
 - 存档写入时机：session/new、load 成功，标题/轮次/上下文用量更新，重命名、删除/恢复。启动只读存档，且不会从存档补建 workspace；discovery 完成后，每个 ready agent 在后台自动调一次 `session/list` 合并（`cwd: null` 表示全部工作区并走完分页；有已连接进程时复用，否则临时 spawn；失败下次连接重试），之后该 agent 连接成功时再补一次。合并只保留 cwd 属于已添加 workspace 的会话，且绝不覆盖 `show/showName`。`session_info_update.title` 会立即写入存档；启动读存档时会把旧版本用首条 user 消息生成的图片临时路径标题清洗成正文或 `[Image]`（`internal/ui/title.go`），避免侧栏先显示路径再等同步。新增 workspace 时按该 cwd 过滤同步一次。文件为原子写入、0600；损坏 JSON 只在侧栏提示，不阻塞启动。

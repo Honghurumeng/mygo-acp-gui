@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/reed/acp-gui/internal/codexprovider"
 )
 
 func TestLoadMissingFileReturnsDefaults(t *testing.T) {
@@ -49,6 +52,15 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		ViewerWidth:         720,
 		Notifications:       true,
 		DockBadge:           true,
+		CodexProvider: codexprovider.Config{
+			Enabled:          true,
+			Name:             "DeepSeek",
+			BaseURL:          "https://api.example.com/v1",
+			APIKey:           "sk-test",
+			Models:           []string{"deepseek-chat", "deepseek-reasoner"},
+			ReasoningEfforts: []string{"low", "medium", "high"},
+			TitleModel:       "deepseek-chat",
+		},
 	}
 	if err := store.Save(want); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -102,6 +114,38 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if got.ViewerWidth != want.ViewerWidth {
 		t.Errorf("viewerWidth = %v, want %v", got.ViewerWidth, want.ViewerWidth)
+	}
+	if !reflect.DeepEqual(got.CodexProvider, want.CodexProvider) {
+		t.Errorf("codexProvider = %+v, want %+v", got.CodexProvider, want.CodexProvider)
+	}
+}
+
+func TestCodexProviderInvalidEntryIsDisabledWithWarning(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	document, err := json.Marshal(map[string]any{
+		"version": CurrentVersion,
+		"codexProvider": map[string]any{
+			"enabled": true,
+			"baseURL": "api.example.com",
+			"models":  []string{"deepseek-chat"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, document, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	file, err := Open(path).Load()
+	if err == nil || !strings.Contains(err.Error(), "codexProvider") {
+		t.Fatalf("Load error = %v, want a codexProvider warning", err)
+	}
+	if file.CodexProvider.Enabled {
+		t.Fatal("invalid provider stayed enabled")
+	}
+	if file.CodexProvider.BaseURL != "api.example.com" {
+		t.Errorf("provider fields were lost: %+v", file.CodexProvider)
 	}
 }
 

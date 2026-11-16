@@ -4,16 +4,23 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/reed/acp-gui/internal/codexprovider"
 )
 
 // CodexID is the stable id of the vendored codex-acp adapter.
 const CodexID = "codex"
 
-// CodexLaunchSpec builds the launch spec for the official codex-acp adapter.
+// CodexLaunchSpec builds the launch spec for the vendored codex-acp adapter.
 // The adapter runs on the resolved Node path, and CODEX_PATH points it at the
 // user's own Codex CLI. As with pi, the app never runs npx or installs the
 // upstream agent.
-func CodexLaunchSpec(resourcesDir string, env Environment) (LaunchSpec, error) {
+//
+// An enabled provider adds CODEX_CONFIG/MODEL_PROVIDER plus the adapter's
+// custom-model, title-model and model-catalog variables to the child
+// environment. A nil or disabled provider leaves the user's own Codex
+// configuration in charge.
+func CodexLaunchSpec(resourcesDir string, env Environment, provider *codexprovider.Config) (LaunchSpec, error) {
 	if resourcesDir == "" {
 		return LaunchSpec{}, fmt.Errorf("codex: empty resources directory")
 	}
@@ -47,6 +54,24 @@ func CodexLaunchSpec(resourcesDir string, env Environment) (LaunchSpec, error) {
 	// platform binaries. CODEX_PATH makes the adapter spawn the user's
 	// installed `codex app-server` instead of its missing npm dependency.
 	childEnv := setEnv(ensurePath(baseEnv, dirsOf(env.NodePath, env.CodexPath)...), "CODEX_PATH", env.CodexPath)
+	if provider != nil {
+		providerEnv, err := provider.Environment()
+		if err != nil {
+			return LaunchSpec{}, fmt.Errorf("codex: custom provider: %w", err)
+		}
+		for _, key := range []string{
+			codexprovider.ConfigEnv,
+			codexprovider.ModelProviderEnv,
+			codexprovider.APIKeyEnv,
+			codexprovider.ModelsEnv,
+			codexprovider.ReasoningEffortsEnv,
+			codexprovider.TitleModelEnv,
+		} {
+			if value := providerEnv[key]; value != "" {
+				childEnv = setEnv(childEnv, key, value)
+			}
+		}
+	}
 	spec := LaunchSpec{
 		ID:       CodexID,
 		Name:     "Codex",

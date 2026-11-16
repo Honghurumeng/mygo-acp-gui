@@ -1,11 +1,13 @@
 # Third-party notices
 
-This directory contains `codex-acp.bundle.mjs`, the official single-file
-distribution bundle of @agentclientprotocol/codex-acp@2.6.0 (Apache-2.0).
+This directory contains `codex-acp.bundle.mjs`, the single-file
+bundle of @agentclientprotocol/codex-acp@2.6.0 (Apache-2.0).
+It was built from a locally patched source tree; see
+`docs/design/codex.md` for the patch set.
 Do not edit the bundle by hand; rebuild it with:
 
 ```bash
-scripts/vendor-codex-acp.sh 2.6.0
+scripts/vendor-codex-acp-local.sh
 ```
 
 The app runs the bundle with Node.js 22+ and always sets `CODEX_PATH` to
@@ -15,8 +17,8 @@ adapter starts `codex app-server` from the resolved absolute path.
 
 | Package | Version | License | Source |
 | --- | --- | --- | --- |
-| @agentclientprotocol/codex-acp | 2.6.0 | Apache-2.0 | @agentclientprotocol/codex-acp@2.6.0 |
-| @agentclientprotocol/sdk | 2.4.0 | Apache-2.0 | https://www.npmjs.com/package/@agentclientprotocol/sdk/v/2.4.0 |
+| @agentclientprotocol/codex-acp | 2.6.0 | Apache-2.0 | local patched source (codex-acp-main) |
+| @agentclientprotocol/sdk | 2.6.0 | Apache-2.0 | https://www.npmjs.com/package/@agentclientprotocol/sdk/v/2.6.0 |
 | bundle-name | 4.1.1 | MIT | https://www.npmjs.com/package/bundle-name/v/4.1.1 |
 | cross-spawn | 7.0.6 | MIT | https://www.npmjs.com/package/cross-spawn/v/7.0.6 |
 | default-browser | 5.5.1 | MIT | https://www.npmjs.com/package/default-browser/v/5.5.1 |
@@ -40,6 +42,6 @@ adapter starts `codex app-server` from the resolved absolute path.
 | zod | 4.6.7 | MIT | https://www.npmjs.com/package/zod/v/4.6.7 |
 | @openai/codex (external, not bundled) | 0.166.0 | Apache-2.0 | https://github.com/openai/codex |
 
-The JavaScript dependencies above are embedded in the official bundle.
+The JavaScript dependencies above are embedded in the bundle.
 Their license texts are kept in `licenses/`; the adapter's own license is
 `LICENSE`.

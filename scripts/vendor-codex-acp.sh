@@ -2,6 +2,9 @@
 #
 # Vendor the official codex-acp adapter as a single-file bundle.
 #
+# For this repository's patched bundle, use scripts/vendor-codex-acp-local.sh:
+# it builds codex-acp-main with the local patches and then calls this script.
+#
 # Usage:
 #   scripts/vendor-codex-acp.sh [version]
 #   CODEX_ACP_SOURCE=/path/to/codex-acp.tgz scripts/vendor-codex-acp.sh [version]
@@ -96,7 +99,12 @@ else
   SOURCE_LABEL="$RESOLVED_NAME@$RESOLVED_VERSION"
 fi
 
-echo "==> checking official bundle"
+REBUILD_COMMAND="scripts/vendor-codex-acp.sh $RESOLVED_VERSION"
+if (( SOURCE_IS_LOCAL )); then
+  REBUILD_COMMAND="scripts/vendor-codex-acp-local.sh"
+fi
+
+echo "==> checking bundle"
 cp "$PKG_DIR/dist/index.js" "$TMP/$BUNDLE_NAME"
 node --check "$TMP/$BUNDLE_NAME"
 VERSION_OUTPUT="$(node "$TMP/$BUNDLE_NAME" --version)"
@@ -119,10 +127,10 @@ cp "$PKG_DIR/LICENSE" "$STAGE/LICENSE"
 # Copy the licenses of every JavaScript package embedded in the official
 # bundle, and generate a deterministic NOTICE. @openai/codex is deliberately
 # external, so it is listed separately instead of copied.
-node - "$TMP" "$STAGE" "$RESOLVED_NAME" "$RESOLVED_VERSION" "$RESOLVED_LICENSE" "$SOURCE_LABEL" <<'NODE'
+node - "$TMP" "$STAGE" "$RESOLVED_NAME" "$RESOLVED_VERSION" "$RESOLVED_LICENSE" "$SOURCE_LABEL" "$REBUILD_COMMAND" "$SOURCE_IS_LOCAL" <<'NODE'
 const fs = require("node:fs");
 const path = require("node:path");
-const [tmp, stage, adapterName, adapterVersion, adapterLicense, sourceLabel] = process.argv.slice(2);
+const [tmp, stage, adapterName, adapterVersion, adapterLicense, sourceLabel, rebuildCommand, localSource] = process.argv.slice(2);
 const modules = path.join(tmp, "node_modules");
 const licenseDir = path.join(stage, "licenses");
 
@@ -187,12 +195,16 @@ try {
 const lines = [];
 lines.push("# Third-party notices");
 lines.push("");
-lines.push("This directory contains `codex-acp.bundle.mjs`, the official single-file");
-lines.push(`distribution bundle of ${adapterName}@${adapterVersion} (${adapterLicense}).`);
+lines.push("This directory contains `codex-acp.bundle.mjs`, the single-file");
+lines.push(`bundle of ${adapterName}@${adapterVersion} (${adapterLicense}).`);
+if (localSource === "1") {
+  lines.push("It was built from a locally patched source tree; see");
+  lines.push("`docs/design/codex.md` for the patch set.");
+}
 lines.push("Do not edit the bundle by hand; rebuild it with:");
 lines.push("");
 lines.push("```bash");
-lines.push(`scripts/vendor-codex-acp.sh ${adapterVersion}`);
+lines.push(rebuildCommand);
 lines.push("```");
 lines.push("");
 lines.push("The app runs the bundle with Node.js 22+ and always sets `CODEX_PATH` to");
@@ -208,7 +220,7 @@ for (const row of rows) {
 }
 lines.push(`| @openai/codex (external, not bundled) | ${codexVersion} | Apache-2.0 | https://github.com/openai/codex |`);
 lines.push("");
-lines.push("The JavaScript dependencies above are embedded in the official bundle.");
+lines.push("The JavaScript dependencies above are embedded in the bundle.");
 lines.push("Their license texts are kept in `licenses/`; the adapter's own license is");
 lines.push("`LICENSE`.");
 lines.push("");

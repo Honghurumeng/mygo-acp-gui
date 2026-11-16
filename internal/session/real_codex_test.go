@@ -25,7 +25,7 @@ func TestRealCodex(t *testing.T) {
 	defer cancel()
 
 	env := agent.ResolveEnvironment(ctx, agent.ResolveOptions{})
-	spec, err := agent.CodexLaunchSpec(filepath.Join(repoRoot(t), "resources"), env)
+	spec, err := agent.CodexLaunchSpec(filepath.Join(repoRoot(t), "resources"), env, nil)
 	if err != nil {
 		t.Fatalf("codex launch spec: %v", err)
 	}

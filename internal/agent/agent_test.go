@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/reed/acp-gui/internal/codexprovider"
 )
 
 func TestValidateWorkspace(t *testing.T) {
@@ -121,7 +123,7 @@ func TestCodexLaunchSpec(t *testing.T) {
 		CodexVersion: "0.169.0",
 	}
 
-	spec, err := CodexLaunchSpec(root, env)
+	spec, err := CodexLaunchSpec(root, env, nil)
 	if err != nil {
 		t.Fatalf("CodexLaunchSpec: %v", err)
 	}
@@ -151,13 +153,94 @@ func TestCodexLaunchSpec(t *testing.T) {
 	}
 
 	env.NodeMajor = 20
-	if _, err := CodexLaunchSpec(root, env); err == nil {
+	if _, err := CodexLaunchSpec(root, env, nil); err == nil {
 		t.Error("old Node was accepted")
 	}
 	env.NodeMajor = 22
 	env.CodexPath = ""
-	if _, err := CodexLaunchSpec(root, env); err == nil {
+	if _, err := CodexLaunchSpec(root, env, nil); err == nil {
 		t.Error("missing Codex CLI was accepted")
+	}
+}
+
+func TestCodexLaunchSpecAppliesCustomProvider(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake executables use a shebang")
+	}
+	root := t.TempDir()
+	bundleDir := filepath.Join(root, "agents", "codex-acp")
+	if err := os.MkdirAll(bundleDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bundleDir, "codex-acp.bundle.mjs"), []byte("// bundle\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	env := Environment{
+		Env:          []string{"PATH=/usr/bin:/bin", "CODEX_CONFIG={\"user\":true}", "MODEL_PROVIDER=user-provider"},
+		NodePath:     fakeExecutable(t, bin, "node"),
+		CodexPath:    fakeExecutable(t, bin, "codex"),
+		NodeMajor:    22,
+		NodeVersion:  "v22.20.0",
+		CodexVersion: "0.169.0",
+	}
+	provider := &codexprovider.Config{
+		Enabled:          true,
+		Name:             "DeepSeek",
+		BaseURL:          "https://api.example.com/v1",
+		APIKey:           "sk-test",
+		Models:           []string{"deepseek-chat", "deepseek-reasoner"},
+		ReasoningEfforts: []string{"low", "medium", "high"},
+		TitleModel:       "deepseek-chat",
+		CatalogPath:      "/tmp/codex-models.json",
+	}
+
+	spec, err := CodexLaunchSpec(root, env, provider)
+	if err != nil {
+		t.Fatalf("CodexLaunchSpec: %v", err)
+	}
+	if got := envValue(spec.Env, codexprovider.ModelProviderEnv); got != codexprovider.ProviderID {
+		t.Errorf("%s = %q, want %q", codexprovider.ModelProviderEnv, got, codexprovider.ProviderID)
+	}
+	if got := envValue(spec.Env, codexprovider.APIKeyEnv); got != "sk-test" {
+		t.Errorf("%s = %q", codexprovider.APIKeyEnv, got)
+	}
+	if got := envValue(spec.Env, codexprovider.ModelsEnv); got != `["deepseek-chat","deepseek-reasoner"]` {
+		t.Errorf("%s = %q", codexprovider.ModelsEnv, got)
+	}
+	if got := envValue(spec.Env, codexprovider.ReasoningEffortsEnv); got != `["low","medium","high"]` {
+		t.Errorf("%s = %q", codexprovider.ReasoningEffortsEnv, got)
+	}
+	if got := envValue(spec.Env, codexprovider.TitleModelEnv); got != "deepseek-chat" {
+		t.Errorf("%s = %q", codexprovider.TitleModelEnv, got)
+	}
+	if got := envValue(spec.Env, codexprovider.ConfigEnv); !strings.Contains(got, `"model":"deepseek-chat"`) ||
+		!strings.Contains(got, `"base_url":"https://api.example.com/v1"`) ||
+		!strings.Contains(got, `"model_catalog_json":"/tmp/codex-models.json"`) {
+		t.Errorf("%s = %q", codexprovider.ConfigEnv, got)
+	}
+
+	provider.BaseURL = "not-a-url"
+	if _, err := CodexLaunchSpec(root, env, provider); err == nil {
+		t.Error("invalid provider was accepted")
+	}
+
+	overrides := &codexprovider.Config{Enabled: false, Models: []string{"deepseek-chat"}, ReasoningEfforts: []string{"high"}, TitleModel: "deepseek-chat"}
+	spec, err = CodexLaunchSpec(root, env, overrides)
+	if err != nil {
+		t.Fatalf("CodexLaunchSpec with overrides: %v", err)
+	}
+	if got := envValue(spec.Env, codexprovider.ModelProviderEnv); got != "user-provider" {
+		t.Errorf("%s = %q, want the user's own provider", codexprovider.ModelProviderEnv, got)
+	}
+	if got := envValue(spec.Env, codexprovider.ModelsEnv); got != `["deepseek-chat"]` {
+		t.Errorf("%s = %q", codexprovider.ModelsEnv, got)
+	}
+	if got := envValue(spec.Env, codexprovider.ReasoningEffortsEnv); got != `["high"]` {
+		t.Errorf("%s = %q", codexprovider.ReasoningEffortsEnv, got)
+	}
+	if got := envValue(spec.Env, codexprovider.TitleModelEnv); got != "deepseek-chat" {
+		t.Errorf("%s = %q", codexprovider.TitleModelEnv, got)
 	}
 }
 
@@ -236,7 +319,7 @@ func TestBuiltinLaunchResultsKeepsAvailableAgents(t *testing.T) {
 		CodexVersion:       "codex-cli 0.169.0",
 	}
 
-	results := BuiltinLaunchResults(root, env)
+	results := BuiltinLaunchResults(root, env, nil)
 	if len(results) != 3 {
 		t.Fatalf("results = %+v, want pi, command-code and codex", results)
 	}
@@ -254,7 +337,7 @@ func TestBuiltinLaunchResultsKeepsAvailableAgents(t *testing.T) {
 
 	// A broken pi must not hide working Command Code and Codex installs.
 	env.PiPath = ""
-	results = BuiltinLaunchResults(root, env)
+	results = BuiltinLaunchResults(root, env, nil)
 	if len(results) != 3 {
 		t.Fatalf("results = %+v, want all rows", results)
 	}

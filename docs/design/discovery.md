@@ -37,7 +37,7 @@ type BuiltinAgent struct {
 | `command-code` | `command-code` | `acp` | `--version` | 以官方安装文档为准；需要 Node 22+ |
 | `codex` | （vendored，不走 command） | — | `codex --version` / `node --version` | 安装 Node 22+ 和 Codex CLI，然后 `codex login`；见 codex.md |
 
-pi / codex 是特例：命令由解析后的 `node` + 各自的 vendored bundle 拼成，不使用 `Command` 字段；codex 还要把系统 `codex` 的绝对路径写进 `CODEX_PATH`。Node/pi 的定位与版本要求见 [pi.md](pi.md)，Codex 见 [codex.md](codex.md)。
+pi / codex 是特例：命令由解析后的 `node` + 各自的 vendored bundle 拼成，不使用 `Command` 字段；codex 还要把系统 `codex` 的绝对路径写进 `CODEX_PATH`。若设置了 Codex 自定义供应商，`CodexLaunchSpec` 还会追加 `CODEX_CONFIG`/`MODEL_PROVIDER`/`CODEX_ACP_*`，发现阶段的配置探测因此也能看到自定义模型（见 [codex-provider.md](codex-provider.md)）。Node/pi 的定位与版本要求见 [pi.md](pi.md)，Codex 见 [codex.md](codex.md)。
 
 只有三个 agent，所以表保持手写、可读；不引入 JSON 目录、registry 解析或 catalog 包。
 
