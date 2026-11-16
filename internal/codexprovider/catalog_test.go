@@ -22,13 +22,14 @@ func TestCatalogRewritesModelNamesAndReasoningLevels(t *testing.T) {
 	}
 	var document struct {
 		Models []struct {
-			Slug             string   `json:"slug"`
-			DisplayName      string   `json:"display_name"`
-			ContextWindow    int      `json:"context_window"`
-			DefaultLevel     string   `json:"default_reasoning_level"`
-			InputModalities  []string `json:"input_modalities"`
-			BaseInstructions string   `json:"base_instructions"`
-			ModelMessages    struct {
+			Slug              string   `json:"slug"`
+			DisplayName       string   `json:"display_name"`
+			ContextWindow     int      `json:"context_window"`
+			DefaultLevel      string   `json:"default_reasoning_level"`
+			MultiAgentVersion string   `json:"multi_agent_version"`
+			InputModalities   []string `json:"input_modalities"`
+			BaseInstructions  string   `json:"base_instructions"`
+			ModelMessages     struct {
 				InstructionsTemplate string `json:"instructions_template"`
 			} `json:"model_messages"`
 			SupportedLevels []struct {
@@ -55,6 +56,14 @@ func TestCatalogRewritesModelNamesAndReasoningLevels(t *testing.T) {
 	}
 	if flash.DefaultLevel != "low" {
 		t.Errorf("default level = %q, want low", flash.DefaultLevel)
+	}
+	for _, model := range []struct {
+		name    string
+		version string
+	}{{"flash", flash.MultiAgentVersion}, {"pro", pro.MultiAgentVersion}} {
+		if model.version != "v1" {
+			t.Errorf("%s multi_agent_version = %q, want v1", model.name, model.version)
+		}
 	}
 	gotEfforts := make([]string, 0, len(flash.SupportedLevels))
 	for _, level := range flash.SupportedLevels {

@@ -35,6 +35,13 @@ var catalogInstructions string
 // the provider is off, has no models, or does not look like DeepSeek. Each
 // configured id becomes one entry: ids containing "pro" use the Pro metadata,
 // everything else uses Flash.
+//
+// Every entry forces the V1 multi-agent backend. Codex Multi-Agent V2 delivers
+// spawned tasks as an OpenAI-only agent_message input item; third-party
+// Responses gateways reject that item with unsupported_input_item, so a V2
+// child fails before its first model call. V1 sends the same task as an
+// ordinary user message and works through those gateways. See
+// https://github.com/openai/codex/issues/33551.
 func (c Config) Catalog() ([]byte, error) {
 	c = c.Normalize()
 	if !c.Enabled || len(c.Models) == 0 || !c.deepSeekCatalog() {
@@ -66,6 +73,10 @@ func (c Config) Catalog() ([]byte, error) {
 		entry["display_name"] = id
 		entry["default_reasoning_level"] = defaultLevel
 		entry["supported_reasoning_levels"] = levels
+		// The setup-script template says v2, which breaks subagents on
+		// non-OpenAI Responses providers. The catalog is only generated for
+		// custom providers, so V1 is the portable choice.
+		entry["multi_agent_version"] = "v1"
 		entry["base_instructions"] = catalogInstructions
 		entry["model_messages"] = map[string]any{
 			"instructions_template": catalogInstructions,

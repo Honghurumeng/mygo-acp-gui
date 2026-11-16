@@ -82,10 +82,11 @@ Codex 内置 catalog 不包含自定义 model id。provider 开启、模型列�
 
 - 每个 `models` 条目生成一个 catalog 条目，`slug` 就是设置里的 id（例如 `deepseek/deepseek-v4.1-flash`），不是脚本里的 `deepseek-flash`；含 `pro` 的 id 用 Pro 模板（text only），其余用 Flash 模板（text+image）。`display_name` 同样使用该 id。
 - 1M context window、工具类型、shell、图片输入等来自模板；`default_reasoning_level` 和 `supported_reasoning_levels` 由 `reasoningEfforts` 覆盖。
+- 每个条目强制 `multi_agent_version: "v1"`，覆盖 setup 模板里的 `v2`。Codex Multi-Agent V2 把 spawn 任务作为 OpenAI 私有的 `agent_message` item 发送；Command Code 等第三方 Responses 网关只接受标准 item，会返回 `unsupported_input_item`（文案常为 `Item references need stored responses, which are not kept`），子代理第一条请求就失败。V1 把任务当普通 user message 投递，这些网关可以正常接收。该选择只影响新线程：线程的 multi-agent 版本在首轮确定并被子代理继承，已经按 V2 运行的线程不会因为切换模型而降级，需要新开会话。上游问题见 openai/codex#33551。
 - 每个条目同时写入 `base_instructions` 和 `model_messages.instructions_template`，内容都是 setup 脚本里同一份 17 KB Codex 指令 prompt（`internal/codexprovider/catalog_instructions.txt`）。Codex 0.164+ 拒绝缺少这两者的 catalog 条目（`model ... is missing both ...`），不能依赖它自己的默认指令；`base_instructions` 只兼容仍读旧字段的版本，新版本优先 `model_messages.instructions_template`。生成的 catalog 每个模型约 36 KB，只写数据目录，不写进 settings.json。
 - 文件在启动加载设置和保存 provider 时原子重写；provider 关闭或模型为空时删除，避免陈旧 metadata。
 - 该 catalog 会替换 Codex 内置 catalog，所以开启自定义 provider 时模型列表以这些自定义模型为准；非 DeepSeek 目标或 provider 关闭时不写 catalog，仍只追加 ACP 模型，warning 可能继续。
-- 测试：`go test ./internal/codexprovider`（id 替换、1M、档位、指令字段、原子写/删除）、`go test ./internal/ui -run TestCodexProviderWritesModelCatalog`。
+- 测试：`go test ./internal/codexprovider`（id 替换、1M、档位、指令字段、V1 强制、原子写/删除）、`go test ./internal/ui -run TestCodexProviderWritesModelCatalog`。
 
 ## 生效范围
 
@@ -120,3 +121,4 @@ Codex 内置 catalog 不包含自定义 model id。provider 开启、模型列�
 - [architecture.md](architecture.md)：设置存储与 ACP 链路。
 - Codex provider 配置字段：`model_provider`、`model_providers.<id>.{name,base_url,wire_api,env_key,requires_openai_auth}`。
 - DeepSeek Codex setup 脚本与 catalog：https://cdn.deepseek.com/api-docs/codex-deepseek-setup.sh
+- Multi-Agent V2 与外部 Responses provider 的兼容问题：https://github.com/openai/codex/issues/33551
