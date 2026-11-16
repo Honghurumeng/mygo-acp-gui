@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	mui "github.com/egoist/mygo/ui"
@@ -60,6 +62,14 @@ func (a *App) loadCodexProviderDraft() {
 	draft := a.CodexProvider.Normalize()
 	a.CodexProviderDraft = draft
 	a.CodexProviderModelsText = strings.Join(draft.Models, "\n")
+	a.CodexProviderContextWindowText = ""
+	if draft.ContextWindow != 0 {
+		a.CodexProviderContextWindowText = strconv.FormatInt(draft.ContextWindow, 10)
+	}
+	a.CodexProviderCompactPercentText = ""
+	if draft.AutoCompactPercent != 0 {
+		a.CodexProviderCompactPercentText = strconv.Itoa(draft.AutoCompactPercent)
+	}
 	a.setCodexProviderEfforts(draft.EffortLevels())
 	a.CodexProviderNotice = ""
 }
@@ -76,12 +86,26 @@ func (a *App) saveCodexProvider() {
 		a.CodexProviderNotice = "⚠ Select at least one reasoning level."
 		return
 	}
+	contextWindow, err := parseContextWindow(a.CodexProviderContextWindowText)
+	if err != nil {
+		a.CodexProviderNotice = "⚠ " + err.Error()
+		return
+	}
+	compactPercent, err := parseCompactPercent(a.CodexProviderCompactPercentText)
+	if err != nil {
+		a.CodexProviderNotice = "⚠ " + err.Error()
+		return
+	}
+	draft.ContextWindow = contextWindow
+	draft.AutoCompactPercent = compactPercent
 	if err := draft.Validate(); err != nil {
 		a.CodexProviderNotice = "⚠ " + err.Error()
 		return
 	}
 	a.CodexProviderDraft = draft
 	a.CodexProviderModelsText = strings.Join(draft.Models, "\n")
+	a.CodexProviderContextWindowText = strconv.FormatInt(draft.ContextWindow, 10)
+	a.CodexProviderCompactPercentText = strconv.Itoa(draft.AutoCompactPercent)
 	a.setCodexProviderEfforts(draft.EffortLevels())
 	previous := a.CodexProvider
 	a.CodexProvider = draft
@@ -103,8 +127,8 @@ func (a *App) saveCodexProvider() {
 	switch {
 	case draft.Enabled:
 		a.CodexProviderNotice = "Saved. New Codex sessions use this provider."
-	case len(draft.Models) > 0 || draft.TitleModel != "":
-		a.CodexProviderNotice = "Saved. New Codex sessions keep your own provider and use these model/title overrides."
+	case len(draft.Models) > 0 || draft.TitleModel != "" || draft.ContextWindow != 0 || draft.AutoCompactPercent != 0:
+		a.CodexProviderNotice = "Saved. New Codex sessions keep your own provider and use these model/context overrides."
 	default:
 		a.CodexProviderNotice = "Saved. Codex uses its own configuration again."
 	}
@@ -179,6 +203,48 @@ func splitModelLines(text string) []string {
 	return strings.FieldsFunc(text, func(r rune) bool {
 		return r == '\n' || r == '\r' || r == ','
 	})
+}
+
+func parseContextWindow(text string) (int64, error) {
+	text = cleanIntegerText(text)
+	if text == "" {
+		return 0, nil
+	}
+	value, err := strconv.ParseInt(text, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("context window must be a whole number of tokens")
+	}
+	return value, nil
+}
+
+func parseCompactPercent(text string) (int, error) {
+	text = cleanIntegerText(text)
+	if text == "" {
+		return 0, nil
+	}
+	value, err := strconv.Atoi(text)
+	if err != nil {
+		return 0, fmt.Errorf("auto-compaction percent must be a whole number")
+	}
+	return value, nil
+}
+
+func cleanIntegerText(text string) string {
+	return strings.NewReplacer(",", "", "_", "").Replace(strings.TrimSpace(text))
+}
+
+func (a *App) codexCompactionPreview() (string, bool) {
+	contextWindow, err := parseContextWindow(a.CodexProviderContextWindowText)
+	if err != nil || contextWindow <= 0 {
+		return "", false
+	}
+	percent, err := parseCompactPercent(a.CodexProviderCompactPercentText)
+	if err != nil || percent < 1 || percent > codexprovider.MaxAutoCompactPercent {
+		return "", false
+	}
+	usable := contextWindow * 95 / 100
+	limit := contextWindow * int64(percent) / 100
+	return fmt.Sprintf("Preview: compact at %s tokens; usable context ring %s tokens.", formatCount(int(limit)), formatCount(int(usable))), true
 }
 
 // applyCodexProvider rebuilds the catalog entry for Codex from the pristine
@@ -264,7 +330,25 @@ func (a *App) codexProviderSettings(c *mui.Context) {
 			Radius(t.Radius).
 			Border(1, t.Border).
 			Background(t.Background)
-		mutedText(c, "These ids are added to the Codex model list even while the provider switch is off. For DeepSeek targets, the switch on also writes a Codex model catalog from DeepSeek Flash/Pro metadata (1M context, the checked reasoning levels) so Codex does not fall back to unknown-model metadata. The first id is the default model; leave the list empty to use only Codex's own catalog.", 9)
+		mutedText(c, "These ids are added to the Codex model list even while the provider switch is off. For DeepSeek targets, the switch on also writes a Codex model catalog with the configured context, compact threshold and checked reasoning levels so Codex does not fall back to unknown-model metadata. The first id is the default model; leave the list empty to use only Codex's own catalog.", 9)
+
+		mui.Row(c).Gap(10).Children(func() {
+			mui.Column(c).Grow(1).Gap(2).Children(func() {
+				mui.TextInput(c, &a.CodexProviderContextWindowText).
+					Label("Context window").
+					Placeholder("1048576")
+				mutedText(c, "Full context size in tokens for the configured models. Blank keeps catalog/Codex defaults. The generated DeepSeek catalog reserves 5% headroom.", 9)
+			})
+			mui.Column(c).Grow(1).Gap(2).Children(func() {
+				mui.TextInput(c, &a.CodexProviderCompactPercentText).
+					Label("Compact at (%)").
+					Placeholder("90")
+				mutedText(c, "Trigger percentage of the configured context window; at most 90%. Leave both numeric fields blank for defaults.", 9)
+			})
+		})
+		if preview, ok := a.codexCompactionPreview(); ok {
+			mutedText(c, preview, 9)
+		}
 
 		mui.Column(c).Gap(2).Children(func() {
 			mui.Text(c, "Reasoning levels").FontSize(12)

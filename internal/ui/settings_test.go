@@ -212,7 +212,7 @@ func TestSettingsCodexProviderPersists(t *testing.T) {
 		t.Fatal(err)
 	}
 	tt.Frame()
-	for _, want := range []string{"Codex provider", "Provider name", "Base URL", "API key", "Models", "Reasoning levels", "Minimal", "Medium", "High", "Title model", "Save provider"} {
+	for _, want := range []string{"Codex provider", "Provider name", "Base URL", "API key", "Models", "Context window", "Compact at (%)", "Reasoning levels", "Minimal", "Medium", "High", "Title model", "Save provider"} {
 		if !tt.HasText(want) {
 			t.Errorf("Codex provider settings missing %q; texts: %q", want, tt.Texts())
 		}
@@ -232,6 +232,8 @@ func TestSettingsCodexProviderPersists(t *testing.T) {
 		APIKey:  "sk-test",
 	}
 	app.CodexProviderModelsText = "deepseek-chat\ndeepseek-reasoner\n"
+	app.CodexProviderContextWindowText = "262144"
+	app.CodexProviderCompactPercentText = "75"
 	app.CodexProviderDraft.TitleModel = "deepseek-chat"
 	tt.Frame()
 	tt.Scroll(650, 400, 0, 500)
@@ -259,6 +261,9 @@ func TestSettingsCodexProviderPersists(t *testing.T) {
 	if len(app.CodexProvider.Models) != 2 || app.CodexProvider.Models[0] != "deepseek-chat" {
 		t.Fatalf("provider models = %+v", app.CodexProvider.Models)
 	}
+	if app.CodexProvider.ContextWindow != 262_144 || app.CodexProvider.AutoCompactPercent != 75 {
+		t.Fatalf("provider context/compact = %+v", app.CodexProvider)
+	}
 	if len(app.CodexProvider.ReasoningEfforts) != 1 || app.CodexProvider.ReasoningEfforts[0] != "high" {
 		t.Fatalf("provider reasoning levels = %+v, want high only", app.CodexProvider.ReasoningEfforts)
 	}
@@ -272,6 +277,7 @@ func TestSettingsCodexProviderPersists(t *testing.T) {
 	file := loadPersistedSettings(t, dataDir)
 	if !file.CodexProvider.Enabled || file.CodexProvider.APIKey != "sk-test" ||
 		len(file.CodexProvider.Models) != 2 || file.CodexProvider.TitleModel != "deepseek-chat" ||
+		file.CodexProvider.ContextWindow != 262_144 || file.CodexProvider.AutoCompactPercent != 75 ||
 		len(file.CodexProvider.ReasoningEfforts) != 1 || file.CodexProvider.ReasoningEfforts[0] != "high" {
 		t.Fatalf("persisted provider = %+v", file.CodexProvider)
 	}
@@ -287,6 +293,7 @@ func TestSettingsCodexProviderPersists(t *testing.T) {
 		restarted.Flush()
 	})
 	if !restarted.CodexProvider.Enabled || restarted.CodexProvider.Name != "DeepSeek" ||
+		restarted.CodexProvider.ContextWindow != 262_144 || restarted.CodexProvider.AutoCompactPercent != 75 ||
 		len(restarted.CodexProvider.ReasoningEfforts) != 1 || restarted.CodexProvider.ReasoningEfforts[0] != "high" {
 		t.Fatalf("restored provider = %+v", restarted.CodexProvider)
 	}
@@ -329,5 +336,41 @@ func TestSettingsCodexProviderRequiresReasoningLevel(t *testing.T) {
 	}
 	if !strings.Contains(app.CodexProviderNotice, "Select at least one reasoning level") {
 		t.Errorf("notice = %q, want a reasoning-level error", app.CodexProviderNotice)
+	}
+}
+
+func TestSettingsCodexProviderRejectsInvalidContextAndCompaction(t *testing.T) {
+	tests := []struct {
+		name           string
+		contextWindow  string
+		compactPercent string
+		want           string
+	}{
+		{name: "context is not numeric", contextWindow: "one million", compactPercent: "90", want: "whole number of tokens"},
+		{name: "context is too small", contextWindow: "100", compactPercent: "90", want: "context window must be between"},
+		{name: "percent is not numeric", contextWindow: "262144", compactPercent: "soon", want: "whole number"},
+		{name: "percent exceeds Codex cap", contextWindow: "262144", compactPercent: "91", want: "between 1 and 90"},
+		{name: "percent without context", compactPercent: "80", want: "context window is required"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			app, _ := newSettingsApp(t, t.TempDir(), t.TempDir())
+			app.CodexProviderDraft = codexprovider.Config{
+				Enabled: true,
+				BaseURL: "https://api.example.com/v1",
+				Models:  []string{"deepseek-chat"},
+			}
+			app.CodexProviderModelsText = "deepseek-chat"
+			app.CodexProviderEfforts = map[string]bool{"medium": true}
+			app.CodexProviderContextWindowText = tc.contextWindow
+			app.CodexProviderCompactPercentText = tc.compactPercent
+			app.saveCodexProvider()
+			if app.CodexProvider.Enabled {
+				t.Fatal("invalid context settings were saved")
+			}
+			if !strings.Contains(app.CodexProviderNotice, tc.want) {
+				t.Errorf("notice = %q, want %q", app.CodexProviderNotice, tc.want)
+			}
+		})
 	}
 }

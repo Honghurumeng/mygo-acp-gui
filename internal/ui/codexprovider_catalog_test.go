@@ -19,6 +19,8 @@ func TestCodexProviderWritesModelCatalog(t *testing.T) {
 		APIKey:  "sk-test",
 	}
 	app.CodexProviderModelsText = "deepseek/deepseek-v4.1-flash"
+	app.CodexProviderContextWindowText = "262144"
+	app.CodexProviderCompactPercentText = "75"
 	app.CodexProviderEfforts = map[string]bool{"low": true, "high": true, "max": true}
 	app.saveCodexProvider()
 
@@ -31,6 +33,7 @@ func TestCodexProviderWritesModelCatalog(t *testing.T) {
 		Models []struct {
 			Slug              string `json:"slug"`
 			ContextWindow     int    `json:"context_window"`
+			AutoCompactLimit  int    `json:"auto_compact_token_limit"`
 			MultiAgentVersion string `json:"multi_agent_version"`
 			BaseInstructions  string `json:"base_instructions"`
 			ModelMessages     struct {
@@ -44,8 +47,11 @@ func TestCodexProviderWritesModelCatalog(t *testing.T) {
 	if len(document.Models) != 1 || document.Models[0].Slug != "deepseek/deepseek-v4.1-flash" {
 		t.Fatalf("catalog models = %+v", document.Models)
 	}
-	if document.Models[0].ContextWindow != 1048576 {
-		t.Errorf("context window = %d", document.Models[0].ContextWindow)
+	if document.Models[0].ContextWindow != 262144 {
+		t.Errorf("context window = %d, want 262144", document.Models[0].ContextWindow)
+	}
+	if document.Models[0].AutoCompactLimit != 196608 {
+		t.Errorf("auto compact limit = %d, want 196608", document.Models[0].AutoCompactLimit)
 	}
 	if document.Models[0].MultiAgentVersion != "v1" {
 		t.Errorf("multi_agent_version = %q, want v1", document.Models[0].MultiAgentVersion)
@@ -59,6 +65,9 @@ func TestCodexProviderWritesModelCatalog(t *testing.T) {
 	file := loadPersistedSettings(t, dataDir)
 	if len(file.CodexProvider.Models) != 1 || file.CodexProvider.Models[0] != "deepseek/deepseek-v4.1-flash" {
 		t.Fatalf("persisted provider = %+v", file.CodexProvider)
+	}
+	if file.CodexProvider.ContextWindow != 262_144 || file.CodexProvider.AutoCompactPercent != 75 {
+		t.Fatalf("persisted context/compact = %+v", file.CodexProvider)
 	}
 
 	// Startup writes the catalog from settings.json before discovery.

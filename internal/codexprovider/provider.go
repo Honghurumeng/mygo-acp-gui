@@ -45,20 +45,32 @@ const (
 // the settings default to Medium only.
 var ReasoningLevels = [...]string{"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}
 
+const (
+	// DefaultContextWindow matches the DeepSeek catalog template.
+	DefaultContextWindow int64 = 1_048_576
+	// Codex caps automatic compaction at 90% of the model context window.
+	DefaultAutoCompactPercent       = 90
+	MaxAutoCompactPercent           = 90
+	MinContextWindow          int64 = 1_024
+	MaxContextWindow          int64 = 100_000_000
+)
+
 // Config is the user's custom Codex provider plus adapter-level model,
-// reasoning and title overrides. An empty Config keeps Codex on its own
-// configuration; a disabled Config still applies models/reasoningEfforts/
-// titleModel without overriding the provider routing. APIKey is stored in
+// context-window, compaction, reasoning and title overrides. An empty Config
+// keeps Codex on its own configuration; a disabled Config still applies those
+// overrides without changing the provider routing. APIKey is stored in
 // settings.json (mode 0600) and is passed to the child only through APIKeyEnv;
 // it never appears in a command line.
 type Config struct {
-	Enabled          bool     `json:"enabled,omitempty"`
-	Name             string   `json:"name,omitempty"`
-	BaseURL          string   `json:"baseURL,omitempty"`
-	APIKey           string   `json:"apiKey,omitempty"`
-	Models           []string `json:"models,omitempty"`
-	ReasoningEfforts []string `json:"reasoningEfforts,omitempty"`
-	TitleModel       string   `json:"titleModel,omitempty"`
+	Enabled            bool     `json:"enabled,omitempty"`
+	Name               string   `json:"name,omitempty"`
+	BaseURL            string   `json:"baseURL,omitempty"`
+	APIKey             string   `json:"apiKey,omitempty"`
+	Models             []string `json:"models,omitempty"`
+	ContextWindow      int64    `json:"contextWindow,omitempty"`
+	AutoCompactPercent int      `json:"autoCompactPercent,omitempty"`
+	ReasoningEfforts   []string `json:"reasoningEfforts,omitempty"`
+	TitleModel         string   `json:"titleModel,omitempty"`
 	// CatalogPath is the generated Codex model catalog for these model ids.
 	// It is runtime-only: settings.json never stores it.
 	CatalogPath string `json:"-"`
@@ -105,13 +117,23 @@ func (c Config) Normalize() Config {
 // user can keep the provider from ~/.codex/config.toml and only extend its
 // model list.
 func (c Config) HasOverrides() bool {
-	return c.Enabled || len(c.Models) > 0 || strings.TrimSpace(c.TitleModel) != ""
+	return c.Enabled || len(c.Models) > 0 || c.ContextWindow != 0 || c.AutoCompactPercent != 0 ||
+		strings.TrimSpace(c.TitleModel) != ""
 }
 
 // Validate checks the adapter-level overrides and, when enabled, the provider
 // routing. Models, reasoning levels and the title model are validated even
 // while the custom provider is off.
 func (c Config) Validate() error {
+	if c.ContextWindow != 0 && (c.ContextWindow < MinContextWindow || c.ContextWindow > MaxContextWindow) {
+		return fmt.Errorf("context window must be between %d and %d tokens", MinContextWindow, MaxContextWindow)
+	}
+	if c.AutoCompactPercent != 0 && (c.AutoCompactPercent < 1 || c.AutoCompactPercent > MaxAutoCompactPercent) {
+		return fmt.Errorf("auto-compaction percent must be between 1 and %d", MaxAutoCompactPercent)
+	}
+	if c.AutoCompactPercent != 0 && c.ContextWindow == 0 {
+		return fmt.Errorf("context window is required when auto-compaction percent is set")
+	}
 	for _, model := range c.Models {
 		if strings.ContainsAny(model, " \t\r\n") {
 			return fmt.Errorf("model id %q contains whitespace", model)
@@ -156,6 +178,31 @@ func (c Config) DefaultModel() string {
 	return c.Models[0]
 }
 
+// EffectiveContextWindow returns the configured full context window, or the
+// DeepSeek catalog default for settings created before this field existed.
+func (c Config) EffectiveContextWindow() int64 {
+	if c.ContextWindow > 0 {
+		return c.ContextWindow
+	}
+	return DefaultContextWindow
+}
+
+// EffectiveAutoCompactPercent returns the percentage of the full model context
+// at which Codex starts automatic compaction.
+func (c Config) EffectiveAutoCompactPercent() int {
+	if c.AutoCompactPercent > 0 {
+		return c.AutoCompactPercent
+	}
+	return DefaultAutoCompactPercent
+}
+
+// AutoCompactTokenLimit converts the percentage into the token limit Codex
+// stores on each model. Integer division rounds down, matching Codex's default
+// 90% calculation.
+func (c Config) AutoCompactTokenLimit() int64 {
+	return c.EffectiveContextWindow() * int64(c.EffectiveAutoCompactPercent()) / 100
+}
+
 // EffortLevels are the thinking levels a custom model advertises. An empty
 // setting keeps the adapter's historical single Medium level, so files saved
 // before this field existed behave exactly as before.
@@ -179,9 +226,9 @@ func (c Config) DefaultReasoningEffort() string {
 }
 
 // Environment returns the variables that apply this config to a Codex
-// process. A disabled provider still exports the model, reasoning and title
-// overrides; it omits CODEX_CONFIG/MODEL_PROVIDER/APIKeyEnv so Codex keeps the
-// user's own provider.
+// process. A disabled provider still exports model metadata and context
+// limits; it omits provider routing and credentials so Codex keeps the user's
+// own provider.
 func (c Config) Environment() (map[string]string, error) {
 	c = c.Normalize()
 	if err := c.Validate(); err != nil {
@@ -192,6 +239,7 @@ func (c Config) Environment() (map[string]string, error) {
 	}
 
 	env := map[string]string{}
+	codexConfig := map[string]any{}
 	if c.Enabled {
 		definition := map[string]any{
 			"name":                 c.Name,
@@ -202,11 +250,9 @@ func (c Config) Environment() (map[string]string, error) {
 		if c.APIKey != "" {
 			definition["env_key"] = APIKeyEnv
 		}
-		codexConfig := map[string]any{
-			"model_provider": ProviderID,
-			"model_providers": map[string]any{
-				ProviderID: definition,
-			},
+		codexConfig["model_provider"] = ProviderID
+		codexConfig["model_providers"] = map[string]any{
+			ProviderID: definition,
 		}
 		if model := c.DefaultModel(); model != "" {
 			codexConfig["model"] = model
@@ -214,11 +260,21 @@ func (c Config) Environment() (map[string]string, error) {
 		if c.CatalogPath != "" {
 			codexConfig["model_catalog_json"] = c.CatalogPath
 		}
+	}
+	if c.ContextWindow != 0 {
+		codexConfig["model_context_window"] = c.EffectiveContextWindow()
+	}
+	if c.AutoCompactPercent != 0 {
+		codexConfig["model_auto_compact_token_limit"] = c.AutoCompactTokenLimit()
+	}
+	if len(codexConfig) > 0 {
 		data, err := json.Marshal(codexConfig)
 		if err != nil {
 			return nil, fmt.Errorf("encode CODEX_CONFIG: %w", err)
 		}
 		env[ConfigEnv] = string(data)
+	}
+	if c.Enabled {
 		env[ModelProviderEnv] = ProviderID
 		if c.APIKey != "" {
 			env[APIKeyEnv] = c.APIKey

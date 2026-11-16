@@ -40,9 +40,9 @@ resources/agents/codex-acp/
 
 补丁只动适配器，不碰 Codex CLI：
 
-1. **自定义模型**：`CODEX_ACP_MODELS`（JSON 数组或逗号/换行列表）把 provider 自己的 model id 追加到 `model/list` 之后；Codex 不认识的模型仍会出现在 ACP `model` 选项里，也能用 `session/set_config_option` 切换。`src/CustomModels.ts` 生成最小 `Model` 元数据（text、非默认）；`CODEX_ACP_REASONING_EFFORTS` 声明这些模型的 Thinking 档位，缺失时退回单一的 medium；会话从 Codex 配置带入的档位不在声明列表时，回退到该模型的默认档位，避免出现当前值不在选项里的 ACP 配置。provider 开启且目标是 DeepSeek（provider 名称、Base URL 或模型 id 含 deepseek）时，Go 侧还会生成 `<data>/codex-models.json` 并把路径放进 `CODEX_CONFIG.model_catalog_json`；catalog 使用 DeepSeek Flash/Pro 的 1M context、工具和推理档位元数据，slug 用设置里的模型 id（不是脚本里的 `deepseek-flash`），因此 Codex 不再打印 fallback metadata warning（见 [codex-provider.md](codex-provider.md)）。
+1. **自定义模型**：`CODEX_ACP_MODELS`（JSON 数组或逗号/换行列表）把 provider 自己的 model id 追加到 `model/list` 之后；Codex 不认识的模型仍会出现在 ACP `model` 选项里，也能用 `session/set_config_option` 切换。`src/CustomModels.ts` 生成最小 `Model` 元数据（text、非默认）；`CODEX_ACP_REASONING_EFFORTS` 声明这些模型的 Thinking 档位，缺失时退回单一的 medium；会话从 Codex 配置带入的档位不在声明列表时，回退到该模型的默认档位，避免出现当前值不在选项里的 ACP 配置。provider 开启且目标是 DeepSeek（provider 名称、Base URL 或模型 id 含 deepseek）时，Go 侧还会生成 `<data>/codex-models.json` 并把路径放进 `CODEX_CONFIG.model_catalog_json`；catalog 使用 DeepSeek Flash/Pro 的工具和推理档位元数据，`contextWindow`/`autoCompactPercent` 覆盖默认 1M/90% 的上下文和自动压缩阈值，slug 用设置里的模型 id（不是脚本里的 `deepseek-flash`），因此 Codex 不再打印 fallback metadata warning（见 [codex-provider.md](codex-provider.md)）。
 2. **可配置标题模型**：`CODEX_ACP_TITLE_MODEL` 优先；未设置时使用会话当前模型，最后才回退到 `gpt-5.6-luna`。这样自定义 provider 不会因为标题生成固定请求一个不存在的模型而失败。
-3. **自定义供应商**：复用上游已有的 `CODEX_CONFIG` / `MODEL_PROVIDER` 支持，由 `internal/codexprovider` 生成 `model_providers.acp-gui`、`base_url`、`wire_api=responses`、`requires_openai_auth=false`，API key 走 `env_key` 指向的环境变量，不出现在命令行。供应商开关只控制路由；`CODEX_ACP_MODELS` / `CODEX_ACP_REASONING_EFFORTS` / `CODEX_ACP_TITLE_MODEL` 在开关关闭时也可单独生效，便于扩展现有 Codex provider。
+3. **自定义供应商**：复用上游已有的 `CODEX_CONFIG` / `MODEL_PROVIDER` 支持，由 `internal/codexprovider` 生成 `model_providers.acp-gui`、`base_url`、`wire_api=responses`、`requires_openai_auth=false`，API key 走 `env_key` 指向的环境变量，不出现在命令行。供应商开关只控制路由；`model_context_window`、`model_auto_compact_token_limit`、`CODEX_ACP_MODELS`、`CODEX_ACP_REASONING_EFFORTS` / `CODEX_ACP_TITLE_MODEL` 在开关关闭时也可单独生效，便于扩展现有 Codex provider。
 
 设置界面与字段见 [codex-provider.md](codex-provider.md)。
 

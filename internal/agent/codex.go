@@ -16,10 +16,10 @@ const CodexID = "codex"
 // user's own Codex CLI. As with pi, the app never runs npx or installs the
 // upstream agent.
 //
-// An enabled provider adds CODEX_CONFIG/MODEL_PROVIDER plus the adapter's
-// custom-model, title-model and model-catalog variables to the child
-// environment. A nil or disabled provider leaves the user's own Codex
-// configuration in charge.
+// CODEX_CONFIG carries the custom provider plus optional model context and
+// compaction limits. An enabled provider also adds MODEL_PROVIDER and its API
+// key; model, reasoning, title and catalog variables work independently. A nil
+// provider leaves the user's own Codex configuration in charge.
 func CodexLaunchSpec(resourcesDir string, env Environment, provider *codexprovider.Config) (LaunchSpec, error) {
 	if resourcesDir == "" {
 		return LaunchSpec{}, fmt.Errorf("codex: empty resources directory")

@@ -53,13 +53,15 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		Notifications:       true,
 		DockBadge:           true,
 		CodexProvider: codexprovider.Config{
-			Enabled:          true,
-			Name:             "DeepSeek",
-			BaseURL:          "https://api.example.com/v1",
-			APIKey:           "sk-test",
-			Models:           []string{"deepseek-chat", "deepseek-reasoner"},
-			ReasoningEfforts: []string{"low", "medium", "high"},
-			TitleModel:       "deepseek-chat",
+			Enabled:            true,
+			Name:               "DeepSeek",
+			BaseURL:            "https://api.example.com/v1",
+			APIKey:             "sk-test",
+			Models:             []string{"deepseek-chat", "deepseek-reasoner"},
+			ContextWindow:      262_144,
+			AutoCompactPercent: 75,
+			ReasoningEfforts:   []string{"low", "medium", "high"},
+			TitleModel:         "deepseek-chat",
 		},
 	}
 	if err := store.Save(want); err != nil {

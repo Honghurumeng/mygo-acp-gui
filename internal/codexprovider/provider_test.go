@@ -19,13 +19,15 @@ func TestDisabledProviderHasNoEnvironment(t *testing.T) {
 
 func TestEnvironmentBuildsCodexProvider(t *testing.T) {
 	config := Config{
-		Enabled:          true,
-		Name:             "  DeepSeek  ",
-		BaseURL:          "https://api.example.com/v1/",
-		APIKey:           "sk-test",
-		Models:           []string{" deepseek-chat ", "deepseek-chat", "", "deepseek-reasoner"},
-		ReasoningEfforts: []string{"low", " medium ", "low", "high"},
-		TitleModel:       " deepseek-chat ",
+		Enabled:            true,
+		Name:               "  DeepSeek  ",
+		BaseURL:            "https://api.example.com/v1/",
+		APIKey:             "sk-test",
+		Models:             []string{" deepseek-chat ", "deepseek-chat", "", "deepseek-reasoner"},
+		ContextWindow:      262_144,
+		AutoCompactPercent: 75,
+		ReasoningEfforts:   []string{"low", " medium ", "low", "high"},
+		TitleModel:         " deepseek-chat ",
 	}
 	env, err := config.Environment()
 	if err != nil {
@@ -48,9 +50,11 @@ func TestEnvironmentBuildsCodexProvider(t *testing.T) {
 	}
 
 	var codexConfig struct {
-		ModelProvider  string `json:"model_provider"`
-		Model          string `json:"model"`
-		ModelProviders map[string]struct {
+		ModelProvider         string `json:"model_provider"`
+		Model                 string `json:"model"`
+		ModelContextWindow    int64  `json:"model_context_window"`
+		AutoCompactTokenLimit int64  `json:"model_auto_compact_token_limit"`
+		ModelProviders        map[string]struct {
 			Name           string            `json:"name"`
 			BaseURL        string            `json:"base_url"`
 			WireAPI        string            `json:"wire_api"`
@@ -64,6 +68,9 @@ func TestEnvironmentBuildsCodexProvider(t *testing.T) {
 	}
 	if codexConfig.ModelProvider != ProviderID || codexConfig.Model != "deepseek-chat" {
 		t.Errorf("provider/model = %q/%q", codexConfig.ModelProvider, codexConfig.Model)
+	}
+	if codexConfig.ModelContextWindow != 262_144 || codexConfig.AutoCompactTokenLimit != 196_608 {
+		t.Errorf("context/compact = %d/%d", codexConfig.ModelContextWindow, codexConfig.AutoCompactTokenLimit)
 	}
 	provider := codexConfig.ModelProviders[ProviderID]
 	if provider.Name != "DeepSeek" || provider.BaseURL != "https://api.example.com/v1" {
@@ -103,6 +110,29 @@ func TestDisabledProviderStillAppliesModelOverrides(t *testing.T) {
 	}
 	if env[TitleModelEnv] != "deepseek-chat" {
 		t.Errorf("%s = %q", TitleModelEnv, env[TitleModelEnv])
+	}
+}
+
+func TestDisabledProviderStillAppliesContextOverrides(t *testing.T) {
+	env, err := (Config{
+		ContextWindow:      200_000,
+		AutoCompactPercent: 80,
+	}).Environment()
+	if err != nil {
+		t.Fatalf("Environment: %v", err)
+	}
+	if _, ok := env[ModelProviderEnv]; ok {
+		t.Error("disabled provider exported MODEL_PROVIDER")
+	}
+	var codexConfig struct {
+		ModelContextWindow    int64 `json:"model_context_window"`
+		AutoCompactTokenLimit int64 `json:"model_auto_compact_token_limit"`
+	}
+	if err := json.Unmarshal([]byte(env[ConfigEnv]), &codexConfig); err != nil {
+		t.Fatalf("CODEX_CONFIG JSON: %v\n%s", err, env[ConfigEnv])
+	}
+	if codexConfig.ModelContextWindow != 200_000 || codexConfig.AutoCompactTokenLimit != 160_000 {
+		t.Errorf("context/compact = %d/%d", codexConfig.ModelContextWindow, codexConfig.AutoCompactTokenLimit)
 	}
 }
 
@@ -151,6 +181,11 @@ func TestValidateRejectsBadProvider(t *testing.T) {
 		{"credential URL", Config{Enabled: true, BaseURL: "https://user:key@api.example.com/v1"}, "credentials"},
 		{"bad model", Config{Enabled: true, BaseURL: "https://api.example.com/v1", Models: []string{"two words"}}, "whitespace"},
 		{"bad reasoning level", Config{Enabled: true, BaseURL: "https://api.example.com/v1", ReasoningEfforts: []string{"two words"}}, "whitespace"},
+		{"tiny context", Config{ContextWindow: 100}, "context window"},
+		{"too large context", Config{ContextWindow: 100_000_001}, "context window"},
+		{"negative compact percent", Config{AutoCompactPercent: -1}, "auto-compaction percent"},
+		{"compact percent above Codex cap", Config{AutoCompactPercent: 91}, "auto-compaction percent"},
+		{"compact percent without context", Config{AutoCompactPercent: 80}, "context window is required"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -168,6 +203,24 @@ func TestDefaultModelIsTheFirstModel(t *testing.T) {
 	}
 	if got := (Config{}).DefaultModel(); got != "" {
 		t.Errorf("empty DefaultModel = %q", got)
+	}
+}
+
+func TestContextAndCompactDefaults(t *testing.T) {
+	config := Config{}
+	if got := config.EffectiveContextWindow(); got != DefaultContextWindow {
+		t.Errorf("EffectiveContextWindow = %d, want %d", got, DefaultContextWindow)
+	}
+	if got := config.EffectiveAutoCompactPercent(); got != DefaultAutoCompactPercent {
+		t.Errorf("EffectiveAutoCompactPercent = %d, want %d", got, DefaultAutoCompactPercent)
+	}
+	if got := config.AutoCompactTokenLimit(); got != 943_718 {
+		t.Errorf("AutoCompactTokenLimit = %d, want 943718", got)
+	}
+	config.ContextWindow = 262_144
+	config.AutoCompactPercent = 75
+	if got := config.AutoCompactTokenLimit(); got != 196_608 {
+		t.Errorf("configured AutoCompactTokenLimit = %d, want 196608", got)
 	}
 }
 

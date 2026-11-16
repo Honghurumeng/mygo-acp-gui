@@ -59,6 +59,8 @@ func (c Config) Catalog() ([]byte, error) {
 	flash, pro := template.Models[0], template.Models[1]
 	levels := catalogReasoningLevels(c.EffortLevels())
 	defaultLevel := c.DefaultReasoningEffort()
+	contextWindow := c.EffectiveContextWindow()
+	autoCompactLimit := c.AutoCompactTokenLimit()
 	models := make([]map[string]any, 0, len(c.Models))
 	for _, id := range c.Models {
 		source := flash
@@ -71,6 +73,9 @@ func (c Config) Catalog() ([]byte, error) {
 		}
 		entry["slug"] = id
 		entry["display_name"] = id
+		entry["context_window"] = contextWindow
+		entry["max_context_window"] = contextWindow
+		entry["auto_compact_token_limit"] = autoCompactLimit
 		entry["default_reasoning_level"] = defaultLevel
 		entry["supported_reasoning_levels"] = levels
 		// The setup-script template says v2, which breaks subagents on

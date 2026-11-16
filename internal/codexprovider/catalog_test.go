@@ -11,10 +11,12 @@ import (
 
 func TestCatalogRewritesModelNamesAndReasoningLevels(t *testing.T) {
 	config := Config{
-		Enabled:          true,
-		BaseURL:          "https://api.example.com/v1",
-		Models:           []string{"deepseek/deepseek-v4.1-flash", "deepseek-v4-pro"},
-		ReasoningEfforts: []string{"low", "max"},
+		Enabled:            true,
+		BaseURL:            "https://api.example.com/v1",
+		Models:             []string{"deepseek/deepseek-v4.1-flash", "deepseek-v4-pro"},
+		ContextWindow:      262_144,
+		AutoCompactPercent: 75,
+		ReasoningEfforts:   []string{"low", "max"},
 	}
 	data, err := config.Catalog()
 	if err != nil {
@@ -25,6 +27,8 @@ func TestCatalogRewritesModelNamesAndReasoningLevels(t *testing.T) {
 			Slug              string   `json:"slug"`
 			DisplayName       string   `json:"display_name"`
 			ContextWindow     int      `json:"context_window"`
+			MaxContextWindow  int      `json:"max_context_window"`
+			AutoCompactLimit  int      `json:"auto_compact_token_limit"`
 			DefaultLevel      string   `json:"default_reasoning_level"`
 			MultiAgentVersion string   `json:"multi_agent_version"`
 			InputModalities   []string `json:"input_modalities"`
@@ -51,8 +55,12 @@ func TestCatalogRewritesModelNamesAndReasoningLevels(t *testing.T) {
 	if pro.Slug != "deepseek-v4-pro" {
 		t.Errorf("pro slug = %q", pro.Slug)
 	}
-	if flash.ContextWindow != 1048576 || pro.ContextWindow != 1048576 {
-		t.Errorf("context windows = %d/%d", flash.ContextWindow, pro.ContextWindow)
+	if flash.ContextWindow != 262144 || pro.ContextWindow != 262144 ||
+		flash.MaxContextWindow != 262144 || pro.MaxContextWindow != 262144 {
+		t.Errorf("context windows = %d/%d max %d/%d", flash.ContextWindow, pro.ContextWindow, flash.MaxContextWindow, pro.MaxContextWindow)
+	}
+	if flash.AutoCompactLimit != 196608 || pro.AutoCompactLimit != 196608 {
+		t.Errorf("auto compact limits = %d/%d, want 196608", flash.AutoCompactLimit, pro.AutoCompactLimit)
 	}
 	if flash.DefaultLevel != "low" {
 		t.Errorf("default level = %q, want low", flash.DefaultLevel)

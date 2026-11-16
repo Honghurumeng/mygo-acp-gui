@@ -256,12 +256,16 @@ type App struct {
 	// CodexProvider is the saved custom provider for Codex. CodexProviderDraft
 	// is the panel's editable copy; CodexProviderModelsText is its one-model-
 	// per-line editor and CodexProviderEfforts holds the checked reasoning
-	// levels. Saving validates and applies the draft to new Codex processes.
-	CodexProvider           codexprovider.Config
-	CodexProviderDraft      codexprovider.Config
-	CodexProviderModelsText string
-	CodexProviderEfforts    map[string]bool
-	CodexProviderNotice     string
+	// levels. The context and compact fields stay as text while edited so an
+	// incomplete number is visible instead of being silently replaced. Saving
+	// validates and applies the draft to new Codex processes.
+	CodexProvider                   codexprovider.Config
+	CodexProviderDraft              codexprovider.Config
+	CodexProviderModelsText         string
+	CodexProviderContextWindowText  string
+	CodexProviderCompactPercentText string
+	CodexProviderEfforts            map[string]bool
+	CodexProviderNotice             string
 	// Appearance is the light/dark choice (system, light or dark). Theme
 	// names the colors (default, nord, solarized, catppuccin, claude, green,
 	// green-soft, vscode, everforest, one-dark or tokyo-night). Both are
