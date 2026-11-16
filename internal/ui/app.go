@@ -72,6 +72,10 @@ const (
 	// RoleInbound is a left-aligned message sent to this client by another
 	// agent session, such as the task assigned to a subagent.
 	RoleInbound
+	// RoleSubagent is the announcement card for one agent-managed child
+	// session. Its transcript rows keep their normal roles and use SubagentID
+	// so they remain searchable and replayable in the parent chat.
+	RoleSubagent
 )
 
 // Message is one row in the chat list.
@@ -92,8 +96,8 @@ type Message struct {
 	// empty for the root conversation.
 	SubagentID   string
 	SubagentName string
-	// DetailOpen opens a tool card: the full command and its output show
-	// only while it is true. Tool cards start collapsed.
+	// DetailOpen opens a tool card or subagent transcript. Details stay hidden
+	// until it is true; cards start collapsed.
 	DetailOpen  bool
 	Attachments []Attachment
 	// FileRefs mirror @ mentions from the prompt, so the user's row lists
@@ -757,8 +761,10 @@ func (a *App) View(c *mui.Context) {
 	a.TaskMD.Theme = &markdown.Theme{FontSize: a.gitFont(c.Theme().FontSize)}
 	a.syncWorkspaces()
 	chat := a.activeChat()
+	var rows []*Message
 	if chat != nil {
-		chat.list.Key = func(i int) any { return chat.Messages[i].ID }
+		rows = conversationRows(chat)
+		chat.list.Key = func(i int) any { return rows[i].ID }
 		chat.list.FollowEnd = true
 		chat.list.FollowAnimation = &mui.Smooth
 	}
@@ -767,7 +773,7 @@ func (a *App) View(c *mui.Context) {
 		if a.SidebarOpen {
 			a.sidebar(c)
 		}
-		a.conversation(c, chat)
+		a.conversation(c, chat, rows)
 		if a.GitPanelOpen {
 			switch a.RightTab {
 			case rightTabTasks:
@@ -799,7 +805,7 @@ func (a *App) View(c *mui.Context) {
 }
 
 // conversation is the middle column: its bar, messages and composer.
-func (a *App) conversation(c *mui.Context, chat *Chat) {
+func (a *App) conversation(c *mui.Context, chat *Chat, rows []*Message) {
 	mui.Column(c).Grow(1).FillHeight().Background(c.Theme().Background).Children(func() {
 		a.header(c)
 		a.banner(c)
@@ -808,10 +814,10 @@ func (a *App) conversation(c *mui.Context, chat *Chat) {
 			return
 		}
 		mui.Box(c).Grow(1).Children(func() {
-			mui.List(c, &chat.list, len(chat.Messages), func(i int) {
-				a.message(c, chat.Messages[i])
+			mui.List(c, &chat.list, len(rows), func(i int) {
+				a.message(c, chat, rows[i])
 			}).Fill().Padding(16, 20).Gap(16).Justify(mui.End).Children(func() {
-				if len(chat.Messages) == 0 {
+				if len(rows) == 0 {
 					a.emptyState(c)
 				}
 			})
@@ -1040,7 +1046,51 @@ func (a *App) planPanel(c *mui.Context, chat *Chat) {
 // stretching across a wide window.
 const chatMaxWidth float32 = 960
 
-func (a *App) message(c *mui.Context, m *Message) {
+// conversationRows groups child-session transcript rows under their subagent
+// card. Collapsed cards keep the parent conversation focused on the overall
+// turn; expanding one inserts that child's task, replies and tools directly
+// below its announcement. Unknown children still fall back to flat rows so a
+// late or malformed update is never dropped.
+func conversationRows(chat *Chat) []*Message {
+	if chat == nil {
+		return nil
+	}
+	cards := make(map[*Message]bool)
+	children := make(map[string][]*Message)
+	for _, message := range chat.Messages {
+		if message == nil {
+			continue
+		}
+		if message.Role == RoleSubagent {
+			cards[message] = true
+		} else if message.SubagentID != "" {
+			children[message.SubagentID] = append(children[message.SubagentID], message)
+		}
+	}
+	rows := make([]*Message, 0, len(chat.Messages))
+	for _, message := range chat.Messages {
+		if message == nil {
+			continue
+		}
+		if message.Role == RoleSubagent {
+			rows = append(rows, message)
+			if message.DetailOpen && message.SubagentID != "" {
+				rows = append(rows, children[message.SubagentID]...)
+			}
+			continue
+		}
+		if message.SubagentID != "" {
+			if sub := chat.subagent(message.SubagentID); sub != nil && cards[sub.Card] {
+				// The child's card owns these rows and inserts them when open.
+				continue
+			}
+		}
+		rows = append(rows, message)
+	}
+	return rows
+}
+
+func (a *App) message(c *mui.Context, chat *Chat, m *Message) {
 	t := c.Theme()
 	switch m.Role {
 	case RoleUser:
@@ -1082,6 +1132,8 @@ func (a *App) message(c *mui.Context, m *Message) {
 		})
 	case RoleTool:
 		a.toolMessage(c, m)
+	case RoleSubagent:
+		a.subagentMessage(c, chat, m)
 	case RoleError:
 		mui.Text(c, "⚠ "+m.Text).MaxWidth(chatMaxWidth).FontSize(a.chatBodyFont(c)).
 			TextColor(t.Danger).Selectable()
@@ -1118,6 +1170,101 @@ func (a *App) message(c *mui.Context, m *Message) {
 	}
 }
 
+// subagentMessage is the persistent announcement for one child session. It is
+// deliberately separate from a tool card: the title names the worker, the
+// status is user-facing, and session/workspace metadata stays collapsed.
+func (a *App) subagentMessage(c *mui.Context, chat *Chat, m *Message) {
+	t := c.Theme()
+	status := subagentStatusLabel(m.Status)
+	statusColor := t.TextMuted
+	switch m.Status {
+	case "in_progress", "pending", "starting":
+		statusColor = t.Warning
+	case "completed", "idle":
+		statusColor = t.Success
+	case "failed":
+		statusColor = t.Danger
+	case "disconnected":
+		statusColor = t.Warning
+	}
+	sub := (*Subagent)(nil)
+	if chat != nil {
+		sub = chat.subagent(m.SubagentID)
+	}
+	title := strings.TrimPrefix(m.Title, "Subagent · ")
+	if title == "" {
+		title = "Agent"
+	}
+	root := mui.Column(c).MaxWidth(chatMaxWidth).Padding(10).Radius(10).
+		Background(t.Surface).Border(1, t.Border).
+		Role(mui.RoleGroup).Label(subagentCardLabel(m.Title, status))
+	root.Children(func() {
+		// Build the collapsible inside the card subtree. Building it before
+		// root.Children attaches the trigger to the conversation row instead.
+		parts := mui.CollapsibleBase(c, &m.DetailOpen)
+		parts.Trigger.Label("Toggle subagent details: " + m.Title).
+			FillWidth().Gap(10).AlignItems(mui.Center).Children(func() {
+			mui.Icon(c, gitBranchIcon).Size(15, 15).Shrink(0).TextColor(statusColor)
+			mui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
+				sectionLabel(c, "SUBAGENT")
+				mui.Text(c, title).FontSize(a.chatFont(12)).Bold().SingleLine().MinWidth(0)
+			})
+			mui.Text(c, status).FontSize(a.chatFont(10)).TextColor(statusColor).
+				Background(statusColor.Alpha(0.1)).Padding(2, 7).Radius(999).Shrink(0)
+			mark := "▸"
+			if m.DetailOpen {
+				mark = "▾"
+			}
+			mutedText(c, mark, a.chatFont(10)).Width(10).Shrink(0)
+		})
+		if m.Text != "" {
+			mutedText(c, m.Text, a.chatFont(11)).SingleLine().MinWidth(0)
+		}
+		if reply := lastSubagentReply(chat, m.SubagentID); reply != "" {
+			mui.Row(c).Gap(5).AlignItems(mui.Center).MinWidth(0).Children(func() {
+				sectionLabel(c, "RESULT")
+				mui.Text(c, reply).FontSize(a.chatFont(11)).Grow(1).MinWidth(0).SingleLine()
+			})
+		}
+		parts.Panel(func() {
+			mui.Column(c).Gap(3).PaddingStart(25).Children(func() {
+				if m.Detail != "" {
+					mutedText(c, m.Detail, a.chatFont(10)).Selectable()
+				}
+				if sub != nil && sub.ID != "" {
+					mutedText(c, "Session: "+sub.ID, a.chatFont(10)).Selectable().Tooltip("ACP child session ID")
+				}
+			})
+		})
+	})
+}
+
+func subagentCardLabel(title, status string) string {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		title = "Subagent"
+	}
+	return title + ", status " + status
+}
+
+func lastSubagentReply(chat *Chat, subagentID string) string {
+	if chat == nil || subagentID == "" {
+		return ""
+	}
+	for i := len(chat.Messages) - 1; i >= 0; i-- {
+		message := chat.Messages[i]
+		if message == nil || message.Role != RoleAssistant || message.SubagentID != subagentID {
+			continue
+		}
+		text := singleLine(message.Text)
+		if text != "" {
+			text = strings.NewReplacer("`", "", "**", "", "__", "", "~~", "").Replace(text)
+			return truncate(text, 240)
+		}
+	}
+	return ""
+}
+
 // subagentLabel identifies child-session output without taking over the main
 // assistant identity. The full id stays in the tooltip for debugging.
 func (a *App) subagentLabel(c *mui.Context, m *Message) {
@@ -1139,6 +1286,7 @@ func (a *App) subagentLabel(c *mui.Context, m *Message) {
 // them again.
 func (a *App) toolMessage(c *mui.Context, m *Message) {
 	t := c.Theme()
+	status := toolStatusLabel(m.Status)
 	statusColor := t.TextMuted
 	switch m.Status {
 	case "completed":
@@ -1147,6 +1295,20 @@ func (a *App) toolMessage(c *mui.Context, m *Message) {
 		statusColor = t.Danger
 	case "in_progress", "pending":
 		statusColor = t.Warning
+	}
+	if strings.TrimSpace(m.Detail) == "" {
+		// Orchestration calls such as wait_agent and close_agent have no
+		// user-facing payload. Draw them as a compact event instead of an
+		// expandable card whose panel would otherwise be empty.
+		surfaceCard(c, mui.Row(c).Gap(6).MaxWidth(chatMaxWidth).Padding(8, 10).AlignItems(mui.Center)).Children(func() {
+			a.subagentLabel(c, m)
+			mutedText(c, "•", a.chatFont(12)).Width(8).Shrink(0)
+			mui.Text(c, m.Title).Bold().FontSize(a.chatFont(12)).Grow(1).MinWidth(0).SingleLine()
+			if status != "" {
+				mui.Text(c, status).FontSize(a.chatFont(11)).TextColor(statusColor).Shrink(0)
+			}
+		})
+		return
 	}
 	surfaceCard(c, mui.Column(c).Gap(3).MaxWidth(chatMaxWidth).Padding(8, 10)).Children(func() {
 		a.subagentLabel(c, m)
@@ -1166,8 +1328,8 @@ func (a *App) toolMessage(c *mui.Context, m *Message) {
 				// Long commands stay one line until the card is opened.
 				title.SingleLine()
 			}
-			if m.Status != "" {
-				mui.Text(c, m.Status).FontSize(a.chatFont(11)).TextColor(statusColor).Shrink(0)
+			if status != "" {
+				mui.Text(c, status).FontSize(a.chatFont(11)).TextColor(statusColor).Shrink(0)
 			}
 		})
 		parts.Panel(func() {
@@ -1176,6 +1338,26 @@ func (a *App) toolMessage(c *mui.Context, m *Message) {
 			}
 		}).PaddingStart(16)
 	})
+}
+
+func toolStatusLabel(status string) string {
+	normalized := strings.TrimSpace(status)
+	switch strings.ToLower(normalized) {
+	case "":
+		return ""
+	case "pending":
+		return "Pending"
+	case "in_progress", "running":
+		return "In progress"
+	case "completed", "complete":
+		return "Completed"
+	case "failed", "error":
+		return "Failed"
+	case "cancelled", "canceled":
+		return "Cancelled"
+	default:
+		return strings.ToUpper(normalized[:1]) + normalized[1:]
+	}
 }
 
 func (a *App) addMessage(chat *Chat, m *Message) *Message {
@@ -1242,6 +1424,9 @@ func compactJSON(raw json.RawMessage) string {
 }
 
 func toolDetail(call session.ToolCall) string {
+	if _, ok := subagentControlLabel(call); ok {
+		return ""
+	}
 	if text := rawText(call.Content); text != "" {
 		return truncate(text, 2000)
 	}
@@ -1249,6 +1434,65 @@ func toolDetail(call session.ToolCall) string {
 		return truncate(text, 2000)
 	}
 	return compactJSON(call.RawInput)
+}
+
+// applyToolPresentation preserves partial tool updates while keeping an
+// orchestration event readable once it has been recognized. Later updates may
+// omit the payload that identified the call, so they must not reintroduce its
+// raw title or JSON detail.
+func applyToolPresentation(message *Message, call session.ToolCall) {
+	if message == nil {
+		return
+	}
+	if label, ok := subagentControlLabel(call); ok {
+		message.Title = label
+		message.Detail = ""
+		return
+	}
+	if _, established := subagentControlLabel(session.ToolCall{Title: message.Title}); established {
+		return
+	}
+	if call.Title != "" {
+		message.Title = call.Title
+	}
+	if detail := toolDetail(call); detail != "" {
+		message.Detail = detail
+	}
+}
+
+func subagentControlLabel(call session.ToolCall) (string, bool) {
+	key := strings.ToLower(strings.TrimSpace(call.Title))
+	key = strings.NewReplacer("_", "", "-", "", " ", "").Replace(key)
+	switch key {
+	case "spawn", "spawnagent", "spawnsubagent":
+		return "Spawn subagent", true
+	case "sendinput", "sendmessagetosubagent":
+		return "Send message to subagent", true
+	case "followup", "followuptask", "continuesubagent":
+		return "Continue subagent", true
+	case "waitagent", "waitforsubagent":
+		return "Wait for subagent", true
+	case "listagents", "listsubagents":
+		return "List subagents", true
+	case "resumeagent", "resumesubagent":
+		return "Resume subagent", true
+	case "closeagent", "closesubagent":
+		return "Close subagent", true
+	}
+	if key == "wait" && hasSubagentPayload(call) {
+		return "Wait for subagent", true
+	}
+	return "", false
+}
+
+func hasSubagentPayload(call session.ToolCall) bool {
+	payload := strings.ToLower(string(call.RawInput) + string(call.Content) + string(call.RawOutput))
+	for _, marker := range []string{"agentsstates", "receiverthreadids", "senderthreadid", "agentid"} {
+		if strings.Contains(payload, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func rawText(raw json.RawMessage) string {

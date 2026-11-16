@@ -31,7 +31,7 @@
 
 标准 ACP v1 子代理通过 `initialize.clientCapabilities.subagents = {}` 协商。应用把 agent 管理的 child session 挂在父 `Chat` 下，而不是新建侧栏会话：`subagent_update` 建立 child id、名称、描述、cwd、运行状态和取消能力；`session_message` 的 recipient 视图显示会话间任务/回传；后续 child `sessionId` 的文本、思考、工具调用与历史重放都进入父聊天。
 
-每个 child 维护独立的流式文本和工具 map，因此子代理工具不会截断主代理当前回复。子代理公告显示为状态卡，child 输入显示为左侧任务行，child 输出带 `Subagent · 名称` 标签；权限弹窗继续按父 Chat 排队，并额外显示子代理名称。父回合取消/结束时关闭未完成的 child 行，退出进程时标记为 disconnected。兼容旧版 `subagent_spawned` / `subagent_state_update`，但不实现 AIR 私有 native-subagent 扩展。
+每个 child 维护独立的流式文本和工具 map，因此子代理工具不会截断主代理当前回复。子代理公告使用专用 `RoleSubagent` 状态卡：名称、任务摘要、最终回复摘要与 Starting/Running/Waiting/Completed/Cancelled/Failed/Disconnected/Unknown 用户文案直接可见，workspace 和 ACP child session id 折叠在详情中；未知状态不再冒充 disconnected。child 的行默认按 `SubagentID` 收进卡片，只有展开卡片才把该 child 的任务、回复和工具调用按原顺序插在卡片下方，避免并行子代理把主线程冲散。权限弹窗继续按父 Chat 排队，并额外显示子代理名称。`spawn/send_input/followup_task/wait_agent/list_agents/resume_agent/close_agent` 等编排调用映射为用户可读事件，不为 `wait`/`closeAgent` 展开 `agentsStates`、thread id 等传输 JSON；无 payload 的工具事件显示为紧凑行。父回合取消/结束时关闭未完成的 child 行，退出进程时标记为 disconnected。兼容旧版 `subagent_spawned` / `subagent_state_update`，但不实现 AIR 私有 native-subagent 扩展。
 - 每个会话保留自己的消息列表滚动位置、输入草稿、图片附件、配置选择和计划面板。
 - 顶部工具栏只保留侧栏开关、会话标题和 `Cancel`（仅连接中）；右侧面板的开关由窗口最右缘的窄图标栏完成，会话由工作区上的 `＋` 创建。
 - 右侧 Files 面板按当前 workspace 懒加载文件树，显示 Git 状态，支持右键揭示/重命名/删除、新建文件和文件夹、拖动移动，点文件在共享卡片里查看/编辑；详见 [files.md](files.md)、[viewer.md](viewer.md)。

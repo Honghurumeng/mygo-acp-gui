@@ -1303,17 +1303,12 @@ func (a *App) applyUpdate(chat *Chat, ev session.Event) {
 			turn.tools[call.ToolCallID] = msg
 			a.addMessage(chat, msg)
 		}
-		if call.Title != "" {
-			msg.Title = call.Title
-		}
+		applyToolPresentation(msg, call)
 		if msg.Title == "" {
 			msg.Title = "Tool call"
 		}
 		if call.Status != "" {
 			msg.Status = call.Status
-		}
-		if detail := toolDetail(call); detail != "" {
-			msg.Detail = detail
 		}
 		// Text that follows a new tool call belongs to a new assistant row,
 		// after the tool card, not back above it.
@@ -1405,8 +1400,9 @@ func (a *App) ensureSubagent(chat *Chat, sessionID, parentID string) *Subagent {
 	}
 	sub.Card = &Message{
 		ID:         a.nextID(),
-		Role:       RoleTool,
+		Role:       RoleSubagent,
 		Title:      "Subagent · " + subagentName(sub),
+		Text:       sub.Description,
 		Status:     "starting",
 		SubagentID: sub.ID,
 		DetailOpen: false,
@@ -1572,10 +1568,8 @@ func (a *App) refreshSubagent(chat *Chat, sub *Subagent) {
 	if sub.Card != nil {
 		sub.Card.Title = "Subagent · " + name
 		sub.Card.Status = subagentStatus(sub)
-		parts := make([]string, 0, 2)
-		if sub.Description != "" {
-			parts = append(parts, sub.Description)
-		}
+		sub.Card.Text = sub.Description
+		parts := make([]string, 0, 1)
 		if sub.CWD != "" {
 			parts = append(parts, "Workspace: "+sub.CWD)
 		}
@@ -1626,13 +1620,39 @@ func subagentStatus(sub *Subagent) string {
 		return "cancelled"
 	case "failed", "error":
 		return "failed"
-	case "disconnected", "unknown":
+	case "disconnected":
 		return "disconnected"
+	case "unknown":
+		return "unknown"
 	default:
 		if state == "" {
 			return "starting"
 		}
 		return state
+	}
+}
+
+func subagentStatusLabel(status string) string {
+	normalized := strings.TrimSpace(status)
+	switch strings.ToLower(normalized) {
+	case "", "starting":
+		return "Starting"
+	case "in_progress", "running":
+		return "Running"
+	case "pending", "requires_action", "waiting":
+		return "Waiting"
+	case "idle", "completed", "complete":
+		return "Completed"
+	case "cancelled", "canceled":
+		return "Cancelled"
+	case "failed", "error":
+		return "Failed"
+	case "disconnected":
+		return "Disconnected"
+	case "unknown":
+		return "Unknown"
+	default:
+		return strings.ToUpper(normalized[:1]) + normalized[1:]
 	}
 }
 
@@ -1721,17 +1741,12 @@ func (a *App) applySubagentToolCall(chat *Chat, sub *Subagent, call *session.Too
 		turn.tools[call.ToolCallID] = msg
 		a.addMessage(chat, msg)
 	}
-	if call.Title != "" {
-		msg.Title = call.Title
-	}
+	applyToolPresentation(msg, *call)
 	if msg.Title == "" {
 		msg.Title = "Tool call"
 	}
 	if call.Status != "" {
 		msg.Status = call.Status
-	}
-	if detail := toolDetail(*call); detail != "" {
-		msg.Detail = detail
 	}
 	if created && turn.assistant != nil {
 		turn.assistant.Done = true

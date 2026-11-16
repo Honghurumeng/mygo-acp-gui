@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -8,6 +9,7 @@ import (
 	mui "github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
 	"github.com/reed/acp-gui/internal/agent"
+	"github.com/reed/acp-gui/internal/session"
 )
 
 // Tool cards start collapsed: the command shows on one line and the output
@@ -93,7 +95,7 @@ func TestConversationRowsShareMaxWidth(t *testing.T) {
 	tt := mui.NewTester(app.View, 1400, 760)
 	tt.Frame()
 
-	tool, ok := tt.Find("completed")
+	tool, ok := tt.Find("Completed")
 	if !ok {
 		t.Fatalf("tool card missing; texts: %q", tt.Texts())
 	}
@@ -125,5 +127,48 @@ func TestConversationRowsShareMaxWidth(t *testing.T) {
 	// row's: it should meet the measure's right edge, not the window's.
 	if got := turn.X + turn.W; got < wantRight-2 || got > wantRight+2 {
 		t.Errorf("turn summary ends at %v, want the row edge at %v", got, wantRight)
+	}
+}
+
+func TestSubagentControlCallsUseReadableEvents(t *testing.T) {
+	state := json.RawMessage(`{"agentsStates":{"child-1":{"status":"completed"}},"senderThreadId":"root"}`)
+	wait := session.ToolCall{Title: "wait", Content: state}
+	if got := toolDetail(wait); got != "" {
+		t.Errorf("wait exposed transport JSON: %q", got)
+	}
+	message := &Message{Title: "wait", Detail: `{"agentId":"child-1"}`}
+	applyToolPresentation(message, wait)
+	if message.Title != "Wait for subagent" || message.Detail != "" {
+		t.Errorf("wait presentation = %+v", message)
+	}
+	// A later status-only update omits the payload that identified the call.
+	// It must not regress the title or restore raw JSON.
+	applyToolPresentation(message, session.ToolCall{Title: "wait", Status: "completed"})
+	if message.Title != "Wait for subagent" || message.Detail != "" {
+		t.Errorf("wait status update regressed presentation: %+v", message)
+	}
+
+	closeAgent := session.ToolCall{Title: "closeAgent", RawInput: json.RawMessage(`{"agentId":"child-1"}`)}
+	if got := toolDetail(closeAgent); got != "" {
+		t.Errorf("closeAgent exposed transport JSON: %q", got)
+	}
+	applyToolPresentation(message, closeAgent)
+	if message.Title != "Close subagent" || message.Detail != "" {
+		t.Errorf("closeAgent presentation = %+v", message)
+	}
+
+	// A generic tool named wait keeps its payload unless the result contains
+	// subagent state; the title is not enough to classify it.
+	generic := session.ToolCall{Title: "wait", RawInput: json.RawMessage(`{"seconds":1}`)}
+	if got := toolDetail(generic); got != `{"seconds":1}` {
+		t.Errorf("generic wait detail = %q", got)
+	}
+	message = &Message{}
+	applyToolPresentation(message, generic)
+	if message.Title != "wait" || message.Detail != `{"seconds":1}` {
+		t.Errorf("generic wait presentation = %+v", message)
+	}
+	if got := toolStatusLabel("completed"); got != "Completed" {
+		t.Errorf("completed tool status = %q", got)
 	}
 }
