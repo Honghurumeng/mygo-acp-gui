@@ -85,19 +85,20 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 
 ## 已保存会话与本地存档
 
-本地存档 `<data>/sessions.json` 是侧栏历史列表的来源，由 `internal/archive` 读写。它把会话列表、session ID 和 agent 关联起来，并保存三个纯本地字段：
+本地存档 `<data>/sessions.json` 是侧栏历史列表的来源，由 `internal/archive` 读写。它把会话列表、session ID 和 agent 关联起来，并保存四个本地字段：
 
 - `show`：`true` 正常显示；`false` 表示用户删除，只从侧栏隐藏，记录不删。
 - `showName`：用户重命名后的显示名，优先于 agent 返回的 `title`。
 - `userTurns`：用户每条消息的本地发送时间和该轮运行时间，形如 `[{number, sentAt, durationMs}]`；`number` 是会话中从 1 开始的用户轮次。pi 的 fork 在回放里自带每条消息的时间，Command Code 没有；没有 agent 时间时 Jump 弹窗用这里的 `sentAt`，会话流用 `durationMs` 在重放后重现 `Took …`。
+- `usage`：最近一次 `usage_update` 的上下文报告 `{used, size, cost:{amount, currency}}`。agent 在 `session/load` 时通常不重放 usage，重启或打开存档后先用这份本地快照显示 composer 的上下文环；新的 `usage_update` 到达后覆盖。读取时负值归零，`used`/`size` 都为 0 且没有费用的报告直接丢弃。
 
-记录结构：`{agentId, sessionId, cwd, title, showName, createdAt, updatedAt, userTurns, show}`；`userTurns` 条目为 `{number, sentAt, durationMs}`；`(agentId, sessionId)` 唯一，这样不同 agent 的相同 session ID 不会互相覆盖。
+记录结构：`{agentId, sessionId, cwd, title, showName, createdAt, updatedAt, userTurns, usage, show}`；`userTurns` 条目为 `{number, sentAt, durationMs}`；`(agentId, sessionId)` 唯一，这样不同 agent 的相同 session ID 不会互相覆盖。
 
 - 标题清洗：agent 常拿首条 user 消息当兜底标题；带图片的 prompt 会以图片临时路径开头（例如 `/var/folders/.../pi-clipboard-....png`）。`internal/ui/title.go` 去掉开头的绝对路径、保留后面的正文，只有路径时显示 `[Image]`；读存档、合并 `session/list`、接收 `session_info_update` 时都会清洗，旧存档里的路径标题在启动时改写回 `sessions.json`。
 
 - 启动时先读存档并立即按 `cwd` 分组展示，不等 agent 发现，也不自动调 `session/list`。已打开会话不重复显示。
 - session/new / load 成功、标题更新和一轮结束后，自动把 session ID、agent、cwd、agent title 和 `updatedAt` 写进存档；不覆盖 `show/showName`。
-- App 不在本地保存消息正文，只保存用户消息的发送时间和每轮运行时间；右侧历史正文仍只能由 agent 重放。点击存档行按记录中的 `agentId` 启动/复用对应 agent，并执行 `session/load` 重放历史；当前会话已有消息、流式、目标 agent 与当前进程不同，或 `cwd` 与当前进程工作区不同时，在新标签页用该会话的 `cwd` 新建进程（Command Code 的 ACP 进程只服务启动时的工作区）。pi 回放时优先用 agent 给出的每条消息时间；其他 agent 或没有 replay 元数据时，按用户轮次把 `userTurns` 里的时间贴回对应消息。两者都没有的历史消息显示 `—`，不借用相邻消息的时间。
+- App 不在本地保存消息正文，只保存用户消息的发送时间、每轮运行时间和最近一次上下文用量；右侧历史正文仍只能由 agent 重放。点击存档行按记录中的 `agentId` 启动/复用对应 agent，并执行 `session/load` 重放历史；当前会话已有消息、流式、目标 agent 与当前进程不同，或 `cwd` 与当前进程工作区不同时，在新标签页用该会话的 `cwd` 新建进程（Command Code 的 ACP 进程只服务启动时的工作区）。pi 回放时优先用 agent 给出的每条消息时间；其他 agent 或没有 replay 元数据时，按用户轮次把 `userTurns` 里的时间贴回对应消息。两者都没有的历史消息显示 `—`，不借用相邻消息的时间。
 - 一轮结束后，从 prompt 发送到结果返回的耗时写入该轮 `durationMs`，并在会话流末尾追加一行右对齐的 muted `Took 1m 23s`；取消和错误也计算到结束为止。`session/load` 重放时按轮次把同样的行插到下一轮用户消息之前（最后一轮放在历史末尾）；没有本地记录的历史轮次不显示，也不猜测耗时。失败轮次也占一个用户轮次，不能被下一条用户消息吞并，否则后续时间和 `Took` 行会整体错位。
 - 行尾 `⋯` 只提供 Rename、Delete；打开存档一律走 load。Rename 写 `showName`；Delete 只写 `show=false`，不关 agent 的外部历史。
 - 默认不显示 `show=false` 的行；侧栏 “Show deleted (N)” 展开，`⋯` → Restore 恢复。
@@ -200,7 +201,7 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 
 - `plan` → composer 上方的可折叠计划列表，显示状态。
 - `session_info_update.title` → 标题显示在顶部会话栏和侧栏会话项。收到后立即写 `sessions.json`；pi-acp fork 在首次 prompt 用用户正文合成一条兜底标题，command-code 在首轮后生成标题，用户手动 rename 写入 `showName` 并始终优先。
-- `usage_update` → composer 中的环形进度 + 百分比（有用量但四舍五入为 0 时显示 `<1%`）；hover 显示 used/size、百分比和费用。agent 不发时没有上下文数字；ACP 没有主动查询的方法。
+- `usage_update` → composer 中的环形进度 + 百分比（有用量但四舍五入为 0 时显示 `<1%`）；hover 显示 used/size、百分比和费用。每次报告同步写入 `sessions.json`，重启或 `session/load` 后先恢复上次的值。agent 不发时没有上下文数字；ACP 没有主动查询的方法。
 - prompt 结果里的 `usage` 解析为 `acp.PromptUsage`，显示为 `turn 1.2k in · 100 out · 40 thought`（只在 agent 返回时出现），与 `context` 分开；`_meta` 保留在 `acp.PromptResult`，不展示明细。
 - 当前 command-code 和 vendored pi-acp fork（0.4.0 + usage 补丁）都会发 `usage_update` 并返回 prompt `usage`；上游 npm `@geohar/pi-acp@0.4.0` 没有这两处映射（见 [pi.md](pi.md#用量)）。
 

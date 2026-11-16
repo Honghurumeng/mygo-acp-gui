@@ -545,6 +545,11 @@ func (a *App) connectChat(chat *Chat) {
 			}
 			chat.pendingSend = pendingSend
 			chat.replaying = action == "load"
+			if chat.replaying {
+				// Show the last reported context while the agent replays history;
+				// a fresh usage_update overrides it.
+				chat.Usage = a.archivedUsage(chat.Agent.ID, chat.Info.SessionID)
+			}
 			if title != "" {
 				chat.Title = title
 			}
@@ -1051,6 +1056,7 @@ func (a *App) loadHistory(sessionID, title, cwd string) {
 	snapshot := chat.snapshot()
 	a.resetConversation(chat)
 	chat.Info.SessionID = sessionID
+	chat.Usage = a.archivedUsage(chat.Agent.ID, sessionID)
 	if title != "" {
 		chat.Title = title
 	}
@@ -1186,6 +1192,7 @@ func (a *App) applyUpdate(chat *Chat, ev session.Event) {
 		return
 	case session.UpdateUsage:
 		chat.Usage = ev.Usage
+		a.setArchivedUsage(chat)
 		return
 	case session.UpdatePlan:
 		hadPlan := len(chat.Plan) > 0

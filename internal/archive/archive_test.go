@@ -25,7 +25,8 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 					{Number: 1, SentAt: "2026-01-01T09:41:00Z", DurationMs: 83000},
 					{Number: 2, SentAt: "2026-01-02T10:15:00Z"},
 				},
-				Show: true,
+				Usage: &Usage{Used: 1200, Size: 10000, Cost: &Cost{Amount: 0.0012, Currency: "USD"}},
+				Show:  true,
 			},
 			{AgentID: "command-code", SessionID: "s2", Cwd: "/work/b", Show: false},
 		},
@@ -56,7 +57,11 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		turns[1].Number != 2 {
 		t.Fatalf("user turns = %+v", turns)
 	}
-	if got := loaded.Sessions[1]; got.Show || got.AgentID != "command-code" {
+	if got := loaded.Sessions[0].Usage; got == nil || got.Used != 1200 || got.Size != 10000 ||
+		got.Cost == nil || got.Cost.Amount != 0.0012 || got.Cost.Currency != "USD" {
+		t.Fatalf("usage = %+v", got)
+	}
+	if got := loaded.Sessions[1]; got.Show || got.AgentID != "command-code" || got.Usage != nil {
 		t.Fatalf("second session = %+v", got)
 	}
 }
@@ -98,6 +103,38 @@ func TestLoadCleansUserTurns(t *testing.T) {
 	if turns[0] != (UserTurn{Number: 1, SentAt: "2026-01-01T09:41:00Z", DurationMs: 83000}) ||
 		turns[1] != (UserTurn{Number: 3, SentAt: "2026-01-01T09:45:00Z"}) {
 		t.Errorf("user turns = %+v", turns)
+	}
+}
+
+func TestLoadCleansUsage(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sessions.json")
+	data := `{"version":1,"sessions":[
+		{"agentId":"pi","sessionId":"negative","usage":{"used":-5,"size":-1}},
+		{"agentId":"pi","sessionId":"empty","usage":{"used":0,"size":0}},
+		{"agentId":"pi","sessionId":"cost","usage":{"used":12,"size":0,"cost":{"amount":0.5}}},
+		{"agentId":"pi","sessionId":"badcost","usage":{"used":12,"size":100,"cost":{"amount":-1,"currency":"USD"}}}
+	]}`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file, err := Open(path).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(file.Sessions) != 4 {
+		t.Fatalf("sessions = %+v", file.Sessions)
+	}
+	if usage := file.Sessions[0].Usage; usage != nil {
+		t.Errorf("negative usage was kept: %+v", usage)
+	}
+	if usage := file.Sessions[1].Usage; usage != nil {
+		t.Errorf("empty usage was kept: %+v", usage)
+	}
+	if usage := file.Sessions[2].Usage; usage == nil || usage.Cost == nil || usage.Cost.Currency != "USD" {
+		t.Errorf("usage cost = %+v", usage)
+	}
+	if usage := file.Sessions[3].Usage; usage == nil || usage.Cost != nil {
+		t.Errorf("negative cost = %+v", usage)
 	}
 }
 

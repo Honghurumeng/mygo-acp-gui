@@ -387,6 +387,54 @@ func (a *App) mergeArchivedSessions(agentID string, sessions []acp.SessionSummar
 	a.syncArchiveRows()
 }
 
+// setArchivedUsage mirrors the latest usage_update into the archive. Agents do
+// not replay usage on session/load, so this local copy is what keeps the
+// context ring meaningful after a restart. It only updates an existing record;
+// usage never creates a sidebar row on its own.
+func (a *App) setArchivedUsage(chat *Chat) {
+	if chat == nil || chat.Usage == nil {
+		return
+	}
+	index := a.archiveIndex(strings.TrimSpace(chat.Agent.ID), strings.TrimSpace(chat.Info.SessionID))
+	if index < 0 {
+		return
+	}
+	a.Archived[index].Usage = usageToArchive(chat.Usage)
+	a.saveArchive()
+}
+
+// archivedUsage is the last context-window report stored for a session, or
+// nil when the agent never reported one inside this app.
+func (a *App) archivedUsage(agentID, sessionID string) *acp.Usage {
+	index := a.archiveIndex(strings.TrimSpace(agentID), strings.TrimSpace(sessionID))
+	if index < 0 {
+		return nil
+	}
+	return usageFromArchive(a.Archived[index].Usage)
+}
+
+func usageToArchive(usage *acp.Usage) *archive.Usage {
+	if usage == nil {
+		return nil
+	}
+	out := &archive.Usage{Used: usage.Used, Size: usage.Size}
+	if usage.Cost != nil {
+		out.Cost = &archive.Cost{Amount: usage.Cost.Amount, Currency: usage.Cost.Currency}
+	}
+	return out
+}
+
+func usageFromArchive(usage *archive.Usage) *acp.Usage {
+	if usage == nil {
+		return nil
+	}
+	out := &acp.Usage{Used: usage.Used, Size: usage.Size}
+	if usage.Cost != nil {
+		out.Cost = &acp.Cost{Amount: usage.Cost.Amount, Currency: usage.Cost.Currency}
+	}
+	return out
+}
+
 // touchArchivedSession moves a session to the top of its workspace list after
 // a completed turn. It also records sessions created before this archive was
 // introduced.

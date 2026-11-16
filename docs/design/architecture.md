@@ -43,7 +43,7 @@ MyGo 原生窗口 (Go + ui)
   internal/agent/          内置 agent 表、launch spec、登录 shell 路径解析、工作区校验、状态探测
   internal/session/        进程组 + ACP 会话生命周期 + update/permission 分发（已实现）
   internal/settings/       settings.json 读写、容错与原子落盘（已实现）
-  internal/archive/        sessions.json 本地会话存档（agent/session 关系、show/showName）
+  internal/archive/        sessions.json 本地会话存档（agent/session 关系、show/showName、最近上下文用量）
   internal/files/          workspace 文件树、文本读取/保存与新建/重命名/移动/删除（不经过 shell）
   internal/tasks/          tasks.json 任务索引 + workspace/tasks/*.md 总结读写
   internal/logs/           每个 agent 的滚动日志文件（已实现）
@@ -183,7 +183,7 @@ pi 自己的工具在工作区内读写执行；客户端只负责展示和审�
 
 ```
 settings.json        lastAgent、lastWorkspace、workspaces、removedWorkspaces、lastSelections（每个 agent 的模型/thinking/mode）、appearance、theme、fonts、viewerWidth、notifications、paths 覆盖
-sessions.json        本地会话存档：agentId、sessionId、cwd、title、showName、show、会话时间、用户消息发送时间与每轮运行时间
+sessions.json        本地会话存档：agentId、sessionId、cwd、title、showName、show、会话时间、用户消息发送时间与每轮运行时间、最近一次上下文用量
 tasks.json           任务索引：workspace、title/text、pending/ongoing/complete、result、顺序、session、轮次、note、summaryPath
 <workspace>/tasks/   每个完成任务一份 Markdown 总结（tasks/<id>-<slug>.md）；成功的随任务 commit，失败的只保留文件
 logs/                每个 agent 的 stderr / 协议日志（1 MiB 滚动，保留一个 .1 备份）
@@ -196,8 +196,8 @@ logs/                每个 agent 的 stderr / 协议日志（1 MiB 滚动，保
 - 加载容错：文件缺失用默认值；JSON 损坏、相对路径、未来版本只产生警告（标题栏/侧栏显示），其余字段照常使用，绝不阻塞启动。
 - 路径优先级：`ACP_GUI_*` 环境变量 > `settings.json` 的 `paths` > 登录 shell 解析。显式覆盖无效时保留 shell 结果并警告，不会把可用的路径清空。
 - 保存最后一次状态（当前会话的 agent/工作区）、每个 agent 的模型/thinking/mode、侧栏工作区列表和每个工作区的折叠状态；不保存会话布局、图片草稿或消息。
-- 会话索引单独放在 `sessions.json`，由 `internal/archive` 读写：`{version, sessions:[{agentId,sessionId,cwd,title,showName,createdAt,updatedAt,userTurns:[{number,sentAt,durationMs}],show}]}`。`(agentId, sessionId)` 唯一；`show=false` 是软删除，`showName` 是本地重命名；`userTurns` 按用户轮次保存本地发送时间和该轮运行时间（prompt 发送到结果返回），供 Jump 和会话流在 `session/load` 重放后显示。pi 的 fork 回放会带每条消息的发送时间；Command Code 和旧 bundle 没有时间元数据，退回本地 `userTurns`（ACP 本身不提供消息时间或耗时）。
-- 存档写入时机：session/new、load 成功，标题/轮次更新，重命名、删除/恢复。启动只读存档，且不会从存档补建 workspace；discovery 完成后，每个 ready agent 在后台自动调一次 `session/list` 合并（`cwd: null` 表示全部工作区并走完分页；有已连接进程时复用，否则临时 spawn；失败下次连接重试），之后该 agent 连接成功时再补一次。合并只保留 cwd 属于已添加 workspace 的会话，且绝不覆盖 `show/showName`。`session_info_update.title` 会立即写入存档；启动读存档时会把旧版本用首条 user 消息生成的图片临时路径标题清洗成正文或 `[Image]`（`internal/ui/title.go`），避免侧栏先显示路径再等同步。新增 workspace 时按该 cwd 过滤同步一次。文件为原子写入、0600；损坏 JSON 只在侧栏提示，不阻塞启动。
+- 会话索引单独放在 `sessions.json`，由 `internal/archive` 读写：`{version, sessions:[{agentId,sessionId,cwd,title,showName,createdAt,updatedAt,userTurns:[{number,sentAt,durationMs}],usage:{used,size,cost:{amount,currency}},show}]}`。`(agentId, sessionId)` 唯一；`show=false` 是软删除，`showName` 是本地重命名；`userTurns` 按用户轮次保存本地发送时间和该轮运行时间（prompt 发送到结果返回），供 Jump 和会话流在 `session/load` 重放后显示。pi 的 fork 回放会带每条消息的发送时间；Command Code 和旧 bundle 没有时间元数据，退回本地 `userTurns`（ACP 本身不提供消息时间或耗时）。`usage` 是最近一次 `usage_update` 的上下文快照；agent 在 `session/load` 时通常不重放 usage，所以重启后先用它显示上下文环，新报告到达后覆盖。
+- 存档写入时机：session/new、load 成功，标题/轮次/上下文用量更新，重命名、删除/恢复。启动只读存档，且不会从存档补建 workspace；discovery 完成后，每个 ready agent 在后台自动调一次 `session/list` 合并（`cwd: null` 表示全部工作区并走完分页；有已连接进程时复用，否则临时 spawn；失败下次连接重试），之后该 agent 连接成功时再补一次。合并只保留 cwd 属于已添加 workspace 的会话，且绝不覆盖 `show/showName`。`session_info_update.title` 会立即写入存档；启动读存档时会把旧版本用首条 user 消息生成的图片临时路径标题清洗成正文或 `[Image]`（`internal/ui/title.go`），避免侧栏先显示路径再等同步。新增 workspace 时按该 cwd 过滤同步一次。文件为原子写入、0600；损坏 JSON 只在侧栏提示，不阻塞启动。
 - 任务索引单独放在 `tasks.json`，由 `internal/tasks` 读写：任务按 workspace 归属，状态固定为 `pending` / `ongoing` / `complete`，complete 带 `pass` / `failure` result；`summaryPath` 是 `tasks/<id>-<slug>.md` 的相对路径。创建、编辑、排序、删除和每次状态变化都原子落盘；启动时把遗留的 ongoing 改回 pending，旧的 complete 行补成 pass。成功总结会随任务 commit 提交；失败总结留在 workspace 但不提交。任务记录删除不删总结文件。
 - 不存 registry 快照，也不缓存探测结果：启动时重新检测。
 

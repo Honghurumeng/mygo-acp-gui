@@ -2,14 +2,15 @@
 //
 // The archive is the source of truth for the sidebar's saved session list.
 // It links each agent session id to the agent that owns it and keeps local UI
-// state that the agent does not know about: whether the session is shown and
-// the user's display name.
+// state that the agent does not know about: whether the session is shown, the
+// user's display name, per-turn timing and the last context-window report.
 package archive
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,6 +34,10 @@ type Session struct {
 	// UserTurns records when the user sent prompts. ACP history has no
 	// timestamps, so the app keeps them locally by turn number.
 	UserTurns []UserTurn `json:"userTurns,omitempty"`
+	// Usage is the last context-window report the agent sent for this
+	// session. Agents do not necessarily replay usage_update on session/load,
+	// so the ring would otherwise be empty after a restart.
+	Usage *Usage `json:"usage,omitempty"`
 	// Show is false after the user deletes the session. The record is kept
 	// so a later agent session/list cannot make it reappear.
 	Show bool `json:"show"`
@@ -48,6 +53,21 @@ type UserTurn struct {
 	// DurationMs is how long the turn ran, from prompt send to prompt result.
 	// Zero means the turn never finished inside this app (or predates it).
 	DurationMs int64 `json:"durationMs,omitempty"`
+}
+
+// Usage mirrors the ACP usage_update payload: used and size are context-window
+// tokens, Cost is the optional spend the agent reports with them. Size is zero
+// when the agent knows the used tokens but not the window size.
+type Usage struct {
+	Used int   `json:"used"`
+	Size int   `json:"size,omitempty"`
+	Cost *Cost `json:"cost,omitempty"`
+}
+
+// Cost is the monetary cost carried by usage_update.
+type Cost struct {
+	Amount   float64 `json:"amount"`
+	Currency string  `json:"currency"`
 }
 
 // File is the on-disk archive document.
@@ -166,6 +186,7 @@ type rawSession struct {
 	CreatedAt string     `json:"createdAt"`
 	UpdatedAt string     `json:"updatedAt"`
 	UserTurns []UserTurn `json:"userTurns"`
+	Usage     *Usage     `json:"usage"`
 	// Missing show on an older record means visible.
 	Show *bool `json:"show"`
 }
@@ -209,6 +230,7 @@ func decode(data []byte) (File, error) {
 			CreatedAt: strings.TrimSpace(item.CreatedAt),
 			UpdatedAt: strings.TrimSpace(item.UpdatedAt),
 			UserTurns: cleanUserTurns(item.UserTurns),
+			Usage:     cleanUsage(item.Usage),
 			Show:      show,
 		}
 		file.Sessions = append(file.Sessions, record)
@@ -237,6 +259,34 @@ func cleanUserTurns(turns []UserTurn) []UserTurn {
 		out = append(out, UserTurn{Number: turn.Number, SentAt: at, DurationMs: duration})
 	}
 	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// cleanUsage drops a report with no usable numbers and clamps corrupt values
+// to zero. An all-zero report is omitted rather than stored as a real answer.
+func cleanUsage(usage *Usage) *Usage {
+	if usage == nil {
+		return nil
+	}
+	used := usage.Used
+	if used < 0 {
+		used = 0
+	}
+	size := usage.Size
+	if size < 0 {
+		size = 0
+	}
+	out := &Usage{Used: used, Size: size}
+	if cost := usage.Cost; cost != nil && cost.Amount > 0 && !math.IsInf(cost.Amount, 0) && !math.IsNaN(cost.Amount) {
+		currency := strings.TrimSpace(cost.Currency)
+		if currency == "" {
+			currency = "USD"
+		}
+		out.Cost = &Cost{Amount: cost.Amount, Currency: currency}
+	}
+	if out.Used == 0 && out.Size == 0 && out.Cost == nil {
 		return nil
 	}
 	return out

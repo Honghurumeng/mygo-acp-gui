@@ -133,7 +133,7 @@ scripts/vendor-codex-acp.sh          # 仅在升级 codex-acp 时运行
 - [x] 图片附件（文件选择 + 剪贴板粘贴）、输入 `/` 触发的命令面板、`@` 文件引用（只发路径文本）
 - [x] 侧栏按 workspace 分组、已保存会话直接展示、折叠/展开、超过 5 条收起、重命名/删除/软删除恢复
 - [x] 会话行与标题栏的 agent 品牌图标（pi、Command Code、Codex，SVG 内嵌并跟随主题）
-- [x] 本地 `sessions.json` 会话存档：agent/session 关联、启动直接展示、show 软删除、showName 重命名、点击 load 重放历史
+- [x] 本地 `sessions.json` 会话存档：agent/session 关联、启动直接展示、show 软删除、showName 重命名、最近上下文用量、点击 load 重放历史
 - [x] composer：可拖动高度、附件/git/mode/上下文环/模型面板/thinking/发送；首条消息自动连接
 - [x] 右侧 Git 面板：可折叠、无 git/无仓库提示、status、紧凑可展开提交图、逐文件 diff 预览、stage/commit/fetch/pull/push/undo soft reset
 - [x] 右侧 Tasks 面板：任务创建/排序/删除、pending/ongoing/complete + pass/failure、串行 executor + 隔离 checker（多轮上下文）、成功 Markdown 总结 + 每任务一次 commit（不 push）、失败回滚 + 无 commit

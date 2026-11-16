@@ -3,6 +3,8 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	"github.com/reed/acp-gui/internal/archive"
 )
 
 func TestPromptUsageFallback(t *testing.T) {
@@ -47,6 +49,69 @@ func TestPromptUsageFallback(t *testing.T) {
 	}
 	if strings.Contains(strings.Join(tt.Texts(), "\n"), "turn 1.2k in") {
 		t.Errorf("stale turn usage still rendered; texts: %q", tt.Texts())
+	}
+}
+
+func TestContextUsagePersistsInArchive(t *testing.T) {
+	app, tt := newFakeApp(t)
+	chat := connectTab(t, app, tt)
+	sendTo(t, app, tt, chat, "remember the context")
+	waitFor(t, app, tt, func() bool {
+		return !chat.Streaming && chat.Usage != nil
+	})
+
+	index := app.archiveIndex("fake", chat.Info.SessionID)
+	if index < 0 {
+		t.Fatalf("session was not archived: %+v", app.Archived)
+	}
+	usage := app.Archived[index].Usage
+	if usage == nil || usage.Used != 1200 || usage.Size != 10000 {
+		t.Fatalf("archived usage = %+v, want 1200/10000", usage)
+	}
+	if usage.Cost == nil || usage.Cost.Amount != 0.0012 || usage.Cost.Currency != "USD" {
+		t.Fatalf("archived cost = %+v", usage.Cost)
+	}
+
+	loaded, err := archive.Open(app.archive.Path()).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var persisted *archive.Session
+	for i := range loaded.Sessions {
+		if loaded.Sessions[i].AgentID == "fake" && loaded.Sessions[i].SessionID == chat.Info.SessionID {
+			persisted = &loaded.Sessions[i]
+			break
+		}
+	}
+	if persisted == nil || persisted.Usage == nil || persisted.Usage.Used != 1200 ||
+		persisted.Usage.Size != 10000 || persisted.Usage.Cost == nil {
+		t.Fatalf("persisted usage = %+v", loaded.Sessions)
+	}
+}
+
+func TestSavedSessionRestoresContextUsage(t *testing.T) {
+	app, tt := newFakeApp(t)
+	index := app.archiveIndex("fake", "fake-history")
+	if index < 0 {
+		t.Fatal("fake history is missing from the archive")
+	}
+	app.Archived[index].Usage = &archive.Usage{Used: 1200, Size: 10000}
+	app.saveArchive()
+
+	tt.Frame()
+	if err := tt.Click("Open saved session: Fake history"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		chat := app.activeChat()
+		return chat != nil && chat.Connected && chat.Info.SessionID == "fake-history" && !chat.replaying
+	})
+	chat := app.activeChat()
+	if chat.Usage == nil || chat.Usage.Used != 1200 || chat.Usage.Size != 10000 {
+		t.Fatalf("restored usage = %+v, want 1200/10000", chat.Usage)
+	}
+	if !tt.HasText("12%") {
+		t.Errorf("restored context ring not rendered; texts: %q", tt.Texts())
 	}
 }
 
