@@ -91,28 +91,35 @@
 - 环境固定 `GIT_TERMINAL_PROMPT=0`、`GIT_PAGER=cat`、`LC_ALL=C`；不弹出隐藏的凭据输入，不内嵌终端。
 - 不改写用户仓库之外的内容；面板只操作当前 workspace 所在仓库。
 
-## Diff 预览
+## Diff / 文件卡片
 
-- 点“Staged”/“Changes”里的文件名，或展开提交后的文件行，在 Git 面板左侧弹出浮动卡片（`ui.PopoverBase`）：
-  右缘贴面板左缘（`AttachTo(anchor, AnchorStart, AnchorEnd)` + `MarginEnd(10)`，anchor 是 `gitPanel` 返回的整列），
-  垂直居中，高 86% 窗口，圆角、边框和阴影，像放大的 Git 图表详情卡；对话布局不变，面板不被遮挡。
-  标题写明 `Diff · <path>`、`Staged diff · <path>` 或 `Commit <7 位 hash> · <path>`，右侧只有 `✕`（无障碍名 Close）。
-- 宽度响应式：`gitDiffCardWidth(windowW)` = `clamp((windowW - 300) * 0.62, 480, 900)`（300 是 Git 面板宽，图标栏只占右边缘 38 DIP，不参与计算），
-  窗口变宽时卡片跟着变宽，仍留下部分对话可见。
-- 布局响应式：卡片宽 `≥ gitDiffSplitWidth`（700）时用 Split 左右对比，否则用 Unified 上下对比；
-  切换布局保留同一个 `editor.DiffState`（滚动位置和状态不丢），两栏都开启 `Wrap`，横向不滚动。
-- 点卡片外、按 Esc 或 `✕` 关闭（前两者是 `PopoverBase` 的 `Dismissed`）；隐藏 Git 面板或切换 workspace 时也会关闭。
-- 内容直接用 MyGo `editor.DiffView`（`editor.DiffState`）：带行号、行内高亮和 +/− 统计。
-  字号 11 DIP（比编辑器默认 13 小）、行高 1.4，并开启 `Wrap`：超宽的行自动换行，不需要左右滚动；纵向滚动照常。
+- 点“Staged”/“Changes”里的文件名，或展开提交后的文件行，在 Git 面板左侧打开共享浮动卡片
+  （`internal/ui/viewer.go`，详见 [viewer.md](viewer.md)）。显著位置、锚点、圆角、阴影和关闭方式与
+  任务总结、Files 文件查看一致；对话布局不变，面板不被遮挡。
+- 标题按来源和模式变化：`Diff · <path>`、`Staged diff · <path>`、`Commit <7 位 hash> · <path>`，
+  View/Edit 时为 `File · <path>` / `Edit · <path>`。
+- 模式：Staged 与提交历史只有 Diff / View，不能改写 index 或历史；未暂存、未删除、非冲突的工作区文件
+  额外有 Edit，保存后写回工作区。
+- 宽度默认 `clamp((windowW - 300) * 0.62, 480, 900)`，左缘拖动范围 420 DIP 到窗口可用宽度，
+  拖动结果保存在 settings 的 `viewerWidth`；跨 Git / Tasks / Files 共用。
+- 布局响应式：卡片宽 `≥ 700` DIP 时用 Split 左右对比，否则用 Unified 上下对比；切换布局保留同一个
+  `editor.DiffState`（滚动位置和状态不丢），两栏都开启 `Wrap`，横向不滚动。
+- 点卡片外、按 Esc 或 `✕` 关闭（前两者是 `PopoverBase` 的 `Dismissed`）；隐藏 Git 面板、切换 tab
+  或切换 workspace 时也会关闭。
+- Diff 内容直接用 MyGo `editor.DiffView`（`editor.DiffState`）：带行号、行内高亮和 +/− 统计。
+  字号 11 DIP（比编辑器默认 13 小）、行高 1.4，并开启 `Wrap`。View/Edit 用 `editor.View`，按文件名
+  选语法高亮；Markdown 文件的 View 用 `markdown.View` 渲染。
 - 两侧文本的来源（`internal/git.Diff`）：
   - 已暂存：old = `git show HEAD:<path>`，new = `git show :<path>`；新增（`A`）的 old 为空，删除（`D`）的 new 为空。
   - 未暂存：old = `git show :<path>`，new = 工作区文件；未跟踪（`??`）的 old 为空，工作区已删除（`D`）的 new 为空。
   - 重命名用 `OrigPath` 作 old；冲突（`UU` 等）不猜内容，提示先解决冲突。
   - 提交（`internal/git.CommitDiff`）：old = `git show <hash>^:<oldPath>`，new = `git show <hash>:<path>`；新增的 old 为空，删除的 new 为空。
 - 限制：单侧上限 512 KiB；含 NUL 字节按二进制处理。两种情况都显示错误而不是乱码，不截断展示。
-- 预览状态在 `gitPanelState`（`Preview*`），带 generation + workspace + path（提交预览再加 hash）校验；切换 workspace
-  时丢弃，后台读完成也不会覆盖更新的一次。
-- 只读：预览不暂存、不修改文件，所有操作仍走原来的 stage/unstage/commit。
+- 预览状态在 `gitPanelState`（`Preview*`），带 generation + workspace + path（提交预览再加 hash）校验；
+  切换 workspace 时丢弃，后台读完成也不会覆盖更新的一次。`PreviewCanEdit` 只对工作区一侧为 true。
+- 编辑保存走 `internal/files.SaveText`（保留权限、原子替换、拒绝越界/符号链接/二进制/超大文件），
+  goroutine 完成后更新 `PreviewNew`，并按可见 tab 异步刷新 Git / Files；Staged 与提交历史始终只读。
+- Stage/unstage/commit 仍走原来的按钮；卡片本身只负责查看与工作区文件编辑。
 
 ## 测试
 
@@ -121,5 +128,5 @@ go test ./internal/git -v
 go test ./internal/ui -run 'TestGitPanel' -v -count=1
 ```
 
-`internal/git` 测试覆盖状态/重命名解析、分支头解析、init、stage/unstage、commit、首提交撤销、discard all（已暂存/未暂存/未跟踪/首提交前、忽略文件保留）、嵌套工作区，以及 diff 两侧（未暂存/已暂存/未跟踪/新增/删除/重命名、二进制与超大文件、越界路径）、提交日志解析（含 committer time）、refs 解析、commit 文件列表与提交 diff 两侧（首提交/单文件/重命名/删除）、提交文件数与增删行数统计、merge 的 lane 分配与 8 lane 上限、父提交必须在子提交之后；UI 测试覆盖无仓库提示与 init、无 git 提示、窗口获得焦点后刷新、一轮对话结束后刷新、Stage all + Commit 全链路、Discard all 确认/取消与位置、diff 卡片打开（位于 Git 面板左侧、面板仍可见、点外部关闭）、响应式布局（窄卡片
-Unified/宽卡片 Split、点阈值宽度）与二进制报错、提交图渲染与窄面板裁剪、点击提交展开/收起文件列表、从展开列表打开提交 diff、hover 详情卡（位于图表左侧、无短 hash/父提交、含文件与行数统计）与复制 hash。
+`internal/git` 测试覆盖状态/重命名解析、分支头解析、init、stage/unstage、commit、首提交撤销、discard all（已暂存/未暂存/未跟踪/首提交前、忽略文件保留）、嵌套工作区，以及 diff 两侧（未暂存/已暂存/未跟踪/新增/删除/重命名、二进制与超大文件、越界路径）、提交日志解析（含 committer time）、refs 解析、commit 文件列表与提交 diff 两侧（首提交/单文件/重命名/删除）、提交文件数与增删行数统计、merge 的 lane 分配与 8 lane 上限、父提交必须在子提交之后；UI 测试覆盖无仓库提示与 init、无 git 提示、窗口获得焦点后刷新、一轮对话结束后刷新、Stage all + Commit 全链路、Discard all 确认/取消与位置、共享卡片打开（位于 Git 面板左侧、面板仍可见、点外部关闭）、响应式布局（窄卡片
+Unified/宽卡片 Split、点阈值宽度）、未暂存文件编辑保存、暂存与历史只读，以及二进制报错、提交图渲染与窄面板裁剪、点击提交展开/收起文件列表、从展开列表打开提交 diff、hover 详情卡（位于图表左侧、无短 hash/父提交、含文件与行数统计）与复制 hash。

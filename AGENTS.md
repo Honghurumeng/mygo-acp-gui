@@ -17,6 +17,7 @@
 - `docs/design/command-code.md`：Command Code 启动、已验证 ACP 流程、权限/取消、测试。
 - `docs/design/codex.md`：官方 codex-acp bundle、系统 Codex CLI/`CODEX_PATH`、认证、更新与测试。
 - `docs/design/features.md`：多会话、发现探测、配置/模式、历史、图片、MCP、命令面板、消息跳转、计划/用量。
+- `docs/design/viewer.md`：Git / Tasks / Files 共用的浮动查看卡片：Diff/View/Edit、Markdown、保存、可调宽度。
 - `docs/design/multi-session.md`：pi / Command Code 单进程多会话能力调查与结论。
 - `docs/design/git.md`：右侧 Git 面板、仓库探测、状态/图表、提交与 fetch/pull/push、异步与安全。
 - `docs/design/files.md`：右侧 Files 文件树、懒加载、Git 状态、右键操作、拖动移动与异步/安全。

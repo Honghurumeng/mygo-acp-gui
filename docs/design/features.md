@@ -28,7 +28,7 @@
 - 启动时默认创建一个草稿会话；在草稿里输入第一条消息时自动连接，成功后立即发送。
 - 每个会话保留自己的消息列表滚动位置、输入草稿、图片附件、配置选择和计划面板。
 - 顶部工具栏只保留侧栏开关、会话标题和 `Cancel`（仅连接中）；右侧面板的开关由窗口最右缘的窄图标栏完成，会话由工作区上的 `＋` 创建。
-- 右侧 Files 面板按当前 workspace 懒加载文件树，显示 Git 状态，支持右键揭示/重命名/删除、新建文件和文件夹、拖动移动；详见 [files.md](files.md)。
+- 右侧 Files 面板按当前 workspace 懒加载文件树，显示 Git 状态，支持右键揭示/重命名/删除、新建文件和文件夹、拖动移动，点文件在共享卡片里查看/编辑；详见 [files.md](files.md)、[viewer.md](viewer.md)。
 - 关闭窗口只是关闭窗口：应用留在后台，所有会话（包括流式中的回复）继续运行；macOS 再点 Dock 图标会按当前状态重新开窗。只有退出（⌘Q / Quit）才取消连接并关闭进程组。
 - 应用退出时取消所有正在连接的会话，并关闭所有已登记 session 的进程组。
 
@@ -151,7 +151,7 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 - incomplete 时把 checker reason 发回同一个 executor 会话继续；complete 时写 `<workspace>/tasks/<id>-<slug>.md`，执行一次 `git add -A` + commit（不 push），再开始下一个任务。
 - 失败时先恢复任务开始前的 work tree 快照（丢弃本次成果），再写总结并标记 complete(failure)，不 commit，然后继续执行剩余 pending；只有用户 Stop 才停队列。非 Git 仓库或快照失败时在 note 里说明无法回滚。
 - 任务索引保存在 `<data>/tasks.json`，任务记录、result、轮次、note、summaryPath 跨重启恢复；上次退出遗留的 ongoing 自动改回 pending。只有 pending 可编辑 / 排序；删除任务保留已写出的 Markdown。
-- complete 任务可打开浮动总结卡片：默认 Markdown 渲染，标题栏 `Diff` 切换成 all-additions 的 Git diff 视图；failure 行显示 `✗ failure`，卡片标题显示 `Task failure`。详细设计见 [tasks.md](tasks.md)。
+- complete 任务可打开浮动总结卡片：使用共享查看卡片，默认 Markdown 渲染，可切换 all-additions 的 Diff 或编辑 Markdown 源码并保存；failure 行显示 `✗ failure`，卡片标题显示 `Task failure`。详细设计见 [tasks.md](tasks.md)、[viewer.md](viewer.md)。
 
 ## 设置持久化
 

@@ -20,6 +20,7 @@ func (a *App) persistSettings() {
 		Appearance:    a.Appearance,
 		Theme:         a.Theme,
 		Fonts:         normalizeFontScales(a.Fonts),
+		ViewerWidth:   normalizeViewerWidth(a.ViewerWidth),
 		Notifications: a.NotificationsEnabled,
 		DockBadge:     a.DockBadgeEnabled,
 	}

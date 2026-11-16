@@ -97,28 +97,33 @@
   - 代码体：`editor.LanguageNamed(lang)` 取 tokenizer，`editor.DefaultTheme(c.Theme())` 取颜色，逐行
     `Tokenize` 后转成 `mui.Span` 用 `RichText` 画；等宽 `t.Rem(0.8)`、行高 1.6、带行号、长行 `Wrap`。
   - 复制：`c.WriteClipboard(code)`，`mui.Local` 记 2 秒「已复制」，期间图标换成 `check`；不播声音。
+- `viewerCard`（`viewer.go`）是 Git / Tasks / Files 共用的浮动查看卡片：统一标题栏、Diff/View/Edit 模式按钮、
+  Save/Close、加载/错误/空状态，以及左缘拖动改宽度。内容和保存由调用方提供，卡片只持有编辑 buffer、diff state
+  和 Markdown 视图；详见 [viewer.md](viewer.md)。
 - 所有组件从 `c.Theme()` 取色，不硬编码颜色，也不判断深浅色。唯一例外是阴影的黑色 alpha；主题目录和外观切换见 [themes.md](themes.md)。
 
 ## 使用位置
 
 - 空状态与连接/探测中：`app.go`，`busyLine` + `emptyState`。
-- Git diff 卡片：`gitpanel.go`，加载中 `busyLine`、错误 `dangerAlert`、两边相同 `emptyState`。
+- 共享查看卡片：`gitpanel.go` 的 Git diff / 文件、`tasks.go` 的任务总结、`filepanel.go` 的文件行，
+  加载中 `busyLine`、错误 `dangerAlert`、Diff 两边相同与空 Markdown `emptyState`。
 - 权限弹窗：`permission.go`，`codeBlock` + `arrive`/`shade` 的遮罩与面板。
 
 ## 不替换
 
 - 消息渲染：角色、thinking、tool call、附件、plan/usage 都是 `App.message` 自己的渲染器。
 - 侧栏与 composer：多会话、存档、拖拽高度、分支芯片、模型弹层。
-- `mui.DialogBase`、`editor.DiffView`、`internal/ui/gitpanel.go` 的 popover、`internal/ui/gitgraph.go`
-  的自绘提交列表：它们已经贴合数据流，换成通用组件只会丢功能。
+- `mui.DialogBase`、`editor.DiffView` / `editor.View` 和 `internal/ui/gitgraph.go` 的自绘提交列表：
+  它们已经贴合数据流；查看卡片只把它们组合起来，不另写文本/diff 渲染器。
   Git 历史是自绘列表（行高 22 DIP、整行可点、点击展开文件、lane 用 `DrawOver` 画），不是通用提交图组件：
   后者行高固定、行不可点，没法缩间距或插入文件列表。
 
 ## 交互约定
 
-- diff 卡片直接用 `editor.DiffView`（`editor.DiffState`）：它收两份完整文本（`editor.NewBuffer`），不是 patch；
-  由 `internal/git.Diff` 负责取 old/new，组件只画。切换文件时重建 `editor.DiffState`，同一份文本不重建。
-  `DiffState` 支持 `Wrap`、`Font`、`LineHeight`；卡片宽时 `DiffSplit`，窄时 `DiffUnified`，`Wrap` 始终开启。
+- 查看卡片按模式选择 `editor.DiffView`、`editor.View` 或 `markdown.View`：Diff 收两份完整文本
+  （`editor.NewBuffer`），不是 patch；由调用方负责取文本，卡片只画。切换文件时重建 `editor.DiffState`，
+  同一份文本不重建。`DiffState` 支持 `Wrap`、`Font`、`LineHeight`；卡片宽时 `DiffSplit`，窄时
+  `DiffUnified`，`Wrap` 始终开启；View/Edit 共享同一个 `editor.State`，保留滚动和未保存文字。
 - 不做组件音效：`mygo/audio` 只为几处点击声引入并不值得，交互反馈靠 hover/pressed 和图标变化。
 - 可交互组件通过 `.Label()` 暴露标签，`tt.Click("Allow once")` 这类按标签点击仍然有效。
 - 事件返回值与 ACP 语义解耦：先拿到点击/变更，再调用 `finishPermission` 等现有函数。
@@ -140,4 +145,5 @@ go test ./internal/ui -count=5
 ```
 
 再跑一次真实界面：空状态四种、权限弹窗（遮罩/Esc 不关闭、`Input` 在 description 之后、复制）、
-Git diff 四态（加载、错误、两边相同、正常），每个外观和配色各看一遍（组件按 `c.Theme()` 取色，主题目录见 [themes.md](themes.md)）。
+共享查看卡片的 Diff/View/Edit 与加载、错误、空状态，以及拖动左缘改宽度，每个外观和配色各看一遍
+（组件按 `c.Theme()` 取色，主题目录见 [themes.md](themes.md)）。

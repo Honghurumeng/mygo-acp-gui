@@ -228,9 +228,12 @@ type App struct {
 	TaskSummaryBusy   bool
 	TaskSummaryErr    string
 	TaskSummaryGen    int
-	// TaskSummaryDiff shows the Markdown as an all-additions diff instead of
-	// rendered text, matching the Git panel's diff viewer.
-	TaskSummaryDiff bool
+	// TaskSummaryMode shows the summary as rendered Markdown, an editor or
+	// an all-additions diff in the shared viewer card.
+	TaskSummaryMode    viewerMode
+	TaskSummarySaving  bool
+	TaskSummarySaveErr string
+	TaskSummaryNotice  string
 
 	Chats  []*Chat
 	Active int
@@ -255,6 +258,9 @@ type App struct {
 	// Fonts scales each text area: the workspace list, the conversation, the
 	// composer and the Git panel. It is persisted in settings.json.
 	Fonts settings.Fonts
+	// ViewerWidth is the floating file viewer's width after the user drags its
+	// left edge. Zero follows the window; the value is persisted.
+	ViewerWidth float32
 	// NotificationsEnabled gates desktop notifications. It defaults to on and
 	// is persisted in settings.json.
 	NotificationsEnabled bool
@@ -507,6 +513,7 @@ func (a *App) loadSettings(dataDir string, workspaceDefault bool) {
 	a.Appearance = normalizeAppearance(file.Appearance)
 	a.Theme = normalizeTheme(file.Theme)
 	a.Fonts = normalizeFontScales(file.Fonts)
+	a.ViewerWidth = normalizeViewerWidth(file.ViewerWidth)
 	a.NotificationsEnabled = file.Notifications
 	a.DockBadgeEnabled = file.DockBadge
 	for _, workspace := range file.Workspaces {
@@ -719,7 +726,7 @@ func (a *App) View(c *mui.Context) {
 			case rightTabTasks:
 				a.taskSummaryPopover(c, a.taskPanel(c))
 			case rightTabFiles:
-				a.filePanel(c)
+				a.fileViewerPopover(c, a.filePanel(c))
 			default:
 				// The diff floats over the conversation with its right edge on
 				// the panel's left edge, so the panel stays visible and usable.

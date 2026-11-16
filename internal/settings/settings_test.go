@@ -46,6 +46,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		Appearance:          "dark",
 		Theme:               "solarized",
 		Fonts:               Fonts{WorkspaceList: 110, Chat: 125, Composer: 90, Git: 140},
+		ViewerWidth:         720,
 		Notifications:       true,
 		DockBadge:           true,
 	}
@@ -98,6 +99,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if got.Fonts != want.Fonts {
 		t.Errorf("fonts = %+v, want %+v", got.Fonts, want.Fonts)
+	}
+	if got.ViewerWidth != want.ViewerWidth {
+		t.Errorf("viewerWidth = %v, want %v", got.ViewerWidth, want.ViewerWidth)
 	}
 }
 

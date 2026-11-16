@@ -77,6 +77,19 @@ type filePanelState struct {
 	DeleteOpen bool
 	DeletePath string
 	DeleteDir  bool
+
+	// Viewer is the floating file card opened from a file row. ViewerGen
+	// guards a late read or save against another file or workspace.
+	ViewerOpen    bool
+	ViewerPath    string
+	ViewerBody    string
+	ViewerBusy    bool
+	ViewerErr     string
+	ViewerMode    viewerMode
+	ViewerGen     int
+	ViewerSaving  bool
+	ViewerSaveErr string
+	ViewerNotice  string
 }
 
 func newFilePanelState(workspace string) filePanelState {
@@ -627,8 +640,12 @@ func (a *App) fileRow(c *mui.Context, entry files.Entry, depth int) {
 	case row.Hovered():
 		row.Background(t.SurfaceHover)
 	}
-	if entry.Dir && row.Clicked() {
-		a.toggleFileFolder(entry.Path)
+	if row.Clicked() {
+		if entry.Dir {
+			a.toggleFileFolder(entry.Path)
+		} else {
+			a.openFileViewer(entry)
+		}
 	}
 	row.ContextMenu(func(m *mui.Menu) {
 		if m.Item("Reveal in folder").Chosen() {
@@ -650,6 +667,143 @@ func (a *App) fileRow(c *mui.Context, entry files.Entry, depth int) {
 	if value, over := mui.DragOver[fileDragValue](row); over && a.canMoveFileTo(value, target) {
 		row.Background(t.Accent.Alpha(0.12))
 	}
+}
+
+// openFileViewer reads one text file off the UI thread and opens the shared
+// viewer. Folders keep toggling in the tree instead.
+func (a *App) openFileViewer(entry files.Entry) {
+	if entry.Dir {
+		return
+	}
+	workspace := a.Files.Workspace
+	if workspace == "" || !filepath.IsAbs(workspace) || entry.Path == "" {
+		return
+	}
+	a.Files.ViewerOpen = true
+	a.Files.ViewerPath = entry.Path
+	a.Files.ViewerBody = ""
+	a.Files.ViewerErr = ""
+	a.Files.ViewerBusy = true
+	a.Files.ViewerMode = viewerView
+	a.Files.ViewerSaving = false
+	a.Files.ViewerSaveErr = ""
+	a.Files.ViewerNotice = ""
+	a.Files.ViewerGen++
+	gen := a.Files.ViewerGen
+	go func() {
+		body, err := files.ReadText(workspace, entry.Path)
+		a.Post(func() {
+			if a.closed.Load() || a.Files.ViewerGen != gen || !a.Files.ViewerOpen ||
+				a.Files.Workspace != workspace || a.Files.ViewerPath != entry.Path {
+				return
+			}
+			a.Files.ViewerBusy = false
+			if err != nil {
+				a.Files.ViewerErr = fileErrorText(err)
+				return
+			}
+			a.Files.ViewerBody = body
+		})
+	}()
+}
+
+// closeFileViewer drops the card and any read or save still running.
+func (a *App) closeFileViewer() {
+	a.Files.ViewerOpen = false
+	a.Files.ViewerGen++
+	a.Files.ViewerPath = ""
+	a.Files.ViewerBody = ""
+	a.Files.ViewerBusy = false
+	a.Files.ViewerErr = ""
+	a.Files.ViewerMode = viewerView
+	a.Files.ViewerSaving = false
+	a.Files.ViewerSaveErr = ""
+	a.Files.ViewerNotice = ""
+}
+
+// fileViewerPopover anchors the shared viewer to the Files panel and closes
+// it when the workspace changes or the panel is hidden.
+func (a *App) fileViewerPopover(c *mui.Context, anchor mui.Element) {
+	if !a.Files.ViewerOpen {
+		return
+	}
+	if a.Files.Workspace != a.activeFileWorkspace() || a.Files.ViewerPath == "" {
+		a.closeFileViewer()
+		return
+	}
+	mui.PopoverBase(c, anchor, &a.Files.ViewerOpen, func(panel mui.Element) {
+		a.fileViewerCard(c, panel, anchor)
+	})
+	if !a.Files.ViewerOpen {
+		a.closeFileViewer()
+	}
+}
+
+func (a *App) fileViewerCard(c *mui.Context, panel, anchor mui.Element) {
+	path := a.Files.ViewerPath
+	var save func(string)
+	if !a.Files.ViewerBusy && a.Files.ViewerErr == "" {
+		save = a.saveFileViewer
+	}
+	a.viewerCard(c, panel, anchor, viewerSpec{
+		Key:      "file:" + path,
+		Title:    filepath.Base(path),
+		Subtitle: path,
+		Tooltip:  filepath.Join(a.Files.Workspace, filepath.FromSlash(path)),
+		Filename: path,
+		Body:     a.Files.ViewerBody,
+		Old:      "",
+		New:      a.Files.ViewerBody,
+		Markdown: isMarkdownPath(path),
+		Modes:    []viewerMode{viewerView, viewerEdit},
+		Mode:     a.Files.ViewerMode,
+		OnMode: func(mode viewerMode) {
+			a.Files.ViewerMode = mode
+			a.Files.ViewerSaveErr = ""
+			a.Files.ViewerNotice = ""
+		},
+		OnClose:        a.closeFileViewer,
+		Save:           save,
+		Saving:         a.Files.ViewerSaving,
+		SaveErr:        a.Files.ViewerSaveErr,
+		Notice:         a.Files.ViewerNotice,
+		Busy:           a.Files.ViewerBusy,
+		Err:            a.Files.ViewerErr,
+		BusyText:       "Reading file…",
+		ErrorTitle:     "Cannot show this file",
+		EmptyViewTitle: "Empty file",
+		EmptyViewText:  "This file has no text yet.",
+	})
+}
+
+// saveFileViewer writes edited text back through files.SaveText, preserving
+// the file's permissions, then refreshes the panel that shows its Git status.
+func (a *App) saveFileViewer(text string) {
+	workspace, rel := a.Files.Workspace, a.Files.ViewerPath
+	if workspace == "" || rel == "" || a.Files.ViewerBusy || a.Files.ViewerErr != "" {
+		return
+	}
+	gen := a.Files.ViewerGen
+	a.Files.ViewerSaving = true
+	a.Files.ViewerSaveErr = ""
+	a.Files.ViewerNotice = ""
+	go func() {
+		err := files.SaveText(workspace, rel, text)
+		a.Post(func() {
+			if a.closed.Load() || a.Files.ViewerGen != gen || !a.Files.ViewerOpen ||
+				a.Files.Workspace != workspace || a.Files.ViewerPath != rel {
+				return
+			}
+			a.Files.ViewerSaving = false
+			if err != nil {
+				a.Files.ViewerSaveErr = fileErrorText(err)
+				return
+			}
+			a.Files.ViewerBody = text
+			a.Files.ViewerNotice = "Saved."
+			a.refreshAfterFileSave(workspace)
+		})
+	}()
 }
 
 // fileIndent is a row's left inset: the panel gutter at the root, one gutter

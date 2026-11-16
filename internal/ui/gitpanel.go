@@ -11,7 +11,7 @@ import (
 	"time"
 
 	mui "github.com/egoist/mygo/ui"
-	"github.com/egoist/mygo/ui/editor"
+	"github.com/reed/acp-gui/internal/files"
 	"github.com/reed/acp-gui/internal/git"
 )
 
@@ -89,17 +89,25 @@ type gitPanelState struct {
 	// DiscardOpen asks before throwing away every change in the repository.
 	DiscardOpen bool
 
-	// Preview is the diff card floating left of one changed file;
+	// Preview is the file card floating left of one changed file;
 	// PreviewGen guards a late read against a newer file or workspace.
 	PreviewOpen   bool
 	PreviewPath   string
 	PreviewCommit string
 	PreviewStaged bool
-	PreviewBusy   bool
-	PreviewErr    string
-	PreviewOld    string
-	PreviewNew    string
-	PreviewGen    int
+	PreviewMode   viewerMode
+	// PreviewCanEdit is true when the card shows the working-tree text, so
+	// Edit saves back to the file. Staged and historical sides stay
+	// read-only.
+	PreviewCanEdit bool
+	PreviewBusy    bool
+	PreviewErr     string
+	PreviewOld     string
+	PreviewNew     string
+	PreviewSaving  bool
+	PreviewSaveErr string
+	PreviewNotice  string
+	PreviewGen     int
 }
 
 func (a *App) activeGitWorkspace() string {
@@ -742,7 +750,8 @@ func (a *App) gitFileRow(c *mui.Context, file git.File, staged bool) {
 
 // openGitPreview shows a staged or unstaged file against the index or HEAD.
 func (a *App) openGitPreview(file git.File, staged bool) {
-	a.startGitPreview(file.Path, "", staged, func(ctx context.Context, root string) (string, string, error) {
+	canEdit := !staged && file.Worktree != 'D' && !file.Conflict()
+	a.startGitPreview(file.Path, "", staged, canEdit, func(ctx context.Context, root string) (string, string, error) {
 		return git.Diff(ctx, root, file, staged)
 	})
 }
@@ -750,14 +759,14 @@ func (a *App) openGitPreview(file git.File, staged bool) {
 // openGitCommitPreview shows one file as a commit changed it, against the
 // commit's first parent, as the expanded commit list lists it.
 func (a *App) openGitCommitPreview(hash string, file git.CommitFile) {
-	a.startGitPreview(file.Path, hash, false, func(ctx context.Context, root string) (string, string, error) {
+	a.startGitPreview(file.Path, hash, false, false, func(ctx context.Context, root string) (string, string, error) {
 		return git.CommitDiff(ctx, root, hash, file)
 	})
 }
 
 // startGitPreview reads both sides off the UI thread and opens the overlay;
 // a newer click, another commit or another workspace wins over a late read.
-func (a *App) startGitPreview(path, commit string, staged bool, load func(context.Context, string) (string, string, error)) {
+func (a *App) startGitPreview(path, commit string, staged, canEdit bool, load func(context.Context, string) (string, string, error)) {
 	workspace, root := a.activeGitWorkspace(), a.Git.RepoRoot
 	if a.closed.Load() || workspace == "" || root == "" || path == "" {
 		return
@@ -766,9 +775,14 @@ func (a *App) startGitPreview(path, commit string, staged bool, load func(contex
 	a.Git.PreviewPath = path
 	a.Git.PreviewCommit = commit
 	a.Git.PreviewStaged = staged
+	a.Git.PreviewMode = viewerDiff
+	a.Git.PreviewCanEdit = canEdit
 	a.Git.PreviewBusy = true
 	a.Git.PreviewErr = ""
 	a.Git.PreviewOld, a.Git.PreviewNew = "", ""
+	a.Git.PreviewSaving = false
+	a.Git.PreviewSaveErr = ""
+	a.Git.PreviewNotice = ""
 	a.Git.PreviewGen++
 	gen := a.Git.PreviewGen
 	go func() {
@@ -796,8 +810,47 @@ func (a *App) closeGitPreview() {
 	a.Git.PreviewGen++
 	a.Git.PreviewPath = ""
 	a.Git.PreviewCommit = ""
+	a.Git.PreviewMode = viewerDiff
+	a.Git.PreviewCanEdit = false
 	a.Git.PreviewErr = ""
 	a.Git.PreviewOld, a.Git.PreviewNew = "", ""
+	a.Git.PreviewSaving = false
+	a.Git.PreviewSaveErr = ""
+	a.Git.PreviewNotice = ""
+}
+
+// saveGitPreview writes an edited working-tree file back through the same
+// path checks as the Files panel. Staged and historical sides never save.
+func (a *App) saveGitPreview(text string) {
+	workspace, root := a.Git.Workspace, a.Git.RepoRoot
+	path := a.Git.PreviewPath
+	if a.closed.Load() || workspace == "" || root == "" || path == "" ||
+		a.Git.PreviewStaged || a.Git.PreviewCommit != "" || !a.Git.PreviewCanEdit ||
+		a.Git.PreviewBusy || a.Git.PreviewErr != "" {
+		return
+	}
+	gen := a.Git.PreviewGen
+	a.Git.PreviewSaving = true
+	a.Git.PreviewSaveErr = ""
+	a.Git.PreviewNotice = ""
+	go func() {
+		err := files.SaveText(root, path, text)
+		a.Post(func() {
+			if a.closed.Load() || a.Git.PreviewGen != gen || !a.Git.PreviewOpen ||
+				a.Git.Workspace != workspace || a.Git.PreviewPath != path ||
+				a.Git.PreviewStaged || a.Git.PreviewCommit != "" {
+				return
+			}
+			a.Git.PreviewSaving = false
+			if err != nil {
+				a.Git.PreviewSaveErr = fileErrorText(err)
+				return
+			}
+			a.Git.PreviewNew = text
+			a.Git.PreviewNotice = "Saved."
+			a.refreshAfterFileSave(workspace)
+		})
+	}()
 }
 
 // toggleCommit expands or collapses the changed files of one commit. One
@@ -994,26 +1047,29 @@ func (a *App) gitDiscardDialog(c *mui.Context) {
 	}
 }
 
-// gitDiffView holds one preview's buffers; they are rebuilt when the sides
-// change, and MyGo diffs them again as they do.
-type gitDiffView struct {
-	old, new string
-	fontSize float32
-	state    *editor.DiffState
-}
-
-// gitPreviewTitle names the file and the side the card compares.
-func (a *App) gitPreviewTitle() string {
+// gitPreviewTitle names the file and the mode the card shows. Diff keeps
+// the old wording so the title tells which side is compared.
+func (a *App) gitPreviewTitle(mode viewerMode) string {
 	switch {
 	case a.Git.PreviewCommit != "":
 		return "Commit " + shortCommitHash(a.Git.PreviewCommit) + " · " + a.Git.PreviewPath
 	case a.Git.PreviewStaged:
+		if mode == viewerView || mode == viewerEdit {
+			return "Staged file · " + a.Git.PreviewPath
+		}
 		return "Staged diff · " + a.Git.PreviewPath
 	}
-	return "Diff · " + a.Git.PreviewPath
+	switch mode {
+	case viewerView:
+		return "File · " + a.Git.PreviewPath
+	case viewerEdit:
+		return "Edit · " + a.Git.PreviewPath
+	default:
+		return "Diff · " + a.Git.PreviewPath
+	}
 }
 
-// gitDiffPopover floats the previewed file beside the Git panel: the card's
+// gitDiffPopover floats the shared viewer beside the Git panel: the card's
 // right edge sits on the panel's left edge, as the commit details card does
 // beside a graph row, but larger. Pressing outside or Escape closes it.
 func (a *App) gitDiffPopover(c *mui.Context, anchor mui.Element) {
@@ -1033,95 +1089,44 @@ func (a *App) gitDiffPopover(c *mui.Context, anchor mui.Element) {
 	}
 }
 
-// The diff card widens with the window; a wide card compares the sides
-// left and right, a narrow one stacks them. The thresholds keep either
-// side wide enough to read wrapped lines.
-const (
-	gitDiffCardMinWidth = 480
-	gitDiffCardMaxWidth = 900
-	gitDiffSplitWidth   = 700
-)
-
-// gitDiffCardWidth is the card's width in DIPs for a window windowW wide: a
-// share of the room left of the Git panel, within bounds.
-func gitDiffCardWidth(windowW float32) float32 {
-	room := max(windowW-gitPanelWidth, 0)
-	return min(max(room*0.62, gitDiffCardMinWidth), gitDiffCardMaxWidth)
-}
-
-// gitDiffSplit reports whether the card is wide enough for side by side.
-func gitDiffSplit(width float32) bool { return width >= gitDiffSplitWidth }
-
-// gitDiffCard styles the floating card and builds its header and body.
+// gitDiffCard maps the Git preview onto the shared file viewer: Diff and
+// View always, Edit only for the working-tree side.
 func (a *App) gitDiffCard(c *mui.Context, panel, anchor mui.Element) {
-	t := c.Theme()
-	windowW, _ := c.Size()
-	width := gitDiffCardWidth(windowW)
-	panel.Width(width).HeightPercent(86).Radius(10).Clip().
-		Background(t.Background).Border(1, t.Border).
-		Shadow(0, 12, 32, 0, mui.RGBA(0, 0, 0, 0.24)).
-		AttachTo(anchor, mui.AnchorStart, mui.AnchorEnd).
-		MarginEnd(10).AttachEdgeMargin(12)
-	view := mui.Local(panel, "view", func() gitDiffView { return gitDiffView{} })
-	panel.Children(func() {
-		a.gitDiffHeader(c)
-		switch {
-		case a.Git.PreviewBusy:
-			centered(c, func() {
-				busyLine(c, "Loading diff…")
-			})
-		case a.Git.PreviewErr != "":
-			mui.Column(c).Grow(1).Padding(12, 12).Children(func() {
-				dangerAlert(c, "Cannot show this diff", a.Git.PreviewErr)
-			})
-		case a.Git.PreviewOld == a.Git.PreviewNew:
-			centered(c, func() {
-				emptyState(c, gitCompareIcon, "No changes to show", "Both sides of this file are identical.")
-			})
-		default:
-			a.gitDiffBody(c, view, gitDiffSplit(width))
-		}
-	})
-}
-
-// gitDiffHeader titles the card beside the file it compares and holds Close.
-func (a *App) gitDiffHeader(c *mui.Context) {
-	t := c.Theme()
-	mui.Row(c).Height(48).Gap(6).Padding(0, 12).AlignItems(mui.Center).
-		BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
-		mui.Text(c, a.gitPreviewTitle()).FontSize(a.gitFont(11)).Bold().SingleLine().
-			MinWidth(0).Grow(1).Tooltip(a.Git.PreviewPath)
-		if quietButton(c, "✕").Label("Close").FontSize(a.gitFont(9)).Tooltip("Close the diff").Clicked() {
-			a.closeGitPreview()
-		}
-	})
-}
-
-// gitDiffBody builds the diff with a smaller font and wrapped lines: the
-// sides share the card when it is wide, and one stacked view shows the
-// changes when it is narrow. Neither scrolls sideways.
-func (a *App) gitDiffBody(c *mui.Context, view *gitDiffView, split bool) {
-	layout := editor.DiffUnified
-	if split {
-		layout = editor.DiffSplit
+	canEdit := a.Git.PreviewCanEdit && !a.Git.PreviewBusy && a.Git.PreviewErr == ""
+	modes := []viewerMode{viewerDiff, viewerView}
+	if canEdit {
+		modes = append(modes, viewerEdit)
 	}
-	fontSize := a.gitFont(11)
-	if view.old != a.Git.PreviewOld || view.new != a.Git.PreviewNew || view.fontSize != fontSize {
-		view.old, view.new = a.Git.PreviewOld, a.Git.PreviewNew
-		view.fontSize = fontSize
-		view.state = &editor.DiffState{
-			Old:        editor.NewBuffer(view.old),
-			New:        editor.NewBuffer(view.new),
-			Layout:     layout,
-			Wrap:       true,
-			Font:       mui.Font{Size: fontSize},
-			LineHeight: 1.4,
-		}
+	var save func(string)
+	if canEdit {
+		save = a.saveGitPreview
 	}
-	// A resize may cross the threshold: the viewer keeps its scroll and
-	// state across the layout switch.
-	view.state.Layout = layout
-	editor.DiffView(c, view.state).Grow(1).FillWidth()
+	a.viewerCard(c, panel, anchor, viewerSpec{
+		Key:      "git:" + a.Git.PreviewCommit + ":" + a.Git.PreviewPath,
+		Title:    a.gitPreviewTitle(a.Git.PreviewMode),
+		Tooltip:  a.Git.PreviewPath,
+		Filename: a.Git.PreviewPath,
+		Body:     a.Git.PreviewNew,
+		Old:      a.Git.PreviewOld,
+		New:      a.Git.PreviewNew,
+		Markdown: isMarkdownPath(a.Git.PreviewPath),
+		Modes:    modes,
+		Mode:     a.Git.PreviewMode,
+		OnMode: func(mode viewerMode) {
+			a.Git.PreviewMode = mode
+			a.Git.PreviewSaveErr = ""
+			a.Git.PreviewNotice = ""
+		},
+		OnClose:    a.closeGitPreview,
+		Save:       save,
+		Saving:     a.Git.PreviewSaving,
+		SaveErr:    a.Git.PreviewSaveErr,
+		Notice:     a.Git.PreviewNotice,
+		Busy:       a.Git.PreviewBusy,
+		Err:        a.Git.PreviewErr,
+		BusyText:   "Loading diff…",
+		ErrorTitle: "Cannot show this diff",
+	})
 }
 
 func (a *App) gitToolButton(c *mui.Context, label, tip string, disabled bool, fn func()) {

@@ -92,6 +92,7 @@ func (a *App) setRightTab(tab string) {
 	a.closeGitOverlays()
 	a.closeTaskSummary()
 	a.closeFileDialogs()
+	a.closeFileViewer()
 	switch tab {
 	case rightTabGit:
 		if a.Git.Workspace != "" {
@@ -115,6 +116,7 @@ func (a *App) toggleRightPanel(tab string) {
 		a.closeGitOverlays()
 		a.closeTaskSummary()
 		a.closeFileDialogs()
+		a.closeFileViewer()
 		a.Git.DiscardOpen = false
 		a.Files.Checked = false
 		return

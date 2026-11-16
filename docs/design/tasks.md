@@ -94,9 +94,17 @@
 
 ## Task 总结卡片
 
-- 点 complete 任务行或 `View` 打开浮动卡片，位置、宽度、阴影和锚点与 Git diff 卡片一致（右侧贴任务面板左缘，宽度 `gitDiffCardWidth`，高 80%）。pass 和 failure 都可打开。
-- 默认用 `markdown.View` 渲染；标题栏 `Diff` 按钮切换到 `editor.DiffView` 的 all-additions 视图（old 为空，new 为整个 Markdown），再点 `Markdown` 切回。文件名 / 相对路径显示在标题下方。
-- 关闭、切换右侧 tab、切换 workspace 时丢弃卡片和仍在读取的结果；读取由 generation + task id + workspace 守卫。
+- 点 complete 任务行或 `View` 打开浮动卡片，位置、宽度、阴影和锚点与 Git / Files 的查看卡片一致
+  （右侧贴任务面板左缘，宽度跟随共享的 `viewerWidth`，高 80%）。pass 和 failure 都可打开。
+- 使用共享的 `internal/ui/viewer.go` 卡片，默认 View 模式用 `markdown.View` 渲染；标题栏 `Diff` 切换成
+  all-additions 的 `editor.DiffView` 视图（old 为空，new 为整个 Markdown），`Edit` 用可编辑的
+  `editor.View` 打开 Markdown 源码。文件名 / 相对路径显示在标题下方，未保存时追加 `unsaved changes`。
+- 编辑支持标题栏 `Save` 和 `⌘S`（非 macOS 为 Ctrl+S）；保存走 `internal/files.SaveText`，只接受任务记录
+  解析出的 `tasks/` 路径，保留原文件权限并原子替换。成功后更新卡片正文和 `Saved.` 提示，并让
+  Git / Files 面板按可见性刷新或标记 stale。
+- 卡片宽度可拖左缘调整并写入 settings 的 `viewerWidth`；Diff 在宽卡片上用 Split，窄卡片上用 Unified。
+- 关闭、切换右侧 tab、切换 workspace 时丢弃卡片和仍在读取/保存的结果；读取与保存由
+  generation + task id + workspace + path 守卫。
 
 ## 异步与安全
 

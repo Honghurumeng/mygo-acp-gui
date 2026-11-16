@@ -641,6 +641,83 @@ func TestGitPanelPreviewsDiff(t *testing.T) {
 	waitFor(t, app, tt, func() bool { return !app.Git.PreviewOpen && app.Git.PreviewPath == "" })
 }
 
+func TestGitPanelEditsWorkingTreeFile(t *testing.T) {
+	workspace := initGitPanelRepo(t)
+	writeGitPanelFile(t, workspace, "hello.txt", "one\n")
+	runGitPanelCommand(t, workspace, "add", ".")
+	runGitPanelCommand(t, workspace, "commit", "-q", "-m", "first")
+	writeGitPanelFile(t, workspace, "hello.txt", "two\n")
+
+	app, tt := newGitPanelApp(t, workspace)
+	waitFor(t, app, tt, func() bool {
+		return app.Git.Checked && !app.Git.Loading && len(app.Git.Changes) == 1
+	})
+	if err := tt.Click("Diff of hello.txt"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		return app.Git.PreviewOpen && !app.Git.PreviewBusy && app.Git.PreviewNew != ""
+	})
+	if !app.Git.PreviewCanEdit {
+		t.Fatal("an unstaged working-tree file should be editable")
+	}
+
+	if err := tt.Click("Show file content"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if app.Git.PreviewMode != viewerView || !tt.HasText("File · hello.txt") {
+		t.Fatalf("view mode = %v; texts: %q", app.Git.PreviewMode, tt.Texts())
+	}
+	if err := tt.Click("Edit file"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if app.Git.PreviewMode != viewerEdit || !tt.HasText("Edit · hello.txt") {
+		t.Fatalf("edit mode = %v; texts: %q", app.Git.PreviewMode, tt.Texts())
+	}
+
+	app.saveGitPreview("three\n")
+	waitFor(t, app, tt, func() bool {
+		return !app.Git.PreviewSaving && app.Git.PreviewNew == "three\n" && !app.Git.Loading
+	})
+	body, err := os.ReadFile(filepath.Join(workspace, "hello.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "three\n" {
+		t.Fatalf("saved file = %q", body)
+	}
+	if app.Git.PreviewNotice != "Saved." {
+		t.Errorf("preview notice = %q", app.Git.PreviewNotice)
+	}
+
+	if err := tt.Click("Close"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool { return !app.Git.PreviewOpen })
+
+	// The index side is read-only: no Edit button, and the state refuses.
+	if err := tt.Click("Stage all"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		return len(app.Git.Staged) == 1 && len(app.Git.Changes) == 0 && app.Git.Busy == "" && !app.Git.Loading
+	})
+	if err := tt.Click("Diff of hello.txt"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		return app.Git.PreviewOpen && app.Git.PreviewStaged && !app.Git.PreviewBusy
+	})
+	if app.Git.PreviewCanEdit {
+		t.Error("the staged side should not be editable")
+	}
+	if _, ok := tt.Find("Edit file"); ok {
+		t.Error("the staged diff still offers Edit")
+	}
+}
+
 func TestGitPanelDiffRejectsBinary(t *testing.T) {
 	workspace := initGitPanelRepo(t)
 	writeGitPanelFile(t, workspace, "blob.bin", "head\x00tail\n")
@@ -661,6 +738,17 @@ func TestGitPanelDiffRejectsBinary(t *testing.T) {
 	tt.Frame()
 	if !tt.HasText("Cannot show this diff") {
 		t.Errorf("binary error is missing from the card; texts: %q", tt.Texts())
+	}
+	if _, ok := tt.Find("Edit file"); ok {
+		t.Error("binary diff still offers editing")
+	}
+	app.saveGitPreview("")
+	body, err := os.ReadFile(filepath.Join(workspace, "blob.bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "head\x00tail\n" {
+		t.Errorf("a failed preview let Save overwrite the file: %q", body)
 	}
 }
 
@@ -716,7 +804,8 @@ func writeGitPanelFile(t *testing.T, dir, name, text string) {
 	}
 }
 
-func TestGitDiffCardLayoutRespondsToWidth(t *testing.T) {
+func TestViewerCardLayoutRespondsToWidth(t *testing.T) {
+	app := &App{}
 	cases := []struct {
 		window float32
 		width  float32
@@ -728,12 +817,21 @@ func TestGitDiffCardLayoutRespondsToWidth(t *testing.T) {
 		{1920, 900, true},
 	}
 	for _, c := range cases {
-		got := gitDiffCardWidth(c.window)
+		got := app.viewerCardWidth(c.window)
 		if diff := got - c.width; diff > 0.5 || diff < -0.5 {
 			t.Errorf("card width for a %v DIP window = %v, want %v", c.window, got, c.width)
 		}
-		if split := gitDiffSplit(got); split != c.split {
+		if split := viewerSplit(got); split != c.split {
 			t.Errorf("card %v DIPs wide splits = %v, want %v", got, split, c.split)
 		}
+	}
+
+	app.ViewerWidth = 1100
+	if got, want := app.viewerCardWidth(1240), viewerMaxWidth(1240); got != want {
+		t.Errorf("dragged card width = %v, want the clamped %v", got, want)
+	}
+	app.ViewerWidth = 120
+	if got := app.viewerCardWidth(1600); got != viewerMinWidth {
+		t.Errorf("tiny dragged width = %v, want %v", got, viewerMinWidth)
 	}
 }

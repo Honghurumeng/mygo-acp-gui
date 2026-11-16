@@ -110,6 +110,10 @@ type File struct {
 	// Fonts scales the four text areas. A missing object keeps the default
 	// 100% everywhere.
 	Fonts Fonts `json:"fonts"`
+	// ViewerWidth is the width in DIPs the user dragged the floating file
+	// viewer to. Zero means the responsive default, so older files keep the
+	// old behavior.
+	ViewerWidth float32 `json:"viewerWidth,omitempty"`
 	// LastSelections maps an agent ID to the config values and session mode
 	// last used with it, so a new draft opens with the same model, thinking
 	// level and mode instead of the agent's defaults.
@@ -239,6 +243,9 @@ type rawFile struct {
 	// A pointer tells an older file without fonts apart from an explicit
 	// object whose fields are still defaults.
 	Fonts *Fonts `json:"fonts"`
+	// ViewerWidth is the floating viewer width the user dragged to; zero in
+	// an older file keeps the responsive default.
+	ViewerWidth float32 `json:"viewerWidth"`
 	// Raw keeps one malformed selection from discarding the other fields.
 	LastSelections json.RawMessage `json:"lastSelections"`
 }
@@ -274,6 +281,9 @@ func decode(data []byte) (File, error) {
 	}
 	if raw.Fonts != nil {
 		file.Fonts = raw.Fonts.withDefaults()
+	}
+	if raw.ViewerWidth > 0 {
+		file.ViewerWidth = raw.ViewerWidth
 	}
 	file.LastSelections = decodeSelections(raw.LastSelections, &problems)
 	return file, errors.Join(problems...)

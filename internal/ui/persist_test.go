@@ -220,3 +220,22 @@ func TestWorkspaceCollapsedStatePersists(t *testing.T) {
 		t.Fatalf("collapsedWorkspaces after expand = %+v", file.CollapsedWorkspaces)
 	}
 }
+
+func TestViewerWidthPersists(t *testing.T) {
+	dataDir := t.TempDir()
+	workspace := t.TempDir()
+	app, _ := newSettingsApp(t, dataDir, workspace)
+	app.ViewerWidth = 700
+	app.persistSettings()
+
+	file := loadPersistedSettings(t, dataDir)
+	if file.ViewerWidth != 700 {
+		t.Fatalf("saved viewerWidth = %v, want 700", file.ViewerWidth)
+	}
+
+	restarted := New(Options{Version: "test", Workspace: workspace, DataDir: dataDir, Agents: app.Agents})
+	t.Cleanup(func() { restarted.Shutdown(); restarted.Flush() })
+	if restarted.ViewerWidth != 700 {
+		t.Fatalf("restored viewerWidth = %v, want 700", restarted.ViewerWidth)
+	}
+}

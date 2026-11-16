@@ -214,12 +214,40 @@ func TestTaskRunnerChecksContinuesAndCommits(t *testing.T) {
 	if !tt.HasText("Task summary") || !tt.HasText("Task complete") {
 		t.Errorf("summary card missing; texts: %q", tt.Texts())
 	}
-	if err := tt.Click("Toggle task summary diff view"); err != nil {
+	if err := tt.Click("Show diff"); err != nil {
 		t.Fatal(err)
 	}
 	tt.Frame()
-	if !app.TaskSummaryDiff {
-		t.Fatal("summary diff toggle did not switch to the Git diff view")
+	if app.TaskSummaryMode != viewerDiff {
+		t.Fatal("summary diff toggle did not switch to the diff view")
+	}
+	if err := tt.Click("Show file content"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if app.TaskSummaryMode != viewerView {
+		t.Fatal("summary view toggle did not switch back to Markdown")
+	}
+	if err := tt.Click("Edit file"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if app.TaskSummaryMode != viewerEdit {
+		t.Fatal("summary edit toggle did not switch to the editor")
+	}
+	app.saveTaskSummary("# Replaced summary\n")
+	waitFor(t, app, tt, func() bool {
+		return !app.TaskSummarySaving && app.TaskSummaryBody == "# Replaced summary\n"
+	})
+	body, err := taskstore.ReadSummary(tasks[0].Workspace, tasks[0].SummaryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(body, "# Replaced summary") {
+		t.Fatalf("saved summary = %q", body)
+	}
+	if !tt.HasText("Saved.") {
+		t.Errorf("summary saved notice missing; texts: %q", tt.Texts())
 	}
 
 	store := taskstore.Open(filepath.Join(filepath.Dir(app.taskStore.Path()), taskFileName))

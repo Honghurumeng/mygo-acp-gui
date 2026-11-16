@@ -7,8 +7,7 @@ import (
 	"time"
 
 	mui "github.com/egoist/mygo/ui"
-	"github.com/egoist/mygo/ui/editor"
-	"github.com/egoist/mygo/ui/markdown"
+	"github.com/reed/acp-gui/internal/files"
 	taskstore "github.com/reed/acp-gui/internal/tasks"
 )
 
@@ -597,7 +596,10 @@ func (a *App) openTaskSummary(id string) {
 	a.TaskSummaryBody = ""
 	a.TaskSummaryErr = ""
 	a.TaskSummaryBusy = true
-	a.TaskSummaryDiff = false
+	a.TaskSummaryMode = viewerView
+	a.TaskSummarySaving = false
+	a.TaskSummarySaveErr = ""
+	a.TaskSummaryNotice = ""
 	a.TaskSummaryGen++
 	gen := a.TaskSummaryGen
 	if strings.TrimSpace(task.SummaryPath) == "" {
@@ -632,7 +634,10 @@ func (a *App) closeTaskSummary() {
 	a.TaskSummaryBody = ""
 	a.TaskSummaryBusy = false
 	a.TaskSummaryErr = ""
-	a.TaskSummaryDiff = false
+	a.TaskSummaryMode = viewerView
+	a.TaskSummarySaving = false
+	a.TaskSummarySaveErr = ""
+	a.TaskSummaryNotice = ""
 }
 
 // taskSummaryPopover floats the saved Markdown beside the task panel, using
@@ -654,93 +659,84 @@ func (a *App) taskSummaryPopover(c *mui.Context, anchor mui.Element) {
 	}
 }
 
+// taskSummaryCard shows a saved task summary in the shared viewer: rendered
+// Markdown, an editor for the source, or an all-additions diff.
 func (a *App) taskSummaryCard(c *mui.Context, panel, anchor mui.Element) {
-	t := c.Theme()
 	task := a.taskByID(a.TaskSummaryTaskID)
 	if task == nil {
 		return
 	}
-	windowW, _ := c.Size()
-	width := gitDiffCardWidth(windowW)
-	panel.Width(width).HeightPercent(80).Radius(10).Clip().
-		Background(t.Background).Border(1, t.Border).
-		Shadow(0, 12, 32, 0, mui.RGBA(0, 0, 0, 0.24)).
-		AttachTo(anchor, mui.AnchorStart, mui.AnchorEnd).
-		MarginEnd(10).AttachEdgeMargin(12)
-	view := mui.Local(panel, "summary-view", func() taskSummaryDiffView { return taskSummaryDiffView{} })
-	panel.Children(func() {
-		mui.Row(c).Height(48).Gap(6).Padding(0, 12).AlignItems(mui.Center).
-			BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
-			line := "Task summary · " + a.TaskSummaryTitle
-			if task.Result == taskstore.ResultFailure {
-				line = "Task failure · " + a.TaskSummaryTitle
-			}
-			mui.Column(c).Gap(1).Grow(1).MinWidth(0).Children(func() {
-				mui.Text(c, line).FontSize(a.gitFont(11)).
-					Bold().SingleLine().MinWidth(0).Tooltip(a.TaskSummaryPath)
-				if a.TaskSummaryPath != "" {
-					a.gitCaption(c, a.TaskSummaryPath).SingleLine().MinWidth(0)
-				}
-			})
-			mode := "Diff"
-			if a.TaskSummaryDiff {
-				mode = "Markdown"
-			}
-			if quietButton(c, mode).Label("Toggle task summary diff view").FontSize(a.gitFont(9)).
-				Tooltip("Show the summary as a Markdown diff").Clicked() {
-				a.TaskSummaryDiff = !a.TaskSummaryDiff
-			}
-			if quietButton(c, "✕").Label("Close").FontSize(a.gitFont(9)).Tooltip("Close the summary").Clicked() {
-				a.closeTaskSummary()
-			}
-		})
-		switch {
-		case a.TaskSummaryBusy:
-			centered(c, func() { busyLine(c, "Reading summary…") })
-		case a.TaskSummaryErr != "":
-			mui.Column(c).Grow(1).Padding(12, 12).Children(func() {
-				dangerAlert(c, "Cannot show this summary", a.TaskSummaryErr)
-			})
-		case strings.TrimSpace(a.TaskSummaryBody) == "":
-			centered(c, func() {
-				emptyState(c, gitCompareIcon, "Summary is empty", "The checker saved no Markdown for this task.")
-			})
-		default:
-			if a.TaskSummaryDiff {
-				a.taskSummaryDiffBody(c, view)
-				return
-			}
-			mui.Scroll(c).Grow(1).Children(func() {
-				mui.Column(c).Padding(14, 18).Children(func() {
-					markdown.View(c, a.TaskSummaryBody, &a.TaskMD)
-				})
-			})
-		}
+	title := "Task summary · " + a.TaskSummaryTitle
+	if task.Result == taskstore.ResultFailure {
+		title = "Task failure · " + a.TaskSummaryTitle
+	}
+	var save func(string)
+	if strings.TrimSpace(a.TaskSummaryPath) != "" && !a.TaskSummaryBusy && a.TaskSummaryErr == "" {
+		save = a.saveTaskSummary
+	}
+	a.viewerCard(c, panel, anchor, viewerSpec{
+		Key:      "task:" + task.ID,
+		Title:    title,
+		Subtitle: a.TaskSummaryPath,
+		Tooltip:  a.TaskSummaryPath,
+		Filename: a.TaskSummaryPath,
+		Body:     a.TaskSummaryBody,
+		Old:      "",
+		New:      a.TaskSummaryBody,
+		Markdown: true,
+		Modes:    []viewerMode{viewerDiff, viewerView, viewerEdit},
+		Mode:     a.TaskSummaryMode,
+		OnMode: func(mode viewerMode) {
+			a.TaskSummaryMode = mode
+			a.TaskSummarySaveErr = ""
+			a.TaskSummaryNotice = ""
+		},
+		OnClose:        a.closeTaskSummary,
+		Save:           save,
+		Saving:         a.TaskSummarySaving,
+		SaveErr:        a.TaskSummarySaveErr,
+		Notice:         a.TaskSummaryNotice,
+		Busy:           a.TaskSummaryBusy,
+		Err:            a.TaskSummaryErr,
+		BusyText:       "Reading summary…",
+		ErrorTitle:     "Cannot show this summary",
+		EmptyViewTitle: "Summary is empty",
+		EmptyViewText:  "The checker saved no Markdown for this task.",
+		EmptyDiffTitle: "Summary is empty",
+		EmptyDiffText:  "There is no text to compare yet.",
+		HeightPercent:  80,
 	})
 }
 
-// taskSummaryDiffView holds the summary presented like a Git diff: the whole
-// Markdown file is the new side and the old side is empty, so every line is an
-// addition. The viewer keeps its scroll position while the card is open.
-type taskSummaryDiffView struct {
-	new   string
-	state *editor.DiffState
-	font  float32
-}
-
-func (a *App) taskSummaryDiffBody(c *mui.Context, view *taskSummaryDiffView) {
-	fontSize := a.gitFont(11)
-	if view.state == nil || view.new != a.TaskSummaryBody || view.font != fontSize {
-		view.new = a.TaskSummaryBody
-		view.font = fontSize
-		view.state = &editor.DiffState{
-			Old:        editor.NewBuffer(""),
-			New:        editor.NewBuffer(view.new),
-			Layout:     editor.DiffUnified,
-			Wrap:       true,
-			Font:       mui.Font{Size: fontSize},
-			LineHeight: 1.4,
-		}
+// saveTaskSummary writes edited summary source back to the task's Markdown
+// file. The path came from the validated task record and files.Resolve keeps
+// it inside the workspace.
+func (a *App) saveTaskSummary(text string) {
+	task := a.taskByID(a.TaskSummaryTaskID)
+	if task == nil || strings.TrimSpace(task.SummaryPath) == "" ||
+		a.TaskSummaryBusy || a.TaskSummaryErr != "" {
+		return
 	}
-	editor.DiffView(c, view.state).Grow(1).FillWidth()
+	workspace, rel := task.Workspace, task.SummaryPath
+	gen := a.TaskSummaryGen
+	a.TaskSummarySaving = true
+	a.TaskSummarySaveErr = ""
+	a.TaskSummaryNotice = ""
+	go func() {
+		err := files.SaveText(workspace, rel, text)
+		a.Post(func() {
+			if a.closed.Load() || a.TaskSummaryGen != gen || !a.TaskSummaryOpen ||
+				a.TaskSummaryTaskID != task.ID || a.TaskSummaryPath != rel {
+				return
+			}
+			a.TaskSummarySaving = false
+			if err != nil {
+				a.TaskSummarySaveErr = fileErrorText(err)
+				return
+			}
+			a.TaskSummaryBody = text
+			a.TaskSummaryNotice = "Saved."
+			a.refreshAfterFileSave(workspace)
+		})
+	}()
 }
