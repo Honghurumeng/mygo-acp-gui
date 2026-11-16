@@ -709,16 +709,24 @@ func (a *App) gitFileRow(c *mui.Context, file git.File, staged bool) {
 		dir = ""
 	}
 	busy := a.Git.Busy != "" || a.Git.Loading
+	selected := a.gitPreviewSelected(path, "", staged)
 
 	mui.Row(c).Gap(4).AlignItems(mui.Center).Children(func() {
 		mui.Text(c, code).Font("monospace").FontSize(a.gitFont(8)).TextColor(color)
 		preview := mui.ButtonBase(c).Gap(5).Grow(1).Padding(1, 2).Radius(4).
 			Justify(mui.Start).Label("Diff of " + path)
-		hover := float32(0)
-		if preview.Hovered() {
-			hover = 1
+		switch {
+		case preview.Pressed():
+			preview.Background(t.SurfacePressed)
+		case selected:
+			preview.Background(t.Selection)
+		default:
+			hover := float32(0)
+			if preview.Hovered() {
+				hover = 1
+			}
+			preview.Background(preview.AnimateColor("bg", t.SurfaceHover.Alpha(hover), mui.Snappy))
 		}
-		preview.Background(preview.AnimateColor("bg", t.SurfaceHover.Alpha(hover), mui.Snappy))
 		preview.Children(func() {
 			mui.Text(c, truncate(name, 24)).FontSize(a.gitFont(10)).SingleLine()
 			if dir != "" {
@@ -746,6 +754,15 @@ func (a *App) gitFileRow(c *mui.Context, file git.File, staged bool) {
 			}
 		}
 	})
+}
+
+// gitPreviewSelected reports whether the floating diff card shows this side
+// of the file. Working-tree rows pass commit "" and their staged flag; a file
+// of an expanded commit passes that commit.
+func (a *App) gitPreviewSelected(path, commit string, staged bool) bool {
+	return a.Git.PreviewOpen && a.Git.PreviewPath == path &&
+		a.Git.PreviewCommit == commit && a.Git.PreviewStaged == staged &&
+		a.Git.Workspace == a.activeGitWorkspace()
 }
 
 // openGitPreview shows a staged or unstaged file against the index or HEAD.

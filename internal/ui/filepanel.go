@@ -592,10 +592,11 @@ func (a *App) fileRow(c *mui.Context, entry files.Entry, depth int) {
 		nameColor = t.TextMuted.Alpha(0.75)
 		iconColor = t.TextMuted.Alpha(0.55)
 	}
+	selected := a.fileRowSelected(entry)
 	row := buttonBase(c, fileRowLabel(entry)).FillWidth().Gap(4).
 		Padding(2, fileRowGutter, 2, fileIndent(depth)).Radius(6).
 		Background(t.Surface).Tooltip(tip).Key(entry.Path).
-		Role(mui.RoleTreeItem).Level(depth + 1)
+		Role(mui.RoleTreeItem).Level(depth + 1).AccessSelected(selected)
 	if entry.Dir {
 		row.Expanded(expanded)
 	}
@@ -637,6 +638,8 @@ func (a *App) fileRow(c *mui.Context, entry files.Entry, depth int) {
 	switch {
 	case row.Pressed():
 		row.Background(t.SurfacePressed)
+	case selected:
+		row.Background(t.Selection)
 	case row.Hovered():
 		row.Background(t.SurfaceHover)
 	}
@@ -667,6 +670,15 @@ func (a *App) fileRow(c *mui.Context, entry files.Entry, depth int) {
 	if value, over := mui.DragOver[fileDragValue](row); over && a.canMoveFileTo(value, target) {
 		row.Background(t.Accent.Alpha(0.12))
 	}
+}
+
+// fileRowSelected reports whether the floating viewer shows this file, so its
+// tree row keeps the selection fill until the card closes or another file
+// opens. The workspace must still be the one the panel lists: a viewer left
+// over from a switch is about to close.
+func (a *App) fileRowSelected(entry files.Entry) bool {
+	return !entry.Dir && a.Files.ViewerOpen && a.Files.ViewerPath == entry.Path &&
+		a.Files.Workspace == a.activeFileWorkspace()
 }
 
 // openFileViewer reads one text file off the UI thread and opens the shared

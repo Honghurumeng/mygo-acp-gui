@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"image/color"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -405,6 +406,19 @@ func TestGitPanelExpandsCommitFiles(t *testing.T) {
 		}
 	}
 
+	tt.Move(5, 5)
+	tt.Frame()
+	commitRowFill := func() color.RGBA {
+		t.Helper()
+		rect, ok := tt.Find("Commit diff of hello.txt")
+		if !ok {
+			t.Fatalf("commit file row is missing; texts: %q", tt.Texts())
+		}
+		img := tt.Image()
+		return img.RGBAAt(int(rect.X+2), int(rect.Y+rect.H/2))
+	}
+	baseFill := commitRowFill()
+
 	if err := tt.Click("Commit diff of hello.txt"); err != nil {
 		t.Fatal(err)
 	}
@@ -421,10 +435,20 @@ func TestGitPanelExpandsCommitFiles(t *testing.T) {
 	if !tt.HasText("Commit " + shortCommitHash(app.Git.PreviewCommit) + " · hello.txt") {
 		t.Errorf("commit diff title missing; texts: %q", tt.Texts())
 	}
+	tt.Move(5, 5)
+	tt.Frame()
+	if selectedFill := commitRowFill(); selectedFill == baseFill {
+		t.Errorf("previewed commit file row keeps the unselected fill %v", baseFill)
+	}
 	if err := tt.Click("Close"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, app, tt, func() bool { return !app.Git.PreviewOpen })
+	tt.Move(5, 5)
+	tt.Frame()
+	if got := commitRowFill(); got != baseFill {
+		t.Errorf("closed commit file row fill = %v, want the unselected %v", got, baseFill)
+	}
 
 	if err := tt.Click("first"); err != nil {
 		t.Fatal(err)
@@ -639,6 +663,89 @@ func TestGitPanelPreviewsDiff(t *testing.T) {
 	// Pressing outside the card closes it, as an overlay's backdrop did.
 	tt.ClickAt(600, 736)
 	waitFor(t, app, tt, func() bool { return !app.Git.PreviewOpen && app.Git.PreviewPath == "" })
+}
+
+func TestGitPreviewSelectionMatchesSide(t *testing.T) {
+	app := &App{Workspace: "/workspace"}
+	app.Git.Workspace = "/workspace"
+	app.Git.PreviewOpen = true
+	app.Git.PreviewPath = "hello.txt"
+	if !app.gitPreviewSelected("hello.txt", "", false) {
+		t.Error("unstaged row does not match its preview")
+	}
+	if app.gitPreviewSelected("hello.txt", "", true) {
+		t.Error("staged row matches an unstaged preview")
+	}
+
+	app.Git.PreviewStaged = true
+	if !app.gitPreviewSelected("hello.txt", "", true) {
+		t.Error("staged row does not match its preview")
+	}
+	if app.gitPreviewSelected("hello.txt", "", false) {
+		t.Error("unstaged row matches a staged preview")
+	}
+
+	app.Git.PreviewCommit = "abc123"
+	app.Git.PreviewStaged = false
+	if !app.gitPreviewSelected("hello.txt", "abc123", false) {
+		t.Error("commit file row does not match its preview")
+	}
+	if app.gitPreviewSelected("hello.txt", "", false) ||
+		app.gitPreviewSelected("hello.txt", "def456", false) {
+		t.Error("another side matches a commit preview")
+	}
+
+	app.Git.Workspace = "/elsewhere"
+	if app.gitPreviewSelected("hello.txt", "abc123", false) {
+		t.Error("a preview from another workspace still matches")
+	}
+}
+
+func TestGitPanelMarksPreviewedFileRow(t *testing.T) {
+	workspace := initGitPanelRepo(t)
+	writeGitPanelFile(t, workspace, "hello.txt", "one\n")
+	runGitPanelCommand(t, workspace, "add", ".")
+	runGitPanelCommand(t, workspace, "commit", "-q", "-m", "first")
+	writeGitPanelFile(t, workspace, "hello.txt", "two\n")
+
+	app, tt := newGitPanelApp(t, workspace)
+	waitFor(t, app, tt, func() bool {
+		return app.Git.Checked && !app.Git.Loading && len(app.Git.Changes) == 1
+	})
+	rowFill := func() color.RGBA {
+		t.Helper()
+		rect, ok := tt.Find("Diff of hello.txt")
+		if !ok {
+			t.Fatalf("change row is missing; texts: %q", tt.Texts())
+		}
+		img := tt.Image()
+		return img.RGBAAt(int(rect.X+1), int(rect.Y+rect.H/2))
+	}
+	tt.Move(5, 5)
+	tt.Frame()
+	base := rowFill()
+
+	if err := tt.Click("Diff of hello.txt"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		return app.Git.PreviewOpen && !app.Git.PreviewBusy && app.Git.PreviewNew != ""
+	})
+	tt.Move(5, 5)
+	tt.Frame()
+	if selected := rowFill(); selected == base {
+		t.Errorf("previewed row keeps the unselected fill %v", base)
+	}
+
+	if err := tt.Click("Close"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool { return !app.Git.PreviewOpen && app.Git.PreviewPath == "" })
+	tt.Move(5, 5)
+	tt.Frame()
+	if got := rowFill(); got != base {
+		t.Errorf("closed row fill = %v, want the unselected %v", got, base)
+	}
 }
 
 func TestGitPanelEditsWorkingTreeFile(t *testing.T) {

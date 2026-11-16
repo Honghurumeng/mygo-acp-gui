@@ -26,6 +26,8 @@
   Accent 圆点（该文件夹下有变化）。行高随 Git 字号缩放，右侧留 12 DIP 给滚动条；每深一层左侧多缩进
   12 DIP，根层缩进也是 12 DIP，子项与仓库列表左缘对齐、层级一眼可辨。缩进放在左侧 padding，不能用
   右侧 padding 代替，否则行只会变窄而不右移。
+- 点文件行打开查看卡片后，该行保持主题 `Selection` 选中底色（与 hover 的 `SurfaceHover` 区分），
+  指针移开也不消失；关闭卡片或打开另一个文件时清除，同时给行设置 `AccessSelected`。
 - 被 `.gitignore` 忽略的文件/文件夹不隐藏：名称和图标降低 25% / 45% 透明度，右侧显示小号 `ignored`，
   tooltip 追加 `Ignored by Git`。被忽略的文件夹展开后，后代通过路径前缀继承标记；workspace 本身落在仓库的
   忽略目录里时（如 `build/app`）整棵树都标记为忽略。有状态字母/圆点的行不显示 `ignored`。

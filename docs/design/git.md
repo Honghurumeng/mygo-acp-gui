@@ -34,6 +34,9 @@
 - “Staged” 和 “Changes” 都显示状态字母、文件名和目录；目录在文件名同一行后面（灰色小字，超长截断），
   不再另起一行。`＋` 暂存、`－` 取消暂存，标题旁提供 Discard all / Unstage all / Stage all；
   Discard all 用危险色放在 Stage all 左侧，点击先弹确认框。
+- 点文件名打开 diff 卡片后，对应文件行保持主题 `Selection` 选中底色（同路径的 staged / unstaged
+  两侧分别判断），指针移开也不消失；关闭卡片、打开另一个文件或切换 workspace 时清除。
+  hover 不会覆盖选中底色，pressed 仍保留按下反馈。
 - 列表内容右侧留 10 DIP 内边距：滚动条是覆盖在内容上的 overlay，不占布局宽度，留白保证 `＋`/`－`
   和 Stage all / Unstage all 不被滚动条盖住。
 - 图表用 `git log --topo-order --all -n 80 --pretty=format:%H%x1f%P%x1f%an%x1f%s%x1f%D%x1f%cI`，解析成 `internal/git.LogCommit`（hash、parents、author、subject、refs、committer time），由 `internal/git` 计算 lane，界面由 `internal/ui/gitgraph.go` 自绘泳道、分支/标签芯片和提交行。
@@ -51,7 +54,8 @@
   卡片打开时显示 `Reading…`，失败显示 git 错误，不阻塞图表。
 - 点击提交行展开该提交相对第一父提交的文件列表，再点收起；同屏只展开一个。文件行显示状态字母 + 文件名 + 目录（同一行），
   `A` 绿、`D` 红、`M`/`T` 黄、`R`/`C` 用强调色。展开高度计入 lane 的 y 坐标，泳道在文件列表左侧继续。
-- 文件行可点，打开与 Staged/Changes 相同的 diff 卡片，标题为 `Commit <7 位 hash> · <path>`；侧文本用
+- 文件行可点，打开与 Staged/Changes 相同的 diff 卡片并保持该行的 `Selection` 选中底色，标题为
+  `Commit <7 位 hash> · <path>`；侧文本用
   `git show <hash>^:<oldPath>` 与 `git show <hash>:<path>` 读取（新增 old 为空、删除 new 为空，重命名用 `OrigPath`
   作旧侧），二进制/超大文件与普通预览一样报错。读取沿用 `PreviewGen` + workspace + hash + path 守卫。
 - 展开数据用 `git show --no-color --name-status -z --format= --find-renames --first-parent <hash>`：NUL 分隔，

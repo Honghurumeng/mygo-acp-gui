@@ -378,10 +378,16 @@ func (a *App) gitGraphFile(c *mui.Context, hash string, file git.CommitFile) {
 	if dir == "." {
 		dir = ""
 	}
+	selected := a.gitPreviewSelected(path, hash, false)
 	row := mui.ButtonBase(c).FillWidth().Height(gitGraphFileHeight).Gap(5).
 		Justify(mui.Start).AlignItems(mui.Center).Padding(0, 4).Radius(4).
 		Label("Commit diff of " + path)
-	if row.Hovered() {
+	switch {
+	case row.Pressed():
+		row.Background(t.SurfacePressed)
+	case selected:
+		row.Background(t.Selection)
+	case row.Hovered():
 		row.Background(t.SurfaceHover)
 	}
 	row.Children(func() {

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"image/color"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,6 +67,59 @@ func TestFileViewerViewsEditsAndSaves(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, app, tt, func() bool { return !app.Files.ViewerOpen && app.Files.ViewerPath == "" })
+}
+
+func TestFileViewerMarksItsTreeRow(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "notes.txt"), []byte("body\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	app, tt := newFilePanelApp(t, workspace)
+	showFilePanel(t, app, tt)
+
+	rowFill := func() color.RGBA {
+		t.Helper()
+		rect, ok := tt.Find("File notes.txt")
+		if !ok {
+			t.Fatalf("file row is missing; texts: %q", tt.Texts())
+		}
+		img := tt.Image()
+		return img.RGBAAt(int(rect.X+rect.W-4), int(rect.Y+rect.H/2))
+	}
+	tt.Move(5, 5)
+	tt.Frame()
+	base := rowFill()
+	if info, ok := tt.Access("File notes.txt"); !ok || info.Selected {
+		t.Fatalf("unopened row is selected: %+v, found %v", info, ok)
+	}
+
+	if err := tt.Click("File notes.txt"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		return app.Files.ViewerOpen && !app.Files.ViewerBusy && app.Files.ViewerBody != ""
+	})
+	tt.Move(5, 5)
+	tt.Frame()
+	if info, ok := tt.Access("File notes.txt"); !ok || !info.Selected {
+		t.Fatalf("viewed row is not selected: %+v, found %v", info, ok)
+	}
+	if selected := rowFill(); selected == base {
+		t.Errorf("viewed row keeps the unselected fill %v", base)
+	}
+
+	if err := tt.Click("Close"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool { return !app.Files.ViewerOpen && app.Files.ViewerPath == "" })
+	tt.Move(5, 5)
+	tt.Frame()
+	if info, ok := tt.Access("File notes.txt"); !ok || info.Selected {
+		t.Errorf("closed row is still selected: %+v, found %v", info, ok)
+	}
+	if got := rowFill(); got != base {
+		t.Errorf("closed row fill = %v, want the unselected %v", got, base)
+	}
 }
 
 func TestFileViewerRejectsBinaryFile(t *testing.T) {
