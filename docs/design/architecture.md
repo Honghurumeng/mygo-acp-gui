@@ -16,7 +16,7 @@ MyGo 原生窗口 (Go + ui)
   ├─ composer 底栏：附件、Jump、git 分支、mode、上下文环、agent/model/thinking、发送
   ├─ @ 文件面板：workspace 索引 → 只把 @相对路径 文本写进 prompt（agent 自读）
   ├─ 右侧面板（可折叠，Git / Tasks / Files 三个 tab）
-  │    ├─ Git：提交、暂存/更改、分支图与 fetch/pull/push
+  │    ├─ Git：提交、暂存/更改、分支图、分支创建/切换与 fetch/pull/push
   │    ├─ Tasks：任务队列、executor / checker 双 agent、成功总结 + 每任务一次 commit、失败回滚
   │    └─ Files：workspace 文件树、Git 状态、查看/编辑文本、新建/重命名/删除、拖动移动
   ├─ 共享浮动查看卡片：Diff / View / Edit，可拖动左缘改宽度
@@ -47,7 +47,7 @@ MyGo 原生窗口 (Go + ui)
   internal/files/          workspace 文件树、文本读取/保存与新建/重命名/移动/删除（不经过 shell）
   internal/tasks/          tasks.json 任务索引 + workspace/tasks/*.md 总结读写
   internal/logs/           每个 agent 的滚动日志文件（已实现）
-  internal/git/            Git 探测、status 解析、提交与远端操作、任务失败回滚快照（不经过 shell）
+  internal/git/            Git 探测、status 解析、提交、本地分支创建/切换、远端操作、任务失败回滚快照（不经过 shell）
   internal/ui/             多会话侧栏、聊天、流式 Markdown、权限队列、系统通知、Dock 角标、Git / Files 面板、主题系统、窗口更新（已实现）
   internal/ui/icons/       pi / Command Code / Codex 图标（SVG，侧栏 + 标题栏）
   resources/

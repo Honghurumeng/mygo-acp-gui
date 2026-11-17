@@ -807,6 +807,7 @@ func (a *App) View(c *mui.Context) {
 	})
 
 	a.gitDiscardDialog(c)
+	a.gitBranchCreateDialog(c)
 	if chat != nil {
 		a.jumpDialog(c, chat)
 	}

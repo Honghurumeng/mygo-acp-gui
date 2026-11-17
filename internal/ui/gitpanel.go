@@ -86,6 +86,16 @@ type gitPanelState struct {
 	ChangesHeight float32
 	Gen           int
 
+	// BranchPicker is the local branch list behind the header's branch line.
+	BranchPicker branchPickerState
+
+	// BranchCreate is the dialog opened by right-clicking a commit: it makes
+	// a branch at BranchCreateBase without checking it out.
+	BranchCreateOpen bool
+	BranchCreateBase string
+	BranchCreateName string
+	BranchCreateErr  string
+
 	// DiscardOpen asks before throwing away every change in the repository.
 	DiscardOpen bool
 
@@ -150,6 +160,13 @@ func (a *App) refreshGitOnFocus() {
 	workspace := a.activeGitWorkspace()
 	if workspace == "" || !filepath.IsAbs(workspace) {
 		return
+	}
+	// A checkout made outside the app changes .git/HEAD without touching
+	// the files the composer reads, so its cached branch name must go.
+	for _, chat := range a.Chats {
+		if sameWorkspace(chat.Workspace, workspace) {
+			chat.gitWorkspace = ""
+		}
 	}
 	if a.Git.Workspace != workspace || !a.Git.Checked {
 		a.ensureGitPanel()
@@ -393,9 +410,13 @@ func (a *App) gitPanelHeader(c *mui.Context) {
 			})
 			line, tip := a.gitHeaderLine()
 			if line != "" {
-				text := a.gitCaption(c, line)
-				if tip != "" {
-					text.Tooltip(tip)
+				if a.Git.RepoRoot != "" && a.Git.Branch != "" {
+					a.gitHeaderBranch(c, line, tip)
+				} else {
+					text := a.gitCaption(c, line)
+					if tip != "" {
+						text.Tooltip(tip)
+					}
 				}
 			}
 		})
@@ -471,6 +492,88 @@ func (a *App) gitHeaderLine() (string, string) {
 	default:
 		return "Reading…", ""
 	}
+}
+
+// gitHeaderBranch makes the header's "repo · branch" line the branch
+// picker: the panel is 300 DIP wide, so a separate branch button would cost a
+// row. The line keeps its muted look until the pointer rests on it.
+func (a *App) gitHeaderBranch(c *mui.Context, line, tip string) {
+	t := c.Theme()
+	state := &a.Git.BranchPicker
+	button := buttonBase(c, "Switch Git branch").Padding(0, 0).Radius(4)
+	if tip != "" {
+		button.Tooltip(tip + " · Click to switch branch")
+	} else {
+		button.Tooltip("Click to switch branch")
+	}
+	if button.Hovered() || state.Open {
+		button.Background(t.SurfaceHover)
+	}
+	button.Children(func() {
+		text := a.gitCaption(c, line)
+		if button.Hovered() || state.Open {
+			text.TextColor(t.Text)
+		}
+	})
+	if button.Clicked() {
+		a.toggleBranchPicker(state, a.Git.RepoRoot)
+	}
+	disabled := a.Git.Busy != "" || a.Git.Loading
+	a.branchPopover(c, button, state, a.Git.Branch, a.gitFont, disabled, a.switchGitPanelBranch)
+}
+
+// switchGitPanelBranch checks out one branch from the header picker and
+// refreshes what shows it: the graph, the Files tab and every draft's branch
+// chip in the same workspace.
+func (a *App) switchGitPanelBranch(name string, carry bool) {
+	workspace, root := a.Git.Workspace, a.Git.RepoRoot
+	state := &a.Git.BranchPicker
+	onSwitched := func(switched string) {
+		if state.Warning == "" {
+			state.Open = false
+		}
+		a.branchSwitched(workspace, switched, state)
+	}
+	if carry {
+		a.carrySwitchBranchFromPicker(state, root, name, onSwitched)
+		return
+	}
+	a.switchBranchFromPicker(state, root, name, onSwitched)
+}
+
+// openGitBranchCreate opens the commit context menu's branch dialog. It
+// only makes the branch: checking it out is the composer's or the header's
+// explicit choice.
+func (a *App) openGitBranchCreate(hash string) {
+	if a.Git.RepoRoot == "" || a.Git.Busy != "" || a.Git.Loading || !isFullHash(hash) {
+		return
+	}
+	a.closeCommitHover()
+	a.Git.BranchPicker.close()
+	a.Git.BranchCreateOpen = true
+	a.Git.BranchCreateBase = hash
+	a.Git.BranchCreateName = ""
+	a.Git.BranchCreateErr = ""
+}
+
+// closeGitBranchCreate drops the branch dialog and its error.
+func (a *App) closeGitBranchCreate() {
+	a.Git.BranchCreateOpen = false
+	a.Git.BranchCreateBase = ""
+	a.Git.BranchCreateName = ""
+	a.Git.BranchCreateErr = ""
+}
+
+func isFullHash(hash string) bool {
+	if len(hash) != 40 && len(hash) != 64 {
+		return false
+	}
+	for _, r := range hash {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func (a *App) gitPanelBody(c *mui.Context) {
@@ -1024,14 +1127,14 @@ func (a *App) gitGraph(c *mui.Context) {
 					return git.Fetch(ctx, root)
 				})
 			})
-			a.gitToolButton(c, "Pull", "Pull the upstream branch", busy, func() {
+			a.gitToolButton(c, "Pull", "Pull the current branch; uses a same-named remote branch when it has no upstream", busy, func() {
 				a.runGitAction("Pull", true, func(ctx context.Context, root string) error {
-					return git.Pull(ctx, root)
+					return git.PullBranch(ctx, root)
 				})
 			})
-			a.gitToolButton(c, "Push", "Push the current branch", busy, func() {
+			a.gitToolButton(c, "Push", "Push the current branch; sets its upstream when it has none", busy, func() {
 				a.runGitAction("Push", true, func(ctx context.Context, root string) error {
-					return git.Push(ctx, root)
+					return git.PushBranch(ctx, root)
 				})
 			})
 			a.gitToolButton(c, "Refresh", "Reload status and graph", busy, func() {
@@ -1082,6 +1185,106 @@ func (a *App) gitDiscardDialog(c *mui.Context) {
 	if confirm {
 		a.runGitAction("Discard all", true, git.DiscardAll)
 	}
+}
+
+// gitBranchCreateDialog asks for the name of the branch made at the commit a
+// context menu opened. The dialog stays open with git's error when the name
+// or the start point is unusable.
+func (a *App) gitBranchCreateDialog(c *mui.Context) {
+	if !a.Git.BranchCreateOpen {
+		return
+	}
+	if a.Git.Workspace == "" || a.Git.Workspace != a.activeGitWorkspace() ||
+		a.Git.RepoRoot == "" || a.Git.BranchCreateBase == "" ||
+		(!a.GitPanelOpen || a.RightTab != rightTabGit) {
+		a.closeGitBranchCreate()
+		return
+	}
+	t := c.Theme()
+	busy := a.Git.Busy != "" || a.Git.Loading
+	subject := ""
+	for _, commit := range a.Git.Commits {
+		if commit.Hash == a.Git.BranchCreateBase {
+			subject = commit.Message
+			break
+		}
+	}
+	base := shortCommitHash(a.Git.BranchCreateBase)
+	if subject != "" {
+		base += " · " + truncate(subject, 60)
+	}
+	mui.Modal(c, &a.Git.BranchCreateOpen, func() {
+		mui.Column(c).Gap(9).Width(400).Children(func() {
+			mui.Text(c, "Create branch").FontSize(a.gitFont(16)).Bold()
+			mui.Text(c, "At "+base).FontSize(a.gitFont(10)).
+				TextColor(t.TextMuted).SingleLine().Selectable().
+				Tooltip(a.Git.BranchCreateBase)
+			mui.TextInput(c, &a.Git.BranchCreateName).Label("Branch name").
+				Placeholder("feature/name")
+			mutedText(c, "The branch starts at this commit; the work tree and the current branch stay as they are.", a.gitFont(9))
+			if a.Git.BranchCreateErr != "" {
+				mui.Text(c, "⚠ "+truncate(singleLine(a.Git.BranchCreateErr), 240)).
+					FontSize(a.gitFont(10)).TextColor(t.Danger).MaxLines(3)
+			}
+			mui.Row(c).Gap(8).Justify(mui.End).Children(func() {
+				if quietButton(c, "Cancel").Clicked() {
+					a.closeGitBranchCreate()
+				}
+				create := primaryButton(c, "Create")
+				create.Disabled(busy || strings.TrimSpace(a.Git.BranchCreateName) == "")
+				if create.Clicked() && !busy {
+					a.submitGitBranchCreate()
+				}
+			})
+		})
+	})
+	if !a.Git.BranchCreateOpen {
+		a.closeGitBranchCreate()
+	}
+}
+
+// submitGitBranchCreate runs git branch in the background. On success the
+// graph rereads so the new ref shows on the commit; a failure stays in the
+// dialog next to the name that caused it.
+func (a *App) submitGitBranchCreate() {
+	if a.closed.Load() || a.Git.Busy != "" || a.Git.Loading {
+		return
+	}
+	workspace, root := a.Git.Workspace, a.Git.RepoRoot
+	name, base := strings.TrimSpace(a.Git.BranchCreateName), a.Git.BranchCreateBase
+	if workspace == "" || root == "" || base == "" {
+		a.Git.BranchCreateErr = "The repository is no longer available."
+		return
+	}
+	if name == "" {
+		a.Git.BranchCreateErr = "Enter a branch name."
+		return
+	}
+	a.Git.Gen++
+	gen := a.Git.Gen
+	a.Git.Busy = "Create branch"
+	a.Git.Error = ""
+	a.Git.Notice = ""
+	a.Git.BranchCreateErr = ""
+	go func() {
+		ctx, cancel := context.WithTimeout(a.lifeCtx, gitActionTimeout)
+		defer cancel()
+		err := git.CreateBranch(ctx, root, name, base)
+		a.Post(func() {
+			if a.closed.Load() || a.Git.Gen != gen || a.Git.Workspace != workspace {
+				return
+			}
+			a.Git.Busy = ""
+			if err != nil {
+				a.Git.BranchCreateErr = gitErrorText(err)
+				return
+			}
+			a.closeGitBranchCreate()
+			a.Git.BranchPicker.close()
+			a.Git.Notice = "Branch " + name + " created."
+			a.startGitLoad(workspace, false)
+		})
+	}()
 }
 
 // gitPreviewTitle names the file and the mode the card shows. Diff keeps

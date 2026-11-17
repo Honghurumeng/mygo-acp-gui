@@ -134,13 +134,7 @@ func (a *App) composer(c *mui.Context) {
 
 					a.jumpButton(c, chat)
 
-					if branch := chat.gitBranch(); branch != "" {
-						chip := a.composerControl(chipBase(c)).Label("Git branch: " + branch)
-						chip.Children(func() {
-							mui.Text(c, "⑂ "+truncate(branch, 24)).FontSize(a.composerFont(9)).SingleLine()
-						})
-						chip.Tooltip("Git branch in " + chat.Workspace)
-					}
+					a.gitBranchChip(c, chat)
 
 					a.modeChip(c, chat)
 					if text := formatTurnUsage(chat.TurnUsage); text != "" {

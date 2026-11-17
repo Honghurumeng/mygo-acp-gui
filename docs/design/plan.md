@@ -110,7 +110,7 @@ go test ./internal/ui -run 'TestSettings|TestShutdownPersists|TestCorruptSetting
 12b. 工作区软删除：工作区 `⋯` → `Remove workspace` 后分组隐藏但存档/会话不变，重启仍不出现；“Show removed (N)” → `Restore workspace` 恢复。
 13. 设置持久化：改 agent/工作区/model/thinking/mode 后退出，再启动应恢复（模型面板与草稿都停在原选择）；手改 `lastSelections` 成已下架的 model 或 mode 后重启，Connect 应跳过并保持 agent 默认，不报错；手工损坏 `settings.json` 或写入相对路径，应正常启动并在工具栏显示警告。
 14. 日志：连接后 `logs/<agent>.log` 有连接头和 stderr，超过 1 MiB 后生成 `.1` 备份（当前没有查看面板）。
-15. Git：打开非仓库 workspace，右侧提示 “Not a Git repository” 并可 `git init`；PATH 中无 git 时提示安装；仓库内可 stage/commit、查看提交图、切换 workspace 后不串仓库。
+15. Git：打开非仓库 workspace，右侧提示 “Not a Git repository” 并可 `git init`；PATH 中无 git 时提示安装；仓库内可 stage/commit、查看提交图、切换 workspace 后不串仓库；提交行右键创建分支不切换，Git 标题行和 composer 草稿可切换分支，脏工作区冲突时 `Stash & switch` 暂存后切换并恢复，新分支首次 Push 设置 upstream、Pull 匹配同名远端分支。
 16. Tasks：创建两个任务并 Run pending；每个任务应新建会话，checker 先拒绝再通过时同一 executor 会话继续，第二次 checker 应能看到第一轮总结和反馈；完成后 `tasks/` 有 Markdown、每个任务各一次 commit、没有 push；失败任务应回滚 executor 文件、保留用户已有改动、写 failure 总结且不 commit；Stop 后任务回 pending，重启后仍未完成的任务仍可编辑。
 
 ### 常用命令
@@ -141,8 +141,8 @@ scripts/vendor-codex-acp.sh          # 官方 codex-acp，不含补丁
 - [x] 侧栏按 workspace 分组、已保存会话直接展示、折叠/展开、超过 5 条收起、重命名/删除/软删除恢复
 - [x] 会话行与标题栏的 agent 品牌图标（pi、Command Code、Codex，SVG 内嵌并跟随主题）
 - [x] 本地 `sessions.json` 会话存档：agent/session 关联、启动直接展示、show 软删除、showName 重命名、最近上下文用量、点击 load 重放历史
-- [x] composer：可拖动高度、附件/git/mode/上下文环/模型面板/thinking/发送；首条消息自动连接
-- [x] 右侧 Git 面板：可折叠、无 git/无仓库提示、status、紧凑可展开提交图、逐文件 diff 预览、stage/commit/fetch/pull/push/undo soft reset
+- [x] composer：可拖动高度、附件/git 分支切换/mode/上下文环/模型面板/thinking/发送；首条消息自动连接
+- [x] 右侧 Git 面板：可折叠、无 git/无仓库提示、status、紧凑可展开提交图、逐文件 diff 预览、stage/commit/fetch/pull/push/undo soft reset、本地分支读取/切换/从提交新建，新分支首次 push 设置 upstream、pull 匹配同名远端分支
 - [x] 右侧 Tasks 面板：任务创建/排序/删除、pending/ongoing/complete + pass/failure、串行 executor + 隔离 checker（多轮上下文）、成功 Markdown 总结 + 每任务一次 commit（不 push）、失败回滚 + 无 commit
 - [x] pi-acp 单文件 bundle vendored（`resources/agents/pi-acp/`）
 - [x] codex-acp 官方单文件 bundle vendored（`resources/agents/codex-acp/`）+ 系统 Codex CLI（`CODEX_PATH`）
@@ -155,7 +155,7 @@ scripts/vendor-codex-acp.sh          # 官方 codex-acp，不含补丁
 - [x] 基础测试：framing、launch spec、登录 shell 解析、fake agent 会话、UI 发送/流式/停止/权限、进程组清理
 - [x] 发现测试：三种内置 agent 的 ready/not-installed/installed-not-acp/error/needs-auth 状态、缺 agent 不阻塞、draft 补选、保存 agent 回退、刷新探测
 - [x] 失败路径测试：probe 非 JSON/立即退出/stderr/超时、认证 `-32000`、agent 中途退出、权限挂起时退出、权限 Reject/Allow always
-- [x] Git 远程测试：临时 bare remote 下的 Fetch/Pull/Push、UnstageAll、UI Fetch/Pull/Push/Undo/Unstage all
+- [x] Git 远程测试：临时 bare remote 下的 Fetch/Pull/Push、UnstageAll、新分支首次 Push 设置 upstream、UI Fetch/Pull/Push/Undo/Unstage all；分支读取/创建/切换与右键创建分支、composer 草稿切换
 - [x] Task 断言：成功任务文件和 commit message、executor 跨轮同 session、checker 每轮独立进程/cwd、prompt 不重叠（串行）
 - [x] 新能力测试：probe、config/mode、list/load/close、侧栏已保存会话 UI、图片 prompt、命令面板、图片发送 UI、附件数量/大小/删除、设置持久化、agent 日志写入
 - [x] 存档测试：文件读写/容错、重命名与软删除跨重启、删除后同步不复活、按记录的 agent load、工作区软删除/恢复跨重启

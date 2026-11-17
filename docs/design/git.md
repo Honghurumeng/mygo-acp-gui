@@ -14,7 +14,7 @@
   二进制或超过 512 KB 的未跟踪文件只计文件数。统计是装饰性的，失败只清空数字，不阻塞面板。
 - 标题行在 `behind > 0` 时显示 warning 色的 `↓N` 芯片，提示还有已 fetch 未 pull 的提交
   （tooltip 为 `N commits fetched; pull to merge`）；pull 或快进后 behind 归零，芯片消失。
-  分支行只再追加 `↑N`（尚未推送的提交数）。
+  分支行只再追加 `↑N`（尚未推送的提交数）；这一行同时是分支选择器的入口。
 - 变更行可点：点文件名在 Git 面板左侧弹出 diff 卡片（见下节），右侧 `＋`/`－` 仍只做暂存/取消暂存。
 - 变更区域和图表区域用 `ui.SplitVertical` 分隔，可拖动调整高度，二者总高度不变。
 - 状态区在 workspace 切换时立即清空并异步重读，避免显示上一个仓库的内容。
@@ -78,12 +78,52 @@
 - merge 提交只按第一父提交展开和预览，不展示相对每个父的 combined diff；也不画 rebase/merge/revert 进行中的状态。
 - 没有提交时显示 “No commits yet.”；`Undo` 对首个提交也有效（`update-ref -d HEAD`），其余提交用 `reset --soft HEAD~1`。
 
+## 分支
+
+- 标题第二行的 `repo · ⑂ 分支` 本身是分支选择器：点击后在行下弹出本地分支列表，
+  当前分支排第一并带勾，其余按名字排序，行内显示已配置的 upstream。列表打开时重新读取
+  `git for-each-ref --sort=refname` 的 `refs/heads`，异步读取并带 generation + workspace 校验；
+  读取失败显示 git 错误和 Retry，超过 240 DIP 的列表内部滚动。只列本地分支：切换远端跟踪分支
+  要创建本地分支，留给后续版本。
+- 点非当前分支执行 `git switch <name>`。切换前用 `git check-ref-format --branch` 校验名字，
+  并拒绝以 `-` 开头的名字。切换失败（脏工作区冲突、分支不存在、仓库被删除）时 popover 保持
+  打开：先用 danger 色写出 `Could not switch to <name>.`，下面用等宽字体完整列出 git 的输出
+  （保留换行，tab 换成两个空格缩进，不截断、不加省略号），分支列表仍然可见，当前分支不变。
+  成功后关闭列表，刷新 Git 面板、Files 面板和同一 workspace 所有草稿的分支芯片。Git 面板自身
+  加载或操作进行中时列表仍可打开，但分支行不可点。popover 宽度固定，过长的行由文字自身换行，
+  busy 状态（`Switching to <name>…`）同样换行显示。
+- 如果失败原因是本地修改会被覆盖，popover 在错误下写出
+  `Local changes or untracked files would be overwritten, so nothing was switched.`，并直接列出
+  `Stash & switch` 的完整逻辑（不依赖只有 hover 才出现的 tooltip）：
+  1. `git stash push --include-untracked -m "acp-gui: switch to <name>"`：暂存区、未暂存和未跟踪
+     文件进入 stash，stash 消息记录目标分支；被忽略的文件不进入。
+  2. `git switch <name>`。
+  3. `git stash pop --index`：改动连同暂存区一起回到新分支，干净恢复后 stash 条目被 pop 掉。
+  恢复冲突时切换仍然完成：冲突标记留在工作区，`stash@{0}` 保留，popover 以 warning 完整显示
+  处置方式（解决冲突后用 `git stash drop stash@{0}` 删除），不截断、不自动丢弃。如果第 2 步
+  失败，stash 会在旧分支上 pop 回去，错误原文显示在 popover；carry 本身失败后不再出现
+  `Stash & switch`，避免在同一错误上循环。工作区干净时跳过 stash，直接切换。这是显式按钮，
+  普通切换绝不自动 stash 或丢弃改动。
+- 在提交行右键 → `Create branch here…`：对话框显示目标提交的短 hash 和 subject，输入名字后执行
+  `git branch <name> <hash>`。只创建分支，不切换、不动工作区；因此可以和进行中的会话并存。
+  成功后面板提示 `Branch <name> created.` 并重读图表，新 ref 出现在该提交行；失败时对话框保持打开，
+  在输入框下显示 git 错误，可改名重试。分支名同样走 `check-ref-format`。
+- composer 的分支芯片在草稿（`session/new` 之前）可点，打开的也是同一选择器，用来在会话开始前
+  选定分支；已有 session 时芯片只显示当前分支并提示新开聊天再切换，不再响应点击。切换成功后
+  清空该 chat 的分支缓存，并让同一 workspace 的其他草稿和 Git / Files 面板按各自 generation 刷新。
+- 新建分支不自动设置 upstream；第一次 Push 会设置（见下节），之后 Pull 才可用。
+
 ## 操作
 
 - Commit：`git commit -m <message>`，只提交已暂存内容；message 为空或没有暂存文件时禁用。
 - Fetch：`git fetch --prune`。
-- Pull：`git pull --no-edit`，并设置 `GIT_MERGE_AUTOEDIT=no` 防止等待编辑器。
-- Push：`git push`，只推当前分支已配置的 upstream；没有 upstream 时显示 git 错误。
+- Pull：有 upstream 时 `git pull --no-edit`，并设置 `GIT_MERGE_AUTOEDIT=no` 防止等待编辑器；本地分支
+  没有 upstream 时，若远端存在同名跟踪分支（优先 `origin/<branch>`，否则唯一匹配），先用
+  `git branch --set-upstream-to=<remote>/<branch> <branch>` 补上再 pull；没有同名远端分支时显示 git/明确错误。
+- Push：有 upstream 时执行 `git push`；新分支没有 upstream 时自动选 `origin`（没有 origin 时选唯一
+  remote），执行 `git push --set-upstream <remote> <branch>`，因此从提交右键新建的分支第一次也能推送，
+  之后 Pull 也有 upstream 可用。多个 remote 且没有 origin 时不猜，显示需要显式 upstream 的错误；
+  仍不使用 force push。
 - Refresh：重新执行状态和图表读取。
 - 任务 runner 成功完成一个任务后会执行一次 `git add -A` + `git commit -m "task: <title>"`，不 push；失败任务不 commit，而是恢复到任务开始前的 work tree 快照（任务外的用户改动会保留）。提交或回滚后若 Git 面板正在显示同一 workspace 会自动刷新。详见 [tasks.md](tasks.md)。
 - 一轮对话结束时（`session/prompt` 返回或报错）自动重读一次，agent 刚写入的文件立即出现在列表里。
@@ -101,7 +141,7 @@
 
 - 所有 git 命令在 goroutine 中执行，结果通过 `App.Post` 回到 UI 线程。
 - 每次读取/操作带 generation 和 workspace 校验；切换会话或再次刷新后，过期结果直接丢弃。
-- 状态/图表超时 10 秒，普通操作 15 秒，Commit 与 Discard all 30 秒，Fetch/Pull/Push 60 秒；应用退出时由 `lifeCtx` 取消。
+- 状态/图表超时 10 秒，普通操作（含分支读取/创建/切换）15 秒，Commit 与 Discard all 30 秒，Fetch/Pull/Push 60 秒；应用退出时由 `lifeCtx` 取消。
 - 环境固定 `GIT_TERMINAL_PROMPT=0`、`GIT_PAGER=cat`、`LC_ALL=C`；不弹出隐藏的凭据输入，不内嵌终端。
 - 不改写用户仓库之外的内容；面板只操作当前 workspace 所在仓库。
 
@@ -142,5 +182,5 @@ go test ./internal/git -v
 go test ./internal/ui -run 'TestGitPanel' -v -count=1
 ```
 
-`internal/git` 测试覆盖状态/重命名解析、分支头解析、init、stage/unstage（含 `UnstageAll` 和首提交前）、commit、首提交撤销、discard all（已暂存/未暂存/未跟踪/首提交前、忽略文件保留）、嵌套工作区，以及 diff 两侧（未暂存/已暂存/未跟踪/新增/删除/重命名、二进制与超大文件、越界路径）、提交日志解析（含 committer time、HEAD 标记）、refs 解析、fetch 未 pull 的 `Incoming` 标记与 pull 后清除、commit 文件列表与提交 diff 两侧（首提交/单文件/重命名/删除）、提交文件数与增删行数统计、merge 的 lane 分配与 8 lane 上限、父提交必须在子提交之后；`TestFetchPullPushAndUnstageAll` 用临时 bare remote 跑通 Fetch/Pull/Push/UnstageAll；UI 测试覆盖无仓库提示与 init、无 git 提示、窗口获得焦点后刷新、一轮对话结束后刷新、Stage all + Commit 全链路、Fetch/Pull/Push/Undo/Unstage all 按钮与 notice、Discard all 确认/取消与位置、共享卡片打开（位于 Git 面板左侧、面板仍可见、点外部关闭）、响应式布局（窄卡片
-Unified/宽卡片 Split、点阈值宽度）、未暂存文件编辑保存、暂存与历史只读、fetch 后 `↓N` 芯片与描边远端芯片、pull 后芯片和徽标消失，以及二进制报错、提交图渲染与窄面板裁剪、点击提交展开/收起文件列表、从展开列表打开提交 diff、hover 详情卡（位于图表左侧、无短 hash/父提交、含文件与行数统计）与复制 hash。
+`internal/git` 测试覆盖状态/重命名解析、分支头解析、init、stage/unstage（含 `UnstageAll` 和首提交前）、commit、首提交撤销、discard all（已暂存/未暂存/未跟踪/首提交前、忽略文件保留）、嵌套工作区，以及 diff 两侧（未暂存/已暂存/未跟踪/新增/删除/重命名、二进制与超大文件、越界路径）、提交日志解析（含 committer time、HEAD 标记）、refs 解析、fetch 未 pull 的 `Incoming` 标记与 pull 后清除、commit 文件列表与提交 diff 两侧（首提交/单文件/重命名/删除）、提交文件数与增删行数统计、merge 的 lane 分配与 8 lane 上限、父提交必须在子提交之后、本地分支读取/新建/切换（含 unborn 分支与非法名字）、`SwitchBranchCarryingChanges` 的干净/冲突恢复、新分支首次 `PushBranch` 自动设置 upstream、无 upstream 时 `PullBranch` 匹配同名远端分支；`TestFetchPullPushAndUnstageAll` 用临时 bare remote 跑通 Fetch/Pull/Push/UnstageAll；UI 测试覆盖无仓库提示与 init、无 git 提示、窗口获得焦点后刷新、一轮对话结束后刷新、Stage all + Commit 全链路、Fetch/Pull/Push/Undo/Unstage all 按钮与 notice、Discard all 确认/取消与位置、共享卡片打开（位于 Git 面板左侧、面板仍可见、点外部关闭）、响应式布局（窄卡片
+Unified/宽卡片 Split、点阈值宽度）、未暂存文件编辑保存、暂存与历史只读、fetch 后 `↓N` 芯片与描边远端芯片、pull 后芯片和徽标消失，以及二进制报错、提交图渲染与窄面板裁剪、点击提交展开/收起文件列表、从展开列表打开提交 diff、hover 详情卡（位于图表左侧、无短 hash/父提交、含文件与行数统计）与复制 hash、提交右键创建分支（不切换、非法名留在对话框）、Git 标题行和 composer 草稿的分支选择器、切换失败时完整显示错误（含 `Aborting`）与 `Stash & switch` 三步说明、切换失败后列表仍可见、`Stash & switch` 携带本地修改切换（含冲突留 stash 的完整警告与 `git stash drop` 提示）、切换后面板/芯片刷新、新分支首次 Push 设置 upstream。

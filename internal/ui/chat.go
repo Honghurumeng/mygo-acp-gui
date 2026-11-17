@@ -109,6 +109,10 @@ type Chat struct {
 
 	gitWorkspace  string
 	gitBranchName string
+	// BranchPicker is the composer chip's list while this chat is still a
+	// draft. A live session keeps the branch it started on, so the chip
+	// turns read-only after Connect.
+	BranchPicker branchPickerState
 
 	Unread    bool
 	Attention bool
@@ -448,6 +452,7 @@ func (a *App) selectChat(chat *Chat) {
 		previous.MenuOpen = false
 		previous.JumpOpen = false
 		previous.MentionOpen = false
+		previous.BranchPicker.close()
 	}
 	a.Active = index
 	chat.Unread = false
@@ -457,6 +462,7 @@ func (a *App) selectChat(chat *Chat) {
 	chat.MenuOpen = false
 	chat.JumpOpen = false
 	chat.MentionOpen = false
+	chat.BranchPicker.close()
 	a.AgentIndex = a.agentIndex(chat.Agent.ID)
 	a.Workspace = chat.Workspace
 	a.ensureWorkspace(chat.Workspace)

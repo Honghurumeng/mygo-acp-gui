@@ -150,6 +150,7 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 - 右侧 300 DIP 可折叠面板，跟随当前会话/草稿的 workspace；窗口最右缘的窄图标栏里 Git 图标按钮开关，当前 tab 的图标按钮高亮为 Accent 色。
 - 异步探测 `git` 是否存在和 workspace 所属仓库根目录；没有 git 显示安装提示，没有仓库显示 “Initialize Git repository” 按钮（`git init`）。
 - 有仓库时显示 commit message、Staged / Changes 列表、分支状态和提交图（`internal/ui/gitgraph.go` 自绘，结构化 log + lane，行高 22 DIP）；文件可逐项 stage/unstage，也可 Stage all / Unstage all。点文件名可打开 diff 预览，点提交行可展开该提交改动的文件列表，列表里的文件可打开该提交的 diff。提交行不再显示短 hash；hover 350 ms 弹出详情卡（subject、作者、时间、refs、修改文件数/代码增删行数（单行）、完整 hash），卡片位于图表左侧，卡内可复制完整 hash。
+- 标题行的 `repo · ⑂ 分支` 可点开本地分支选择器切换分支；提交行右键 `Create branch here…` 在目标提交创建分支（不切换）。composer 的分支芯片在草稿阶段同样可切换分支，已有会话时只显示当前分支。切换被本地修改挡住时 popover 完整显示 git 错误，并列出 `Stash & switch` 的 stash → switch → `stash pop --index` 三步；成功后关闭，恢复冲突时改动留在 `stash@{0}` 并给出 drop 提示。新分支没有 upstream 时首次 Push 自动设置到 origin 或唯一 remote；Pull 没有 upstream 时会匹配同名远端分支。
 - Commit 只提交暂存内容；Fetch/Pull/Push 不等待凭据终端，Undo 用 soft reset 保留改动；所有命令有超时和 generation 校验，切换会话不会串仓库。
 - 详细设计见 [git.md](git.md)。
 

@@ -416,6 +416,7 @@ func (a *App) connectChat(chat *Chat) {
 	chat.WorkspaceError = ""
 	chat.ConnectError = ""
 	chat.gitWorkspace = ""
+	chat.BranchPicker.close()
 	chat.Connecting = true
 	chat.Busy = "connect"
 	chat.Unread = false
@@ -748,6 +749,7 @@ func (a *App) resetConversation(chat *Chat) {
 	chat.ModeOpen = false
 	chat.MenuOpen = false
 	chat.JumpOpen = false
+	chat.BranchPicker.close()
 	chat.ModelProvider = ""
 	a.updateDockBadge()
 }

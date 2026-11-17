@@ -187,6 +187,12 @@ func (a *App) gitGraphCommit(c *mui.Context, commit git.LogCommit, indent float3
 		a.hideCommitHover(commit.Hash)
 		a.toggleCommit(commit.Hash)
 	}
+	row.ContextMenu(func(m *mui.Menu) {
+		busy := a.Git.Busy != "" || a.Git.Loading
+		if m.Item("Create branch here…").Disabled(busy).Chosen() {
+			a.openGitBranchCreate(commit.Hash)
+		}
+	})
 	if a.Git.CommitHover == commit.Hash && a.Git.CommitHoverOpen {
 		a.ensureCommitStat(commit.Hash)
 		card := mui.PopoverBase(c, row, &a.Git.CommitHoverOpen, func(panel mui.Element) {

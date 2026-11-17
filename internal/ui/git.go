@@ -17,6 +17,7 @@ func (c *Chat) gitBranch() string {
 	if workspace != c.gitWorkspace {
 		c.gitWorkspace = workspace
 		c.gitBranchName = readGitBranch(workspace)
+		c.BranchPicker.reset()
 	}
 	return c.gitBranchName
 }

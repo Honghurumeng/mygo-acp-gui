@@ -125,9 +125,12 @@ func (a *App) toggleRightPanel(tab string) {
 	a.setRightTab(tab)
 }
 
-// closeGitOverlays dismisses the Git diff card, the commit details card and
-// the expanded commit files. Used when the right column leaves the Git tab.
+// closeGitOverlays dismisses the Git diff card, the commit details card, the
+// expanded commit files, the branch picker and the branch dialog. Used when
+// the right column leaves the Git tab.
 func (a *App) closeGitOverlays() {
 	a.closeCommitHover()
 	a.closeGitPreview()
+	a.Git.BranchPicker.close()
+	a.closeGitBranchCreate()
 }
