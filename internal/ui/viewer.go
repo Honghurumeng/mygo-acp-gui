@@ -434,18 +434,18 @@ func viewerModeTooltip(mode viewerMode) string {
 // width the user dragged to, clamped to the room left of the right panel, or
 // a share of that room when the user has not resized it.
 func (a *App) viewerCardWidth(windowW float32) float32 {
-	maxWidth := viewerMaxWidth(windowW)
+	maxWidth := a.viewerMaxWidth(windowW)
 	if a.ViewerWidth > 0 {
 		return min(max(a.ViewerWidth, viewerMinWidth), maxWidth)
 	}
-	room := max(windowW-gitPanelWidth, 0)
+	room := max(windowW-a.rightPaneWidth(windowW), 0)
 	return min(max(room*0.62, viewerDefaultMinWidth), min(viewerDefaultMaxWidth, maxWidth))
 }
 
 // viewerMaxWidth is the widest card that still leaves the conversation and
 // the right panel visible.
-func viewerMaxWidth(windowW float32) float32 {
-	return max(viewerMinWidth, windowW-gitPanelWidth-rightRailWidth-24)
+func (a *App) viewerMaxWidth(windowW float32) float32 {
+	return max(viewerMinWidth, windowW-a.rightPaneWidth(windowW)-rightRailWidth-24)
 }
 
 // viewerSplit reports whether the card is wide enough for side-by-side diff.
@@ -510,7 +510,7 @@ func (a *App) viewerResizeHandle(c *mui.Context, panel mui.Element, windowW floa
 	}
 	if dx, _, ok := edge.Dragged(); ok && dx != 0 {
 		width := a.viewerCardWidth(windowW) - dx
-		a.ViewerWidth = min(max(width, viewerMinWidth), viewerMaxWidth(windowW))
+		a.ViewerWidth = min(max(width, viewerMinWidth), a.viewerMaxWidth(windowW))
 	}
 	if _, _, ok := edge.DragEnded(); ok {
 		a.persistSettings()

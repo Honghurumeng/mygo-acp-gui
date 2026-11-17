@@ -337,6 +337,11 @@ type App struct {
 	// ViewerWidth is the floating file viewer's width after the user drags its
 	// left edge. Zero follows the window; the value is persisted.
 	ViewerWidth float32
+	// SidebarWidth and RightPanelWidth are the columns' widths after the user
+	// drags their inner edge. Zero follows the built-in width; both are
+	// persisted and clamped again to the room each window has.
+	SidebarWidth    float32
+	RightPanelWidth float32
 	// NotificationsEnabled gates desktop notifications. It defaults to on and
 	// is persisted in settings.json.
 	NotificationsEnabled bool
@@ -620,6 +625,8 @@ func (a *App) loadSettings(dataDir string, workspaceDefault bool) {
 	a.applyLanguage()
 	a.Fonts = normalizeFontScales(file.Fonts)
 	a.ViewerWidth = normalizeViewerWidth(file.ViewerWidth)
+	a.SidebarWidth = normalizeSidebarWidth(file.SidebarWidth)
+	a.RightPanelWidth = normalizeRightPanelWidth(file.RightPanelWidth)
 	a.NotificationsEnabled = file.Notifications
 	a.DockBadgeEnabled = file.DockBadge
 	for _, workspace := range file.Workspaces {
@@ -862,7 +869,8 @@ func (a *App) View(c *mui.Context) {
 
 // conversation is the middle column: its bar, messages and composer.
 func (a *App) conversation(c *mui.Context, chat *Chat, rows []*Message) {
-	mui.Column(c).Grow(1).FillHeight().Background(c.Theme().Background).Children(func() {
+	column := mui.Column(c).Grow(1).FillHeight().Background(c.Theme().Background)
+	column.Children(func() {
 		a.header(c)
 		a.banner(c)
 		if chat == nil {
@@ -885,6 +893,13 @@ func (a *App) conversation(c *mui.Context, chat *Chat, rows []*Message) {
 		}
 		a.composer(c)
 	})
+	// The sidebar's drag grip sits on the conversation's left edge, on this
+	// side of the border: the sidebar's own edge belongs to its scroll bar's
+	// track. It is a child of this column, so floating cards built later
+	// cover it instead of the grip covering them.
+	if a.SidebarOpen {
+		column.Children(func() { a.sidebarResizeHandle(c) })
+	}
 }
 
 // header is the conversation bar: sidebar toggle, title and the session

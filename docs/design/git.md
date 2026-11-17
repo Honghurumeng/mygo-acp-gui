@@ -4,7 +4,7 @@
 
 ## 布局
 
-- 窗口右侧固定宽 300 的可折叠面板，窗口最右缘还有一条 38 DIP 的窄图标栏（`rightRailWidth`），跟随当前会话的 workspace；没有会话时跟随草稿 workspace。
+- 窗口右侧可折叠面板，宽度可拖动（左缘热区，默认 300 DIP、双击恢复，见 [layout.md](layout.md)），窗口最右缘还有一条 38 DIP 的窄图标栏（`rightRailWidth`），跟随当前会话的 workspace；没有会话时跟随草稿 workspace。
 - 图标栏常驻，背景由 `sunkenSurface` 从主题 Surface 派生（比面板深一阶，见 [themes.md](themes.md)），竖排三个无文字的图标按钮（Git `git-branch`、Tasks `list-checks`、Files `folder-tree`），是右侧列唯一的开关：点未显示的 tab 打开/切换，点当前 tab 关闭。当前 tab 的按钮为 Accent 底 + Accent 图标，另外两个为次要色；按钮 label / tooltip 为 `Show Git panel` / `Hide Git panel`（Tasks 同名规则）。面板内只显示当前面板名称。
 - 初始打开。面板不被持久化，重启后恢复默认打开。
 - 有仓库时从上到下：带边框的 commit message 输入框、Commit 按钮、错误/成功提示、暂存/更改列表、Git 图表和功能按钮；输入框和按钮之间不再放常驻状态条。
@@ -73,7 +73,7 @@
   只有它的 ref 芯片使用泳道色的实底强调芯片；远端跟踪分支、其他本地分支和 tag 都用灰色文字的描边芯片。
   因此 fetch 后顶部是描边的 `origin/main`、当前分支芯片在下面的提交上；pull 后 HEAD 移到顶部，
   芯片变成泳道色，线条和圆点恢复实线。
-- refs 来自 `%D`：去掉 `HEAD ->` / `origin/HEAD ->` 的目标前缀和 `tag:` 前缀，去重。面板只有 300 DIP，提交行只保留第一个 ref（HEAD 提交即当前分支）并截到 12 个字符；作者不在行内显示，把宽度留给 subject，详情卡里列出全部 refs。
+- refs 来自 `%D`：去掉 `HEAD ->` / `origin/HEAD ->` 的目标前缀和 `tag:` 前缀，去重。面板默认 300 DIP，提交行只保留第一个 ref（HEAD 提交即当前分支）并截到 12 个字符；作者不在行内显示，把宽度留给 subject，详情卡里列出全部 refs。
 - 提交 subject 为空时显示 `(no subject)`（提交行必须有文字）；无法识别的日志行（例如混入的 warning）直接跳过。
 - merge 提交只按第一父提交展开和预览，不展示相对每个父的 combined diff；也不画 rebase/merge/revert 进行中的状态。
 - 没有提交时显示 “No commits yet.”；`Undo` 对首个提交也有效（`update-ref -d HEAD`），其余提交用 `reset --soft HEAD~1`。
@@ -154,7 +154,8 @@
   View/Edit 时为 `File · <path>` / `Edit · <path>`。
 - 模式：Staged 与提交历史只有 Diff / View，不能改写 index 或历史；未暂存、未删除、非冲突的工作区文件
   额外有 Edit，保存后写回工作区。
-- 宽度默认 `clamp((windowW - 300) * 0.62, 480, 900)`，左缘拖动范围 420 DIP 到窗口可用宽度，
+- 宽度默认 `clamp((windowW - rightPaneWidth) * 0.62, 480, 900)`，`rightPaneWidth` 是右侧列当前宽度
+  （默认 300 DIP，可拖动，见 [layout.md](layout.md)）；左缘拖动范围 420 DIP 到窗口可用宽度，
   拖动结果保存在 settings 的 `viewerWidth`；跨 Git / Tasks / Files 共用。
 - 布局响应式：卡片宽 `≥ 700` DIP 时用 Split 左右对比，否则用 Unified 上下对比；切换布局保留同一个
   `editor.DiffState`（滚动位置和状态不丢），两栏都开启 `Wrap`，横向不滚动。

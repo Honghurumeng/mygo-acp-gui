@@ -147,7 +147,7 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 
 ## Git 面板
 
-- 右侧 300 DIP 可折叠面板，跟随当前会话/草稿的 workspace；窗口最右缘的窄图标栏里 Git 图标按钮开关，当前 tab 的图标按钮高亮为 Accent 色。
+- 右侧可折叠面板，宽度可拖动（默认 300 DIP，见 [layout.md](layout.md)），跟随当前会话/草稿的 workspace；窗口最右缘的窄图标栏里 Git 图标按钮开关，当前 tab 的图标按钮高亮为 Accent 色。
 - 异步探测 `git` 是否存在和 workspace 所属仓库根目录；没有 git 显示安装提示，没有仓库显示 “Initialize Git repository” 按钮（`git init`）。
 - 有仓库时显示 commit message、Staged / Changes 列表、分支状态和提交图（`internal/ui/gitgraph.go` 自绘，结构化 log + lane，行高 22 DIP）；文件可逐项 stage/unstage，也可 Stage all / Unstage all。点文件名可打开 diff 预览，点提交行可展开该提交改动的文件列表，列表里的文件可打开该提交的 diff。提交行不再显示短 hash；hover 350 ms 弹出详情卡（subject、作者、时间、refs、修改文件数/代码增删行数（单行）、完整 hash），卡片位于图表左侧，卡内可复制完整 hash。
 - 标题行的 `repo · ⑂ 分支` 可点开本地分支选择器切换分支；提交行右键 `Create branch here…` 在目标提交创建分支（不切换）。composer 的分支芯片在草稿阶段同样可切换分支，已有会话时只显示当前分支。切换被本地修改挡住时 popover 完整显示 git 错误，并列出 `Stash & switch` 的 stash → switch → `stash pop --index` 三步；成功后关闭，恢复冲突时改动留在 `stash@{0}` 并给出 drop 提示。新分支没有 upstream 时首次 Push 自动设置到 origin 或唯一 remote；Pull 没有 upstream 时会匹配同名远端分支。
@@ -156,7 +156,7 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 
 ## Tasks 面板
 
-- 右侧与 Git 面板共用 300 DIP 列，窗口最右缘图标栏的 Tasks 图标按钮打开、切换或关闭；面板内只显示当前面板名称，不再有内建 tab 条。Tasks 跟随当前会话 / 草稿的 workspace。
+- 右侧与 Git 面板共用同一列（宽度可拖动，默认 300 DIP），窗口最右缘图标栏的 Tasks 图标按钮打开、切换或关闭；面板内只显示当前面板名称，不再有内建 tab 条。Tasks 跟随当前会话 / 草稿的 workspace。
 - 每个 workspace 有有序任务；状态只有 `pending`、`ongoing`、`complete`，complete 带 `pass` / `failure`。`Run pending` 串行跑完所有 pending，`Stop` 把当前任务退回 pending 并停止队列；失败任务留在 complete(failure)，但队列继续执行剩余 pending。
 - 每个任务新建独立 executor Chat / agent 进程 / ACP 会话；回合结束后取最后一段 assistant 文本，另起隔离 checker 进程和新会话判断。checker 收到任务文本、本轮最后一段以及之前每轮的总结 + feedback，没有工具；返回严格 JSON。
 - incomplete 时把 checker reason 发回同一个 executor 会话继续；complete 时写 `<workspace>/tasks/<id>-<slug>.md`，执行一次 `git add -A` + commit（不 push），再开始下一个任务。
@@ -167,7 +167,7 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 ## 设置持久化
 
 - `internal/settings` 读写 `PathUserData/settings.json`；`ui.Options.DataDir` 为空时完全不落盘（测试、便携运行）。
-- 保存内容：最后使用的 agent、工作区、侧栏工作区列表（`workspaces`）、软删除记录（`removedWorkspaces`）、折叠状态（`collapsedWorkspaces`）、每个 agent 的模型/thinking/mode（`lastSelections`）、系统通知开关（`notifications`，默认 true）、Dock 角标开关（`dockBadge`，默认 true），以及 `paths` 里的显式工具覆盖。
+- 保存内容：最后使用的 agent、工作区、侧栏工作区列表（`workspaces`）、软删除记录（`removedWorkspaces`）、折叠状态（`collapsedWorkspaces`）、每个 agent 的模型/thinking/mode（`lastSelections`）、左右分栏宽度（`sidebarWidth`/`rightPanelWidth`，见 [layout.md](layout.md)）、系统通知开关（`notifications`，默认 true）、Dock 角标开关（`dockBadge`，默认 true），以及 `paths` 里的显式工具覆盖。
 - 保存时机：切换会话、选择 agent/目录/model/thinking/mode、添加/移除/恢复工作区、折叠/展开工作区、切换系统通知或 Dock 角标、Connect 校验成功、退出。
 - 启动恢复：工作区、侧栏工作区列表（含软删除分组）、折叠状态、上次 agent，以及该 agent 的模型/thinking/mode 草稿选择；显式传入的 `ui.Options.Workspace` 优先（测试用）。上次工作区已被软删除时，草稿改用第一个可见工作区（没有则用 home）。启动时创建的草稿不会展开已折叠的工作区。
 - `paths` 只保存配置里的覆盖值；`ACP_GUI_*` 环境变量优先，且不会被写回文件。

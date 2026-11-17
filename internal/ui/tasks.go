@@ -124,12 +124,14 @@ func (a *App) taskCounts(workspace string) (pending, ongoing, complete int) {
 // returns the column as the summary card's anchor.
 func (a *App) taskPanel(c *mui.Context) mui.Element {
 	t := c.Theme()
-	panel := mui.Column(c).Width(gitPanelWidth).FillHeight().
+	windowW, _ := c.Size()
+	panel := mui.Column(c).Width(a.rightPaneWidth(windowW)).FillHeight().
 		Background(t.Surface).
 		BorderWidth(1, 0, 0, 0).BorderColor(t.Border)
 	panel.Children(func() {
 		a.taskPanelHeader(c)
 		a.taskPanelBody(c)
+		a.rightPanelResizeHandle(c)
 	})
 	return panel
 }

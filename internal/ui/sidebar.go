@@ -9,7 +9,6 @@ import (
 )
 
 const (
-	sidebarWidth          = 292
 	workspacePreviewLimit = 5
 )
 
@@ -68,7 +67,8 @@ func (a *App) chatsInWorkspace(workspace string) []*Chat {
 
 func (a *App) sidebar(c *mui.Context) {
 	t := c.Theme()
-	mui.Column(c).Width(sidebarWidth).FillHeight().
+	windowW, _ := c.Size()
+	mui.Column(c).Width(a.sidebarPaneWidth(windowW)).FillHeight().
 		Background(t.Surface).
 		BorderWidth(0, 1, 0, 0).BorderColor(t.Border).
 		Children(func() {

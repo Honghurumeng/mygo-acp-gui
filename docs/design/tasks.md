@@ -14,7 +14,7 @@
 
 ## 右侧栏
 
-- 右侧仍是 300 DIP 的可折叠列，`Git`、`Tasks` 与 `Files` 共用宽度和开关。窗口最右缘常驻一条 38 DIP 的窄图标栏（`internal/ui/rightpanel.go`），背景用 `sunkenSurface` 从主题 Surface 派生得比面板深一阶（见 [themes.md](themes.md)），竖排 Git / Tasks / Files 三个无文字图标按钮（Lucide `git-branch`、`list-checks`、`folder-tree`），是右侧列唯一的切换入口：点未显示的 tab 打开/切换，点当前 tab 关闭。当前 tab 的按钮用 Accent 底和 Accent 图标表示。面板内部始终只显示当前面板名称，不再放 tab 条或面板内切换按钮，顶部会话标题栏也不再放 `Git` / `Tasks` / `Files` 文字按钮。
+- 右侧仍是可折叠列，宽度可拖动（默认 300 DIP，见 [layout.md](layout.md)），`Git`、`Tasks` 与 `Files` 共用宽度和开关。窗口最右缘常驻一条 38 DIP 的窄图标栏（`internal/ui/rightpanel.go`），背景用 `sunkenSurface` 从主题 Surface 派生得比面板深一阶（见 [themes.md](themes.md)），竖排 Git / Tasks / Files 三个无文字图标按钮（Lucide `git-branch`、`list-checks`、`folder-tree`），是右侧列唯一的切换入口：点未显示的 tab 打开/切换，点当前 tab 关闭。当前 tab 的按钮用 Accent 底和 Accent 图标表示。面板内部始终只显示当前面板名称，不再放 tab 条或面板内切换按钮，顶部会话标题栏也不再放 `Git` / `Tasks` / `Files` 文字按钮。
 - 默认面板是 Git；Tasks 跟随当前会话 / 草稿的 workspace。开始任务时自动打开 Tasks。
 - 任务结束时若 Files 面板正在显示同一 workspace 会重读文件树；提交或回滚后 Git 面板也自动刷新（见 [files.md](files.md)）。
 - Tasks 面板从上到下：当前名称与任务计数 / 运行阶段、`Run pending`、`Stop`、错误与提示、任务列表。

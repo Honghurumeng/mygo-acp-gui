@@ -16,7 +16,6 @@ import (
 )
 
 const (
-	gitPanelWidth = 300
 	// gitListGutter is the room both lists keep at the panel's right edge
 	// for their overlay scroll bars: their scroll boxes run to that edge, so
 	// the bars line up in one column, and their rows stop short of it.
@@ -381,12 +380,14 @@ func gitErrorText(err error) string {
 func (a *App) gitPanel(c *mui.Context) mui.Element {
 	a.ensureGitPanel()
 	t := c.Theme()
-	panel := mui.Column(c).Width(gitPanelWidth).FillHeight().
+	windowW, _ := c.Size()
+	panel := mui.Column(c).Width(a.rightPaneWidth(windowW)).FillHeight().
 		Background(t.Surface).
 		BorderWidth(1, 0, 0, 0).BorderColor(t.Border)
 	panel.Children(func() {
 		a.gitPanelHeader(c)
 		a.gitPanelBody(c)
+		a.rightPanelResizeHandle(c)
 	})
 	return panel
 }

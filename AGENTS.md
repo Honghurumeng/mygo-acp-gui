@@ -24,6 +24,7 @@
 - `docs/design/files.md`：右侧 Files 文件树、懒加载、Git 状态、右键操作、拖动移动与异步/安全。
 - `docs/design/tasks.md`：右侧 Tasks 面板、任务持久化、串行执行/检查双 agent、成功提交与失败回滚。
 - `docs/design/components.md`：本地 UI 组件层（widgets.go 样式、components.go 有状态组件、图标子集）、交互约定。
+- `docs/design/layout.md`：窗口三栏宽度、左右分栏拖动热区、边界收口、双击重置与持久化。
 - `docs/design/themes.md`：外观（system/light/dark）、主题目录（default/nord/solarized/catppuccin/claude/green/green-soft/vscode/everforest/one-dark/tokyo-night）、持久化、原生外观同步。
 - `docs/design/fonts.md`：分区字体大小（workspace 列表、对话流、输入框、Git 面板）、百分比缩放、持久化。
 - `docs/design/i18n.md`：中英双语（系统/en/zh-Hans）、`T`/`Tf`/`TS`、词典与 MyGo 自带文案、设置面板切换、翻译校验。

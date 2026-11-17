@@ -36,8 +36,9 @@
 
 ## 宽度
 
-- 默认宽度：`clamp((windowW - 300) * 0.62, 480, 900)`，再按
-  `windowW - 300 - 38 - 24` 的上限收窄，保证对话和右侧面板仍然可见。
+- 默认宽度：`clamp((windowW - rightPaneWidth) * 0.62, 480, 900)`，再按
+  `windowW - rightPaneWidth - 38 - 24` 的上限收窄，保证对话和右侧面板仍然可见；
+  `rightPaneWidth` 是右侧列当前宽度（默认 300 DIP，可拖动，见 [layout.md](layout.md)）。
 - 卡片左缘有 6 DIP 的拖动热区（`CursorResizeEW`）：向左拖变宽、向右拖变窄，范围为 420 DIP 到当前窗口的
   可用宽度。
 - 拖动结束后把宽度写入 `settings.json` 的 `viewerWidth`；重启后恢复，仍受窗口大小限制。

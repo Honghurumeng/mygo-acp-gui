@@ -126,6 +126,8 @@
   `DiffUnified`，`Wrap` 始终开启；View/Edit 共享同一个 `editor.State`，保留滚动和未保存文字。
 - 不做组件音效：`mygo/audio` 只为几处点击声引入并不值得，交互反馈靠 hover/pressed 和图标变化。
 - 可交互组件通过 `.Label()` 暴露标签，`tt.Click("Allow once")` 这类按标签点击仍然有效。
+- 分栏拖动热区（左栏右缘、右栏左缘）和查看卡片左缘一样是 `RoleNone` 的 `Absolute` Box：6 DIP 宽、
+  `CursorResizeEW`、hover 用 `t.Accent.Alpha(0.12)`，不加 label、不进无障碍树（见 [layout.md](layout.md)）。
 - 事件返回值与 ACP 语义解耦：先拿到点击/变更，再调用 `finishPermission` 等现有函数。
 - 文件面板的行右键用 MyGo `ContextMenu`（原生菜单），不另画 popover；行的 `.Drag(fileDragValue)` 和
   文件夹/文件行/树根的 `ui.Drop` 负责移动，拖动与右键互不触发普通点击。`ContextMenu` 的 item label

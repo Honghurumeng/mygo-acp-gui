@@ -120,6 +120,12 @@ type File struct {
 	// viewer to. Zero means the responsive default, so older files keep the
 	// old behavior.
 	ViewerWidth float32 `json:"viewerWidth,omitempty"`
+	// SidebarWidth and RightPanelWidth are the widths in DIPs the user
+	// dragged the sidebar and the right column to. Zero means the built-in
+	// width, so older files keep the old layout; both are clamped again to
+	// the room the current window has.
+	SidebarWidth    float32 `json:"sidebarWidth,omitempty"`
+	RightPanelWidth float32 `json:"rightPanelWidth,omitempty"`
 	// LastSelections maps an agent ID to the config values and session mode
 	// last used with it, so a new draft opens with the same model, thinking
 	// level and mode instead of the agent's defaults.
@@ -258,6 +264,10 @@ type rawFile struct {
 	// ViewerWidth is the floating viewer width the user dragged to; zero in
 	// an older file keeps the responsive default.
 	ViewerWidth float32 `json:"viewerWidth"`
+	// SidebarWidth and RightPanelWidth are the dragged column widths; zero
+	// keeps the built-in width.
+	SidebarWidth    float32 `json:"sidebarWidth"`
+	RightPanelWidth float32 `json:"rightPanelWidth"`
 	// Raw keeps one malformed selection from discarding the other fields.
 	LastSelections json.RawMessage `json:"lastSelections"`
 	// CodexProvider is a pointer so a missing object keeps the zero value.
@@ -299,6 +309,12 @@ func decode(data []byte) (File, error) {
 	}
 	if raw.ViewerWidth > 0 {
 		file.ViewerWidth = raw.ViewerWidth
+	}
+	if raw.SidebarWidth > 0 {
+		file.SidebarWidth = raw.SidebarWidth
+	}
+	if raw.RightPanelWidth > 0 {
+		file.RightPanelWidth = raw.RightPanelWidth
 	}
 	file.LastSelections = decodeSelections(raw.LastSelections, &problems)
 	if raw.CodexProvider != nil {

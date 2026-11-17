@@ -10,12 +10,12 @@
 
 ```
 MyGo 原生窗口 (Go + ui)
-  ├─ 左侧工作区/会话栏（每个会话一个 agent 进程 + ACP session）
+  ├─ 左侧工作区/会话栏（宽度可拖动，默认 292 DIP；每个会话一个 agent 进程 + ACP session）
   ├─ 顶部会话标题栏：标题 + 侧栏开关，连接中显示 Cancel
   ├─ 消息区 + 可拖动高度的 composer
   ├─ composer 底栏：附件、Jump、git 分支、mode、上下文环、agent/model/thinking、发送
   ├─ @ 文件面板：workspace 索引 → 只把 @相对路径 文本写进 prompt（agent 自读）
-  ├─ 右侧面板（可折叠，Git / Tasks / Files 三个 tab）
+  ├─ 右侧面板（可折叠、宽度可拖动，默认 300 DIP；Git / Tasks / Files 三个 tab 共用）
   │    ├─ Git：提交、暂存/更改、分支图、分支创建/切换与 fetch/pull/push
   │    ├─ Tasks：任务队列、executor / checker 双 agent、成功总结 + 每任务一次 commit、失败回滚
   │    └─ Files：workspace 文件树、Git 状态、查看/编辑文本、新建/重命名/删除、拖动移动
@@ -76,7 +76,7 @@ MyGo 原生窗口 (Go + ui)
 
 ```
 启动 app
-  → internal/settings 读取 PathUserData/settings.json（上次 agent/工作区、外观/主题、分区字号、查看卡片宽度、路径覆盖）
+  → internal/settings 读取 PathUserData/settings.json（上次 agent/工作区、外观/主题、分区字号、左右分栏宽度、查看卡片宽度、路径覆盖）
   → internal/archive 读取 PathUserData/sessions.json，立即按 cwd 展示已保存会话（不等 agent）
   → internal/agent.ResolveEnvironment（环境变量 > settings paths > 登录 shell；node/pi/command-code/codex 绝对路径）
   → internal/agent.BuiltinLaunchResults
@@ -173,11 +173,11 @@ ClientCapabilities{
 - 通用外观（按钮、弹窗、空状态、代码块、图标）都在 `internal/ui` 的 `widgets.go` 与 `components.go`，不依赖第三方 UI 库；见 [components.md](components.md)。
 - 配置：模型面板按 agent → provider → model → thinking 选择；模型/思考来自 `configOptions`（切换模型时由响应/`config_option_update` 整组替换），mode 来自真实 `modes`，不硬编码。Codex 还可在设置里配置一个自定义 provider 和额外模型；provider 只写入本次启动的 Codex 子进程环境，模型列表由 `CODEX_ACP_MODELS` 追加，DeepSeek 目标（provider 名称、Base URL 或模型 id 含 deepseek）另生成 `<data>/codex-models.json` 并通过 `CODEX_CONFIG.model_catalog_json` 提供 DeepSeek 模型元数据（slug 使用设置里的 id），自定义模型的推理档位由设置里的复选框生成 `CODEX_ACP_REASONING_EFFORTS`，标题模型由 `CODEX_ACP_TITLE_MODEL` 覆盖（见 [codex-provider.md](codex-provider.md)）。pi-acp v1 把 thinking levels 同时放进 `modes` 的兼容块会被过滤。agent 只在会话开始前可选；未连接的草稿用发现阶段的配置探测缓存显示模型、thinking 和 mode，选择在 Connect 后补发。每个 agent 的 model/thinking/mode 存入 `settings.json` 的 `lastSelections`，新建草稿和切换 agent 时恢复，Connect 时用 agent 返回的列表校验。ACP 只报告当前模型的档位，所以配置探测会在同一个临时进程里把未缓存模型逐个切换并存入 `<data>/model-config.json`（`internal/modelconfig`）；下次启动用模型列表对照该文件，只扫新模型。草稿切到已缓存的 model 直接显示其档位，未缓存时才隐藏并等 Connect 后由 agent 给出。
 - 输入：`ui.TextAreaBase` 嵌在可拖动高度的 composer 卡片中；Enter 发送、Shift+Enter 换行；流式期间 Send 切换为 Stop；支持图片附件。
-- 多会话：左侧栏按 workspace 分组，先显示打开会话，再显示该目录的已保存会话；打开会话的状态用行背景表达：流式为移动的绿色斜线，其他会话结束/报错为绿底，当前会话结束为蓝底，权限请求为蓝/白闪烁。两类会话合并后默认只列前 5 条，`Show N more` / `Show less` 展开收起，展开状态不落盘（启动时默认折叠）。会话名前的内联图标标明 agent（pi 的方块 mark、Command Code 的 # 徽标、Codex 的终端 mark，`internal/ui/agenticons.go`，随主题变色）；已保存会话用存档里的 `agentId` 画同一个图标，标题栏也用同一图标标当前会话，模型 chip 左侧也用它标当前 agent。工作区头部 `⋯` 可移除该分组（软删除，只隐藏不删记录/会话），移除项通过 “Show removed (N)” 查看并从同一菜单恢复。工作区的 `＋` 新建独立进程；连接在首条消息或打开存档时自动发生。打开会话的 `⋯` 菜单还可 `Close process`：只关闭该会话的 agent 进程，标签页保留为草稿，会话回到存档列表；没有已连接或连接中的进程时该项置灰。
+- 多会话：左侧栏按 workspace 分组（右缘可拖动改宽度，双击恢复默认），先显示打开会话，再显示该目录的已保存会话；打开会话的状态用行背景表达：流式为移动的绿色斜线，其他会话结束/报错为绿底，当前会话结束为蓝底，权限请求为蓝/白闪烁。两类会话合并后默认只列前 5 条，`Show N more` / `Show less` 展开收起，展开状态不落盘（启动时默认折叠）。会话名前的内联图标标明 agent（pi 的方块 mark、Command Code 的 # 徽标、Codex 的终端 mark，`internal/ui/agenticons.go`，随主题变色）；已保存会话用存档里的 `agentId` 画同一个图标，标题栏也用同一图标标当前会话，模型 chip 左侧也用它标当前 agent。工作区头部 `⋯` 可移除该分组（软删除，只隐藏不删记录/会话），移除项通过 “Show removed (N)” 查看并从同一菜单恢复。工作区的 `＋` 新建独立进程；连接在首条消息或打开存档时自动发生。打开会话的 `⋯` 菜单还可 `Close process`：只关闭该会话的 agent 进程，标签页保留为草稿，会话回到存档列表；没有已连接或连接中的进程时该项置灰。
 - 权限：模态只显示当前会话的请求并标注 `Chat: …`；后台请求只排队，由侧栏 `!` 提醒，用户切到该会话时才显示，切走时隐藏但保留；回答按所属 `Chat` 路由；遮罩/Esc 不关闭。
 - 历史：启动直接从 `sessions.json` 展示；点击存档行按记录的 agent + sessionId 执行 `session/load` 重放历史。已打开会话不重复显示，当前会话已有消息或流式时在新标签页打开。`⋯` 可重命名（showName）或软删除（show=false），删除项通过 “Show deleted” 恢复。
 - MCP：尚未提供配置 UI；`session/new` / `session/load` 仍按 ACP 要求发送空 `mcpServers` 数组。输入 `/` 时 composer 上方出现命令面板，解析 `available_commands_update`。
-- Git 面板：右侧 300 DIP、可折叠，跟随当前会话 workspace；`internal/git` 异步执行 status/log 与 stage/commit/fetch/pull/push，无 git 或非仓库时只显示安装/`git init` 提示（见 [git.md](git.md)）。
+- Git 面板：右侧可折叠、宽度可拖动（默认 300 DIP，见 [layout.md](layout.md)），跟随当前会话 workspace；`internal/git` 异步执行 status/log 与 stage/commit/fetch/pull/push，无 git 或非仓库时只显示安装/`git init` 提示（见 [git.md](git.md)）。
 - Files 面板与 Git / Tasks 共用右侧列：懒加载 workspace 文件树，用 `internal/git.LoadStatus` 读取只读状态，支持新建/重命名/删除、右键揭示和拖动移动；只操作当前 workspace，不经过 shell（见 [files.md](files.md)）。
 - Tasks 面板与 Git 共用右侧列：同一时间一个串行 runner；每个任务新建 executor Chat/session，回合结束后另起隔离 checker 进程，只按任务文本、本轮最后一段和此前轮次上下文判断。checker 通过后写 `tasks/<id>-<slug>.md`、执行一次 `git add -A` + commit（不 push），再开始下一个 pending；失败恢复任务开始前的 work tree 快照、写总结并标记 complete/failure（不 commit），然后继续下一个 pending；只有 Stop 会停队列并退回 pending；支持 pending 编辑/排序/删除和跨重启持久化（见 [tasks.md](tasks.md)）。
 - 诊断：暂无查看面板；agent stderr、协议错误与探测失败仍写入 `logs/<agent>.log`。
@@ -192,7 +192,7 @@ ClientCapabilities{
 存储在 `mygo.App.Path(mygo.PathUserData)`：
 
 ```
-settings.json        lastAgent、lastWorkspace、workspaces、removedWorkspaces、lastSelections（每个 agent 的模型/thinking/mode）、appearance、theme、fonts、viewerWidth、notifications、paths 覆盖、codexProvider（可选自定义供应商）
+settings.json        lastAgent、lastWorkspace、workspaces、removedWorkspaces、lastSelections（每个 agent 的模型/thinking/mode）、appearance、theme、fonts、viewerWidth、sidebarWidth、rightPanelWidth、notifications、paths 覆盖、codexProvider（可选自定义供应商）
 codex-models.json    provider 开启且目标是 DeepSeek 时生成的 Codex 模型 catalog（CODEX_CONFIG.model_catalog_json）
 sessions.json        本地会话存档：agentId、sessionId、cwd、title、showName、show、会话时间、用户消息发送时间与每轮运行时间、最近一次上下文用量
 tasks.json           任务索引：workspace、title/text、pending/ongoing/complete、result、顺序、session、轮次、note、summaryPath
@@ -202,7 +202,7 @@ logs/                每个 agent 的 stderr / 协议日志（1 MiB 滚动，保
 
 `settings.json` 由 `internal/settings` 读写：
 
-- 结构：`{version, lastAgent, lastWorkspace, workspaces, removedWorkspaces, lastSelections, appearance, theme, language, notifications, dockBadge, paths:{shell,node,pi,commandCode,codex}, codexProvider:{enabled,name,baseURL,apiKey,models,contextWindow,autoCompactPercent,reasoningEfforts,titleModel}}`。`workspaces` 保留全部已知目录（含软删除项），`removedWorkspaces` 是软删除标记，二者都按侧栏顺序保存；`lastSelections` 按 agent ID 保存 `{configOptions:{id:value}, mode}`（模型、thinking、其他 select 和 session mode，见 [features.md](features.md)）；`appearance`/`theme` 缺省为 `system`/`default`（见 [themes.md](themes.md)）；`language` 缺省为空（跟随系统），可选 `system`/`en`/`zh-Hans`（见 [i18n.md](i18n.md)）；`notifications` 和 `dockBadge` 缺省为 true，显式 false 会持久化。
+- 结构：`{version, lastAgent, lastWorkspace, workspaces, removedWorkspaces, lastSelections, appearance, theme, language, fonts, viewerWidth, sidebarWidth, rightPanelWidth, notifications, dockBadge, paths:{shell,node,pi,commandCode,codex}, codexProvider:{enabled,name,baseURL,apiKey,models,contextWindow,autoCompactPercent,reasoningEfforts,titleModel}}`。`workspaces` 保留全部已知目录（含软删除项），`removedWorkspaces` 是软删除标记，二者都按侧栏顺序保存；`lastSelections` 按 agent ID 保存 `{configOptions:{id:value}, mode}`（模型、thinking、其他 select 和 session mode，见 [features.md](features.md)）；`appearance`/`theme` 缺省为 `system`/`default`（见 [themes.md](themes.md)）；`language` 缺省为空（跟随系统），可选 `system`/`en`/`zh-Hans`（见 [i18n.md](i18n.md)）；`notifications` 和 `dockBadge` 缺省为 true，显式 false 会持久化；`sidebarWidth`/`rightPanelWidth` 是拖动后的左右分栏宽度，缺省 0 表示内置宽度（292/300 DIP，见 [layout.md](layout.md)）。
 - 保存时机：切换会话、选择 agent/目录/model/thinking/mode、添加/移除/恢复工作区、切换设置面板里的语言/外观/主题/系统通知/Dock 角标、保存 Codex 自定义供应商（含推理档位复选框）、Connect 校验成功、退出。写入是原子的（同目录临时文件 + rename，0600），父目录不存在时创建。
 - 加载容错：文件缺失用默认值；JSON 损坏、相对路径、未来版本只产生警告（标题栏/侧栏显示），其余字段照常使用，绝不阻塞启动。
 - 路径优先级：`ACP_GUI_*` 环境变量 > `settings.json` 的 `paths` > 登录 shell 解析。显式覆盖无效时保留 shell 结果并警告，不会把可用的路径清空。

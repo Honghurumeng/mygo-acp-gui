@@ -364,12 +364,14 @@ func (a *App) refreshFilesAfterTask(workspace string) {
 func (a *App) filePanel(c *mui.Context) mui.Element {
 	a.ensureFilePanel()
 	t := c.Theme()
-	panel := mui.Column(c).Width(gitPanelWidth).FillHeight().
+	windowW, _ := c.Size()
+	panel := mui.Column(c).Width(a.rightPaneWidth(windowW)).FillHeight().
 		Background(t.Surface).
 		BorderWidth(1, 0, 0, 0).BorderColor(t.Border)
 	panel.Children(func() {
 		a.filePanelHeader(c)
 		a.filePanelBody(c)
+		a.rightPanelResizeHandle(c)
 	})
 	return panel
 }

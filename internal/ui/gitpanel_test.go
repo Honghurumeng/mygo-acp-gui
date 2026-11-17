@@ -1011,7 +1011,7 @@ func TestViewerCardLayoutRespondsToWidth(t *testing.T) {
 	}
 
 	app.ViewerWidth = 1100
-	if got, want := app.viewerCardWidth(1240), viewerMaxWidth(1240); got != want {
+	if got, want := app.viewerCardWidth(1240), app.viewerMaxWidth(1240); got != want {
 		t.Errorf("dragged card width = %v, want the clamped %v", got, want)
 	}
 	app.ViewerWidth = 120

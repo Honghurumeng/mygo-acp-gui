@@ -12,7 +12,7 @@
 
 ## 右侧栏
 
-- Files 是右侧列第三个 tab，和 Git / Tasks 共用 300 DIP 宽度、`GitPanelOpen` 开关和窗口最右缘 38 DIP 的图标栏。
+- Files 是右侧列第三个 tab，和 Git / Tasks 共用可拖动宽度（默认 300 DIP，见 [layout.md](layout.md)）、`GitPanelOpen` 开关和窗口最右缘 38 DIP 的图标栏。
 - 图标栏顺序：Git `git-branch`、Tasks `list-checks`、Files `folder-tree`。label / tooltip 为
   `Show Files panel` / `Hide Files panel`；当前 tab 用 Accent 底和 Accent 图标。
 - 默认仍打开 Git；切到 Files 时才开始读树。关闭右栏、切到其他 tab 或切换 workspace 会关闭 Files 的

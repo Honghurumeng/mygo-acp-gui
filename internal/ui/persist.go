@@ -15,16 +15,19 @@ func (a *App) persistSettings() {
 		return
 	}
 	file := settings.File{
-		Version:       settings.CurrentVersion,
-		Paths:         a.settingsPaths,
-		Appearance:    a.Appearance,
-		Theme:         a.Theme,
-		Language:      a.Language,
-		Fonts:         normalizeFontScales(a.Fonts),
-		ViewerWidth:   normalizeViewerWidth(a.ViewerWidth),
-		Notifications: a.NotificationsEnabled,
-		DockBadge:     a.DockBadgeEnabled,
-		CodexProvider: a.CodexProvider.Normalize(),
+		Version:      settings.CurrentVersion,
+		Paths:        a.settingsPaths,
+		Appearance:   a.Appearance,
+		Theme:        a.Theme,
+		Language:     a.Language,
+		Fonts:        normalizeFontScales(a.Fonts),
+		ViewerWidth:  normalizeViewerWidth(a.ViewerWidth),
+		SidebarWidth: normalizeSidebarWidth(a.SidebarWidth),
+		// The right column keeps its built-in width when it was never dragged.
+		RightPanelWidth: normalizeRightPanelWidth(a.RightPanelWidth),
+		Notifications:   a.NotificationsEnabled,
+		DockBadge:       a.DockBadgeEnabled,
+		CodexProvider:   a.CodexProvider.Normalize(),
 	}
 	if len(a.lastSelections) > 0 {
 		file.LastSelections = make(map[string]settings.Selection, len(a.lastSelections))
