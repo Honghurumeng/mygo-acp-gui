@@ -295,12 +295,12 @@ func (a *App) savedSessionRow(c *mui.Context, item savedSession) {
 	rowKey := item.AgentID + "\x00" + item.SessionID
 	display := title
 	if hidden {
-		display = "[deleted] " + title
+		display = T("[deleted] ") + title
 	}
 	mui.Row(c).Gap(2).AlignItems(mui.Center).Children(func() {
 		button := mui.ButtonBase(c).Grow(1).Gap(5).Padding(4, 10).Radius(8).
 			Background(t.Background).
-			Label("Open saved session: " + title)
+			Label(Tf("Open saved session: %s", title))
 		button.Children(func() {
 			icon := "◷"
 			if hidden {
@@ -318,7 +318,7 @@ func (a *App) savedSessionRow(c *mui.Context, item savedSession) {
 			a.openSavedSession(item)
 		}
 
-		menu := menuTrigger(c, "Saved session actions for "+title, t.Background, a.workspaceFont(11))
+		menu := menuTrigger(c, Tf("Saved session actions for %s", title), t.Background, a.workspaceFont(11))
 		if menu.Clicked() {
 			if a.SavedMenuOpen == rowKey {
 				a.SavedMenuOpen = ""
@@ -329,18 +329,18 @@ func (a *App) savedSessionRow(c *mui.Context, item savedSession) {
 		open := a.SavedMenuOpen == rowKey
 		mui.Popover(c, menu, &open, func() {
 			mui.Column(c).Width(132).Gap(2).Children(func() {
-				if quietButton(c, "Rename").FillWidth().FontSize(a.workspaceFont(11)).Clicked() {
+				if quietButton(c, T("Rename")).FillWidth().FontSize(a.workspaceFont(11)).Clicked() {
 					open = false
 					a.SavedMenuOpen = ""
 					a.openSavedRename(item)
 				}
 				if hidden {
-					if quietButton(c, "Restore").FillWidth().FontSize(a.workspaceFont(11)).Clicked() {
+					if quietButton(c, T("Restore")).FillWidth().FontSize(a.workspaceFont(11)).Clicked() {
 						open = false
 						a.SavedMenuOpen = ""
 						a.setArchivedShow(item.AgentID, item.SessionID, true)
 					}
-				} else if quietButton(c, "Delete").FillWidth().FontSize(a.workspaceFont(11)).TextColor(t.Danger).Clicked() {
+				} else if quietButton(c, T("Delete")).FillWidth().FontSize(a.workspaceFont(11)).TextColor(t.Danger).Clicked() {
 					open = false
 					a.SavedMenuOpen = ""
 					a.hideArchivedRecord(item.AgentID, item.SessionID, item.Cwd, item.Title)
@@ -375,7 +375,7 @@ func savedTimeLabel(value string) string {
 			if local.Year() == now.Year() && local.YearDay() == now.YearDay() {
 				return local.Format("15:04")
 			}
-			return local.Format("Jan 2")
+			return local.Format(TS("1月2日", "Jan 2"))
 		}
 	}
 	return ""
@@ -395,12 +395,12 @@ func (a *App) openSavedSession(item savedSession) {
 	if !ok {
 		agentName := strings.TrimSpace(item.AgentID)
 		if agentName == "" {
-			agentName = "the selected agent"
+			agentName = T("the selected agent")
 		}
 		if a.Resolving {
-			a.SavedError = "Agent " + agentName + " is still being resolved; try again in a moment."
+			a.SavedError = Tf("Agent %s is still being resolved; try again in a moment.", agentName)
 		} else {
-			a.SavedError = "Agent " + agentName + " is not available for this saved session."
+			a.SavedError = Tf("Agent %s is not available for this saved session.", agentName)
 		}
 		return
 	}

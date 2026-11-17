@@ -28,10 +28,10 @@ func (a *App) rightRail(c *mui.Context) {
 	mui.Column(c).Width(rightRailWidth).FillHeight().Gap(2).Padding(8, 0).
 		AlignItems(mui.Center).Background(sunkenSurface(t)).
 		BorderWidth(1, 0, 0, 0).BorderColor(t.Border).
-		Role(mui.RoleTabList).Label("Right panel tabs").Children(func() {
+		Role(mui.RoleTabList).Label(T("Right panel tabs")).Children(func() {
 		a.rightRailButton(c, gitBranchIcon, "Git", rightTabGit)
-		a.rightRailButton(c, listChecksIcon, "Tasks", rightTabTasks)
-		a.rightRailButton(c, folderTreeIcon, "Files", rightTabFiles)
+		a.rightRailButton(c, listChecksIcon, T("Tasks"), rightTabTasks)
+		a.rightRailButton(c, folderTreeIcon, T("Files"), rightTabFiles)
 	})
 }
 
@@ -41,9 +41,9 @@ func (a *App) rightRail(c *mui.Context) {
 func (a *App) rightRailButton(c *mui.Context, icon *mui.SVG, name, tab string) {
 	t := c.Theme()
 	active := a.GitPanelOpen && a.RightTab == tab
-	label := "Show " + name + " panel"
+	label := Tf("Show %s panel", name)
 	if active {
-		label = "Hide " + name + " panel"
+		label = Tf("Hide %s panel", name)
 	}
 	b := buttonBase(c, label).Size(rightRailButtonSize, rightRailButtonSize).
 		Center().Tooltip(label).Role(mui.RoleTab).AccessSelected(active)

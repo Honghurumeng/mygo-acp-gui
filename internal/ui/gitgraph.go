@@ -35,7 +35,7 @@ func (a *App) gitGraphBody(c *mui.Context) {
 	commits := a.Git.Commits
 	if len(commits) == 0 {
 		a.closeCommitHover()
-		mutedText(c, "No commits yet.", a.gitFont(10)).Padding(0, 6)
+		mutedText(c, T("No commits yet."), a.gitFont(10)).Padding(0, 6)
 		return
 	}
 	if a.Git.CommitHoverOpen && !a.Git.CommitHoverLeave.IsZero() &&
@@ -189,7 +189,7 @@ func (a *App) gitGraphCommit(c *mui.Context, commit git.LogCommit, indent float3
 	}
 	row.ContextMenu(func(m *mui.Menu) {
 		busy := a.Git.Busy != "" || a.Git.Loading
-		if m.Item("Create branch here…").Disabled(busy).Chosen() {
+		if m.Item(T("Create branch here…")).Disabled(busy).Chosen() {
 			a.openGitBranchCreate(commit.Hash)
 		}
 	})
@@ -294,30 +294,30 @@ func (a *App) gitGraphDetails(c *mui.Context, panel, anchor mui.Element, commit 
 	panel.Children(func() {
 		mui.Text(c, commit.Message).FontSize(a.gitFont(11)).Bold().MaxLines(3)
 		if commit.Author != "" {
-			a.gitDetailLine(c, "Author", commit.Author)
+			a.gitDetailLine(c, T("Author"), commit.Author)
 		}
 		if !commit.Time.IsZero() {
-			a.gitDetailLine(c, "Date", commit.Time.Local().Format("2006-01-02 15:04"))
+			a.gitDetailLine(c, T("Date"), commit.Time.Local().Format("2006-01-02 15:04"))
 		}
 		if len(commit.Refs) > 0 {
-			a.gitDetailLine(c, "Refs", strings.Join(commit.Refs, ", "))
+			a.gitDetailLine(c, T("Refs"), strings.Join(commit.Refs, ", "))
 		}
 		switch {
 		case a.Git.CommitStatBusy:
-			a.gitDetailLine(c, "Changes", "Reading…")
+			a.gitDetailLine(c, T("Changes"), T("Reading…"))
 		case a.Git.CommitStatErr != "":
-			a.gitDetailLine(c, "Changes", truncate(singleLine(a.Git.CommitStatErr), 48))
+			a.gitDetailLine(c, T("Changes"), truncate(singleLine(a.Git.CommitStatErr), 48))
 		default:
-			a.gitCommitStats(c, "Changes", a.Git.CommitStat)
+			a.gitCommitStats(c, T("Changes"), a.Git.CommitStat)
 		}
 		mui.Row(c).FillWidth().Gap(6).AlignItems(mui.Center).Children(func() {
 			mui.Text(c, commit.Hash).Font("monospace").FontSize(a.gitFont(8)).Grow(1).
 				MinWidth(0).SingleLine().Selectable()
-			copy := quietButton(c, "Copy").Label("Copy commit hash").FontSize(a.gitFont(8))
-			copy.Shrink(0).Tooltip("Copy the full commit hash")
+			copy := quietButton(c, T("Copy")).Label(T("Copy commit hash")).FontSize(a.gitFont(8))
+			copy.Shrink(0).Tooltip(T("Copy the full commit hash"))
 			if copy.Clicked() {
 				c.WriteClipboard(commit.Hash)
-				c.Toast("Commit hash copied")
+				c.Toast(T("Commit hash copied"))
 			}
 		})
 	})
@@ -327,7 +327,7 @@ func (a *App) gitGraphDetails(c *mui.Context, panel, anchor mui.Element, commit 
 // the widest label with the card's label font: a larger Git font widens the
 // column with the text instead of wrapping "Changes" onto two lines.
 func (a *App) gitDetailLabelColumn(c *mui.Context) float32 {
-	width, _ := c.MeasureText(0, mui.Span{Text: "Changes", Size: a.gitFont(8)})
+	width, _ := c.MeasureText(0, mui.Span{Text: T("Changes"), Size: a.gitFont(8)})
 	return width + 4
 }
 
@@ -376,14 +376,14 @@ func (a *App) gitGraphFiles(c *mui.Context, hash string, indent float32) {
 	mui.Column(c).FillWidth().Height(height).Padding(2, 8, 2, indent).Children(func() {
 		switch {
 		case a.Git.CommitFilesBusy:
-			a.gitGraphFileLine(c, func() { mutedText(c, "Reading changed files…", a.gitFont(9)) })
+			a.gitGraphFileLine(c, func() { mutedText(c, T("Reading changed files…"), a.gitFont(9)) })
 		case a.Git.CommitFilesErr != "":
 			a.gitGraphFileLine(c, func() {
 				mui.Text(c, truncate(singleLine(a.Git.CommitFilesErr), 64)).
 					FontSize(a.gitFont(8)).TextColor(t.Danger).SingleLine()
 			})
 		case len(a.Git.CommitFiles) == 0:
-			a.gitGraphFileLine(c, func() { mutedText(c, "No files changed.", a.gitFont(9)) })
+			a.gitGraphFileLine(c, func() { mutedText(c, T("No files changed."), a.gitFont(9)) })
 		default:
 			for _, file := range a.Git.CommitFiles {
 				a.gitGraphFile(c, hash, file)
@@ -411,7 +411,7 @@ func (a *App) gitGraphFile(c *mui.Context, hash string, file git.CommitFile) {
 	selected := a.gitPreviewSelected(path, hash, false)
 	row := mui.ButtonBase(c).FillWidth().Height(gitGraphFileHeight).Gap(5).
 		Justify(mui.Start).AlignItems(mui.Center).Padding(0, 4).Radius(4).
-		Label("Commit diff of " + path)
+		Label(Tf("Commit diff of %s", path))
 	switch {
 	case row.Pressed():
 		row.Background(t.SurfacePressed)

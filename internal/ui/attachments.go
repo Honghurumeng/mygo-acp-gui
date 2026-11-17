@@ -33,10 +33,10 @@ func (a *App) chooseImages() {
 		open = func() ([]string, error) {
 			return mygo.Dialog.Open(mygo.OpenDialogOptions{
 				Parent:   win,
-				Title:    "Attach Images",
+				Title:    T("Attach Images"),
 				Multiple: true,
 				Filters: []mygo.FileFilter{{
-					Name:       "Images",
+					Name:       T("Images"),
 					Extensions: []string{"png", "jpg", "jpeg", "gif", "webp", "bmp"},
 				}},
 			})
@@ -90,7 +90,7 @@ func (a *App) pasteClipboardImage(chat *Chat) bool {
 	}
 	if !chat.canAttach() {
 		if chat.Session != nil && !chat.Info.AgentCapabilities.PromptCapabilities.Image {
-			a.addError(chat, attachmentError("This agent does not support image attachments."))
+			a.addError(chat, attachmentError(T("This agent does not support image attachments.")))
 		}
 		return true
 	}
@@ -179,9 +179,9 @@ func (a *App) attachmentPicker(c *mui.Context, chat *Chat) {
 			attachment := attachment
 			surfaceCard(c, mui.Row(c).Gap(4).AlignItems(mui.Center).Padding(4, 6)).Children(func() {
 				if attachment.Bitmap != nil {
-					a.clickableImage(c, attachment, 48, 48, mui.Cover, 5, "View attached image")
+					a.clickableImage(c, attachment, 48, 48, mui.Cover, 5, T("View attached image"))
 				}
-				if quietButton(c, "×").Label("Remove image").FontSize(a.composerFont(c.Theme().FontSize)).Clicked() {
+				if quietButton(c, "×").Label(T("Remove image")).FontSize(a.composerFont(c.Theme().FontSize)).Clicked() {
 					a.removeAttachment(chat, i)
 				}
 			})
@@ -279,7 +279,7 @@ func (a *App) messageAttachments(c *mui.Context, attachments []Attachment) {
 	mui.Row(c).Gap(6).Wrap().Children(func() {
 		for _, attachment := range attachments {
 			if attachment.Bitmap != nil {
-				a.clickableImage(c, attachment, 160, 120, mui.Contain, 6, "View message image")
+				a.clickableImage(c, attachment, 160, 120, mui.Contain, 6, T("View message image"))
 			}
 		}
 	})
@@ -295,7 +295,7 @@ func (a *App) clickableImage(c *mui.Context, attachment Attachment, w, h float32
 		Radius(radius).
 		Cursor(mui.CursorPointer).
 		Label(label).
-		Tooltip("Click to view larger")
+		Tooltip(T("Click to view larger"))
 	if image.Clicked() {
 		a.ImagePreview = &attachment
 		a.ImageOpen = true
@@ -327,7 +327,7 @@ func (a *App) imagePreviewDialog(c *mui.Context) {
 		mui.Column(c).Gap(8).Children(func() {
 			mui.Image(c, bmp).Size(w, h).Fit(mui.Contain).Radius(6)
 			mui.Row(c).Gap(8).Justify(mui.End).Children(func() {
-				if quietButton(c, "Close").Clicked() {
+				if quietButton(c, T("Close")).Clicked() {
 					a.ImageOpen = false
 				}
 			})
@@ -347,5 +347,5 @@ const (
 )
 
 func errImageTooLarge(path string) error {
-	return attachmentError("Image is larger than 15 MB: " + filepath.Base(path))
+	return attachmentError(Tf("Image is larger than 15 MB: %s", filepath.Base(path)))
 }

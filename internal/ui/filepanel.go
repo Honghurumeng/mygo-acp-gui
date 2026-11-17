@@ -173,7 +173,7 @@ func (a *App) startFilesLoad(workspace string, clearFeedback bool) {
 			a.Files.Checked = true
 			a.Files.Loading = false
 			if treeErr != nil {
-				a.Files.Error = "Files: " + fileErrorText(treeErr)
+				a.Files.Error = T("Files: ") + fileErrorText(treeErr)
 				return
 			}
 			a.Files.Error = ""
@@ -383,18 +383,18 @@ func (a *App) filePanelHeader(c *mui.Context) {
 		BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
 		mui.Column(c).Gap(1).Grow(1).MinWidth(0).Children(func() {
 			mui.Row(c).Gap(4).AlignItems(mui.Center).Children(func() {
-				a.rightPanelName(c, "Files")
+				a.rightPanelName(c, T("Files"))
 				if a.Files.Loading {
 					mui.Spinner(c)
 				}
 				mui.Spacer(c)
-				if a.fileIconButton(c, filePlusIcon, "New file", disabled) {
+				if a.fileIconButton(c, filePlusIcon, T("New file"), disabled) {
 					a.openNewFile(false)
 				}
-				if a.fileIconButton(c, folderPlusIcon, "New folder", disabled) {
+				if a.fileIconButton(c, folderPlusIcon, T("New folder"), disabled) {
 					a.openNewFile(true)
 				}
-				if a.fileIconButton(c, refreshIcon, "Refresh files", disabled || a.Files.Loading) {
+				if a.fileIconButton(c, refreshIcon, T("Refresh files"), disabled || a.Files.Loading) {
 					a.startFilesLoad(workspace, true)
 				}
 			})
@@ -412,16 +412,16 @@ func (a *App) filePanelHeader(c *mui.Context) {
 func (a *App) fileHeaderLine() (string, string) {
 	workspace := strings.TrimSpace(a.Files.Workspace)
 	if workspace == "" || !filepath.IsAbs(workspace) {
-		return "No workspace", ""
+		return T("No workspace"), ""
 	}
 	if a.Files.Busy != "" {
-		return a.Files.Busy + "…", ""
+		return T(a.Files.Busy) + "…", ""
 	}
 	switch {
 	case !a.Files.Checked:
-		return "Reading…", workspace
+		return T("Reading…"), workspace
 	case a.Files.Error != "" && !a.Files.Loaded[""]:
-		return "Cannot read workspace", a.Files.Error
+		return T("Cannot read workspace"), a.Files.Error
 	}
 	line := filepath.Base(workspace)
 	if line == "" || line == "." || line == string(filepath.Separator) {
@@ -475,18 +475,18 @@ func (a *App) filePanelBody(c *mui.Context) {
 	if workspace == "" || !filepath.IsAbs(workspace) {
 		mui.Column(c).Grow(1).Center().Gap(8).Padding(16, 16).Children(func() {
 			mui.Icon(c, folderTreeIcon).Size(22, 22).TextColor(t.TextMuted)
-			mui.Text(c, "No workspace").FontSize(a.gitFont(12)).Bold()
-			mutedText(c, "Pick a workspace to browse its files.", a.gitFont(10))
+			mui.Text(c, T("No workspace")).FontSize(a.gitFont(12)).Bold()
+			mutedText(c, T("Pick a workspace to browse its files."), a.gitFont(10))
 		})
 		return
 	}
 	if !a.Files.Loaded[""] {
 		if a.Files.Error != "" {
 			mui.Column(c).Grow(1).Padding(14, 14).Gap(8).Children(func() {
-				mui.Text(c, "Cannot read this workspace").FontSize(a.gitFont(13)).Bold().TextColor(t.Danger)
+				mui.Text(c, T("Cannot read this workspace")).FontSize(a.gitFont(13)).Bold().TextColor(t.Danger)
 				mui.Text(c, a.Files.Error).FontSize(a.gitFont(10)).TextColor(t.Danger).
 					Selectable().Tooltip(a.Files.Error)
-				if quietButton(c, "Refresh files").Label("Refresh files").FontSize(a.gitFont(10)).Clicked() {
+				if quietButton(c, T("Refresh files")).Label(T("Refresh files")).FontSize(a.gitFont(10)).Clicked() {
 					a.startFilesLoad(workspace, true)
 				}
 			})
@@ -494,7 +494,7 @@ func (a *App) filePanelBody(c *mui.Context) {
 		}
 		mui.Column(c).Grow(1).Center().Gap(8).Children(func() {
 			mui.Spinner(c)
-			mutedText(c, "Reading files…", a.gitFont(10))
+			mutedText(c, T("Reading files…"), a.gitFont(10))
 		})
 		return
 	}
@@ -510,7 +510,7 @@ func (a *App) fileFeedback(c *mui.Context) {
 			Tooltip(a.Files.Error).Padding(3, 12, 1, 12)
 	}
 	if a.Files.StatusError != "" {
-		message := "Git status: " + a.Files.StatusError
+		message := Tf("Git status: %s", a.Files.StatusError)
 		mui.Text(c, "⚠ "+truncate(message, 100)).
 			FontSize(a.gitFont(9)).TextColor(t.Warning).SingleLine().
 			Tooltip(message).Padding(3, 12, 1, 12)
@@ -533,12 +533,12 @@ func (a *App) fileTree(c *mui.Context) {
 	}
 	scroll.Children(func() {
 		mui.Column(c).Gap(1).FillWidth().Padding(4, 0, 8, 0).
-			Role(mui.RoleTree).Label("Workspace files").Children(func() {
+			Role(mui.RoleTree).Label(T("Workspace files")).Children(func() {
 			a.fileEntries(c, "", 0)
 			if entries, ok := a.Files.Entries[""]; ok && len(entries) == 0 {
 				mui.Column(c).Gap(2).Padding(8, 12).Children(func() {
-					mutedText(c, "No files yet.", a.gitFont(10))
-					mutedText(c, "Use New file or New folder above.", a.gitFont(9))
+					mutedText(c, T("No files yet."), a.gitFont(10))
+					mutedText(c, T("Use New file or New folder above."), a.gitFont(9))
 				})
 			}
 		})
@@ -557,7 +557,7 @@ func (a *App) fileEntries(c *mui.Context, dir string, depth int) {
 		if a.Files.LoadingDirs[dir] {
 			mui.Row(c).Gap(4).AlignItems(mui.Center).Padding(2, fileRowGutter, 2, fileIndent(depth)).Children(func() {
 				mui.Spinner(c)
-				mutedText(c, "Loading…", a.gitFont(9))
+				mutedText(c, T("Loading…"), a.gitFont(9))
 			})
 		}
 		return
@@ -565,7 +565,7 @@ func (a *App) fileEntries(c *mui.Context, dir string, depth int) {
 	entries := a.Files.Entries[dir]
 	if len(entries) == 0 {
 		if dir != "" {
-			mutedText(c, "Empty", a.gitFont(9)).Padding(2, fileRowGutter, 2, fileIndent(depth))
+			mutedText(c, T("Empty"), a.gitFont(9)).Padding(2, fileRowGutter, 2, fileIndent(depth))
 		}
 		return
 	}
@@ -620,10 +620,10 @@ func (a *App) fileRow(c *mui.Context, entry files.Entry, depth int) {
 		switch {
 		case ignored:
 			mui.Text(c, "ignored").FontSize(a.gitFont(8)).TextColor(t.TextMuted.Alpha(0.7)).
-				Shrink(0).Tooltip("Ignored by Git")
+				Shrink(0).Tooltip(T("Ignored by Git"))
 		case entry.Dir:
 			if a.fileDirDirty(entry.Path) {
-				mui.Box(c).Size(5, 5).Radius(3).Background(t.Accent).Shrink(0).Tooltip("Contains changes")
+				mui.Box(c).Size(5, 5).Radius(3).Background(t.Accent).Shrink(0).Tooltip(T("Contains changes"))
 			}
 		default:
 			if file, ok := a.Files.Status[entry.Path]; ok {
@@ -651,14 +651,14 @@ func (a *App) fileRow(c *mui.Context, entry files.Entry, depth int) {
 		}
 	}
 	row.ContextMenu(func(m *mui.Menu) {
-		if m.Item("Reveal in folder").Chosen() {
+		if m.Item(T("Reveal in folder")).Chosen() {
 			a.revealFileEntry(entry)
 		}
 		busy := a.Files.Busy != ""
-		if m.Item("Rename").Disabled(busy).Chosen() {
+		if m.Item(T("Rename")).Disabled(busy).Chosen() {
 			a.openFileRename(entry)
 		}
-		if m.Item("Delete").Danger().Disabled(busy).Chosen() {
+		if m.Item(T("Delete")).Danger().Disabled(busy).Chosen() {
 			a.requestFileDelete(entry)
 		}
 	})
@@ -781,10 +781,10 @@ func (a *App) fileViewerCard(c *mui.Context, panel, anchor mui.Element) {
 		Notice:         a.Files.ViewerNotice,
 		Busy:           a.Files.ViewerBusy,
 		Err:            a.Files.ViewerErr,
-		BusyText:       "Reading file…",
-		ErrorTitle:     "Cannot show this file",
-		EmptyViewTitle: "Empty file",
-		EmptyViewText:  "This file has no text yet.",
+		BusyText:       T("Reading file…"),
+		ErrorTitle:     T("Cannot show this file"),
+		EmptyViewTitle: T("Empty file"),
+		EmptyViewText:  T("This file has no text yet."),
 	})
 }
 
@@ -812,7 +812,7 @@ func (a *App) saveFileViewer(text string) {
 				return
 			}
 			a.Files.ViewerBody = text
-			a.Files.ViewerNotice = "Saved."
+			a.Files.ViewerNotice = T("Saved.")
 			a.refreshAfterFileSave(workspace)
 		})
 	}()
@@ -828,9 +828,9 @@ func fileIndent(depth int) float32 {
 }
 
 func fileRowLabel(entry files.Entry) string {
-	kind := "File"
+	kind := T("File")
 	if entry.Dir {
-		kind = "Folder"
+		kind = T("Folder")
 	}
 	return kind + " " + entry.Path
 }
@@ -922,7 +922,7 @@ func (a *App) runFileAction(label string, fn func(context.Context) (string, erro
 			}
 			a.Files.Busy = ""
 			if err != nil {
-				a.Files.Error = label + ": " + fileErrorText(err)
+				a.Files.Error = T(label) + ": " + fileErrorText(err)
 				return
 			}
 			if after != nil {
@@ -940,17 +940,17 @@ func (a *App) runFileAction(label string, fn func(context.Context) (string, erro
 func fileNoticeFor(label string) string {
 	switch label {
 	case "New file":
-		return "File created."
+		return T("File created.")
 	case "New folder":
-		return "Folder created."
+		return T("Folder created.")
 	case "Rename":
-		return "Renamed."
+		return T("Renamed.")
 	case "Move":
-		return "Moved."
+		return T("Moved.")
 	case "Delete":
-		return "Deleted."
+		return T("Deleted.")
 	default:
-		return "Done."
+		return T("Done.")
 	}
 }
 
@@ -960,7 +960,7 @@ func fileErrorText(err error) string {
 	}
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
-		return "timed out"
+		return T("timed out")
 	case errors.Is(err, context.Canceled):
 		return "cancelled"
 	}
@@ -970,7 +970,7 @@ func fileErrorText(err error) string {
 func (a *App) revealFileEntry(entry files.Entry) {
 	target, err := files.Resolve(a.Files.Workspace, entry.Path)
 	if err != nil {
-		a.Files.Error = "Reveal: " + fileErrorText(err)
+		a.Files.Error = T("Reveal: ") + fileErrorText(err)
 		return
 	}
 	if a.revealItem != nil {
@@ -1033,29 +1033,29 @@ func (a *App) fileCreateDialog(c *mui.Context) {
 		return
 	}
 	t := c.Theme()
-	heading, label := "New file", "New file name"
+	heading, label := T("New file"), T("New file name")
 	if a.Files.CreateDir {
-		heading, label = "New folder", "New folder name"
+		heading, label = T("New folder"), T("New folder name")
 	}
 	workspace := strings.TrimSpace(a.Files.Workspace)
-	target := "Workspace root"
+	target := T("Workspace root")
 	if workspace != "" {
 		target = workspace
 	}
 	mui.Modal(c, &a.Files.CreateOpen, func() {
 		mui.Column(c).Gap(9).Width(380).Children(func() {
 			mui.Text(c, heading).FontSize(a.workspaceFont(16)).Bold()
-			mui.Text(c, "Create in "+target).FontSize(a.workspaceFont(10)).
+			mui.Text(c, Tf("Create in %s", target)).FontSize(a.workspaceFont(10)).
 				TextColor(t.TextMuted).Selectable()
 			mui.TextInput(c, &a.Files.CreateName).Label(label).Placeholder("name")
 			if a.Files.CreateErr != "" {
 				mui.Text(c, "⚠ "+a.Files.CreateErr).FontSize(a.workspaceFont(10)).TextColor(t.Danger)
 			}
 			mui.Row(c).Gap(8).Justify(mui.End).Children(func() {
-				if quietButton(c, "Cancel").Clicked() {
+				if quietButton(c, T("Cancel")).Clicked() {
 					a.closeFileDialogs()
 				}
-				if primaryButton(c, "Create").Clicked() {
+				if primaryButton(c, T("Create")).Clicked() {
 					a.submitFileCreate()
 				}
 			})
@@ -1069,7 +1069,7 @@ func (a *App) fileCreateDialog(c *mui.Context) {
 func (a *App) submitFileCreate() {
 	workspace := strings.TrimSpace(a.Files.Workspace)
 	if workspace == "" || !filepath.IsAbs(workspace) {
-		a.Files.CreateErr = "The workspace is no longer available."
+		a.Files.CreateErr = T("The workspace is no longer available.")
 		return
 	}
 	name, err := files.CleanName(a.Files.CreateName)
@@ -1109,9 +1109,9 @@ func (a *App) fileRenameDialog(c *mui.Context) {
 		return
 	}
 	t := c.Theme()
-	heading, label := "Rename file", "File name"
+	heading, label := T("Rename file"), T("File name")
 	if a.Files.RenameDir {
-		heading, label = "Rename folder", "Folder name"
+		heading, label = T("Rename folder"), T("Folder name")
 	}
 	mui.Modal(c, &a.Files.RenameOpen, func() {
 		mui.Column(c).Gap(9).Width(380).Children(func() {
@@ -1123,10 +1123,10 @@ func (a *App) fileRenameDialog(c *mui.Context) {
 				mui.Text(c, "⚠ "+a.Files.RenameErr).FontSize(a.workspaceFont(10)).TextColor(t.Danger)
 			}
 			mui.Row(c).Gap(8).Justify(mui.End).Children(func() {
-				if quietButton(c, "Cancel").Clicked() {
+				if quietButton(c, T("Cancel")).Clicked() {
 					a.closeFileDialogs()
 				}
-				if primaryButton(c, "Save").Clicked() {
+				if primaryButton(c, T("Save")).Clicked() {
 					a.submitFileRename()
 				}
 			})
@@ -1140,12 +1140,12 @@ func (a *App) fileRenameDialog(c *mui.Context) {
 func (a *App) submitFileRename() {
 	workspace := strings.TrimSpace(a.Files.Workspace)
 	if workspace == "" || !filepath.IsAbs(workspace) {
-		a.Files.RenameErr = "The workspace is no longer available."
+		a.Files.RenameErr = T("The workspace is no longer available.")
 		return
 	}
 	source := a.Files.RenamePath
 	if source == "" {
-		a.Files.RenameErr = "Choose a file or folder first."
+		a.Files.RenameErr = T("Choose a file or folder first.")
 		return
 	}
 	name, err := files.CleanName(a.Files.RenameName)
@@ -1186,11 +1186,11 @@ func (a *App) fileDeleteDialog(c *mui.Context) {
 	}
 	t := c.Theme()
 	target := a.Files.DeletePath
-	title, button := "Delete file?", "Delete file"
-	hint := "The file is deleted from disk. This cannot be undone."
+	title, button := T("Delete file?"), T("Delete file")
+	hint := T("The file is deleted from disk. This cannot be undone.")
 	if a.Files.DeleteDir {
-		title, button = "Delete folder?", "Delete folder"
-		hint = "The folder and everything inside it are deleted from disk. This cannot be undone."
+		title, button = T("Delete folder?"), T("Delete folder")
+		hint = T("The folder and everything inside it are deleted from disk. This cannot be undone.")
 	}
 	mui.Modal(c, &a.Files.DeleteOpen, func() {
 		mui.Column(c).Gap(10).Width(380).Children(func() {
@@ -1198,7 +1198,7 @@ func (a *App) fileDeleteDialog(c *mui.Context) {
 			mui.Text(c, target).FontSize(a.workspaceFont(12)).Bold().SingleLine().Tooltip(target)
 			mui.Text(c, hint).FontSize(a.workspaceFont(10)).TextColor(t.TextMuted)
 			mui.Row(c).Gap(8).Justify(mui.End).Children(func() {
-				if quietButton(c, "Cancel").Clicked() {
+				if quietButton(c, T("Cancel")).Clicked() {
 					a.closeFileDialogs()
 				}
 				if dangerButton(c, button).Clicked() {
@@ -1291,23 +1291,23 @@ func fileStatusColor(t *mui.Theme, code string) mui.Color {
 
 func fileStatusTooltip(file git.File) string {
 	if file.Conflict() {
-		return "Merge conflict"
+		return T("Merge conflict")
 	}
 	if file.Index == '?' {
-		return "Untracked"
+		return T("Untracked")
 	}
 	var parts []string
 	if file.Index != ' ' && file.Index != '?' {
-		parts = append(parts, "Staged: "+fileStatusWord(file.Index))
+		parts = append(parts, T("Staged: ")+fileStatusWord(file.Index))
 	}
 	if file.Worktree != ' ' && file.Worktree != '?' {
-		parts = append(parts, "Unstaged: "+fileStatusWord(file.Worktree))
+		parts = append(parts, T("Unstaged: ")+fileStatusWord(file.Worktree))
 	}
 	if len(parts) == 0 {
-		return "Unchanged"
+		return T("Unchanged")
 	}
 	if file.OrigPath != "" {
-		parts = append(parts, "from "+file.OrigPath)
+		parts = append(parts, T("from ")+file.OrigPath)
 	}
 	return strings.Join(parts, " · ")
 }
@@ -1315,19 +1315,19 @@ func fileStatusTooltip(file git.File) string {
 func fileStatusWord(code byte) string {
 	switch code {
 	case 'A':
-		return "Added"
+		return T("Added")
 	case 'M':
-		return "Modified"
+		return T("Modified")
 	case 'D':
-		return "Deleted"
+		return T("Deleted")
 	case 'R':
-		return "Renamed"
+		return T("Renamed")
 	case 'C':
-		return "Copied"
+		return T("Copied")
 	case 'T':
-		return "Type changed"
+		return T("Type changed")
 	case 'U':
-		return "Unmerged"
+		return T("Unmerged")
 	default:
 		return fmt.Sprintf("%c", code)
 	}

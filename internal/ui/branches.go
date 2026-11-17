@@ -72,7 +72,7 @@ func (a *App) loadBranches(state *branchPickerState, dir string) {
 	state.Gen++
 	gen := state.Gen
 	state.Workspace = dir
-	state.Busy = "Reading branches…"
+	state.Busy = T("Reading branches…")
 	state.Err = ""
 	state.SwitchTarget = ""
 	state.SwitchFailed = ""
@@ -100,7 +100,7 @@ func (a *App) loadBranches(state *branchPickerState, dir string) {
 // thread. A failure stays in the popover so the name that caused it is still
 // visible.
 func (a *App) switchBranchFromPicker(state *branchPickerState, dir, name string, onSwitched func(string)) {
-	a.runBranchSwitch(state, dir, name, "Switching to "+name+"…", true, func(ctx context.Context, root, branch string) (string, error) {
+	a.runBranchSwitch(state, dir, name, Tf("Switching to %s…", name), true, func(ctx context.Context, root, branch string) (string, error) {
 		return "", git.SwitchBranch(ctx, root, branch)
 	}, onSwitched)
 }
@@ -110,14 +110,13 @@ func (a *App) switchBranchFromPicker(state *branchPickerState, dir, name string,
 // with the index. A restore conflict leaves the popover open with a warning
 // naming the stash, so the changes are not silently lost.
 func (a *App) carrySwitchBranchFromPicker(state *branchPickerState, dir, name string, onSwitched func(string)) {
-	a.runBranchSwitch(state, dir, name, "Stashing changes, switching to "+name+", then restoring them…", false, func(ctx context.Context, root, branch string) (string, error) {
+	a.runBranchSwitch(state, dir, name, Tf("Stashing changes, switching to %s, then restoring them…", name), false, func(ctx context.Context, root, branch string) (string, error) {
 		result, err := git.SwitchBranchCarryingChanges(ctx, root, branch)
 		if err != nil {
 			return "", err
 		}
 		if result.RestoreConflict {
-			return "Switched to " + name + ", but local changes could not be restored cleanly. " +
-				"Resolve the conflicts in your working tree, then drop the stash entry with git stash drop " + result.StashRef + ".", nil
+			return Tf("Switched to %s, but local changes could not be restored cleanly. Resolve the conflicts in your working tree, then drop the stash entry with git stash drop %s.", name, result.StashRef), nil
 		}
 		return "", nil
 	}, onSwitched)
@@ -188,7 +187,7 @@ func (a *App) branchPopover(c *mui.Context, anchor mui.Element, state *branchPic
 			Shadow(0, 6, 20, 0, mui.RGBA(0, 0, 0, 0.18))
 		mui.Column(c).Gap(2).Children(func() {
 			mui.Row(c).FillWidth().Gap(6).AlignItems(mui.Center).Padding(2, 6).Children(func() {
-				mui.Text(c, "Branches").FontSize(font(9)).Bold().TextColor(t.TextMuted)
+				mui.Text(c, T("Branches")).FontSize(font(9)).Bold().TextColor(t.TextMuted)
 				mui.Spacer(c)
 				if state.Busy != "" {
 					mui.Spinner(c)
@@ -205,15 +204,15 @@ func (a *App) branchPopover(c *mui.Context, anchor mui.Element, state *branchPic
 				mui.Row(c).FillWidth().Gap(4).AlignItems(mui.Center).Wrap().Children(func() {
 					if state.SwitchFailed != "" {
 						name := state.SwitchFailed
-						carry := quietButton(c, "Stash & switch").Label("Stash local changes and switch to " + name).
+						carry := quietButton(c, T("Stash & switch")).Label("Stash local changes and switch to " + name).
 							FontSize(font(8)).TextColor(t.Warning).
-							Tooltip("Stash staged, unstaged and untracked changes, switch, then restore them. A conflicting restore keeps them in stash@{0}.")
+							Tooltip(T("Stash staged, unstaged and untracked changes, switch, then restore them. A conflicting restore keeps them in stash@{0}."))
 						carry.Disabled(disabled || state.Busy != "")
 						if carry.Clicked() && !disabled && state.Busy == "" {
 							onSwitch(name, true)
 						}
 					}
-					retry := quietButton(c, "Retry").Label("Retry loading branches").FontSize(font(8))
+					retry := quietButton(c, T("Retry")).Label(T("Retry loading branches")).FontSize(font(8))
 					retry.Disabled(state.Busy != "")
 					if retry.Clicked() && state.Busy == "" {
 						a.loadBranches(state, state.Workspace)
@@ -229,7 +228,7 @@ func (a *App) branchPopover(c *mui.Context, anchor mui.Element, state *branchPic
 			switch {
 			case len(state.Branches) == 0:
 				if state.Busy == "" && state.Err == "" {
-					a.branchPickerLine(c, font, "No local branches yet")
+					a.branchPickerLine(c, font, T("No local branches yet"))
 				}
 			default:
 				mui.Scroll(c).MaxHeight(240).Gap(1).Children(func() {
@@ -241,9 +240,9 @@ func (a *App) branchPopover(c *mui.Context, anchor mui.Element, state *branchPic
 						if selected {
 							item.Background(t.SurfaceHover)
 						}
-						label := "Switch to branch " + branch.Name
+						label := Tf("Switch to branch %s", branch.Name)
 						if selected {
-							label = "Current branch " + branch.Name
+							label = Tf("Current branch %s", branch.Name)
 						}
 						item.Label(label)
 						item.Children(func() {
@@ -280,15 +279,15 @@ func (a *App) gitBranchChip(c *mui.Context, chat *Chat) {
 		return
 	}
 	draft := chat.Session == nil && !chat.Connecting && chat.Busy == "" && !chat.taskActive
-	chip := a.composerControl(chipBase(c)).Label("Git branch: " + branch)
+	chip := a.composerControl(chipBase(c)).Label(Tf("Git branch: %s", branch))
 	chip.Children(func() {
 		mui.Text(c, "⑂ "+truncate(branch, 24)).FontSize(a.composerFont(9)).SingleLine()
 	})
 	if !draft {
-		chip.Tooltip("Git branch in " + chat.Workspace + "; start a new chat to switch")
+		chip.Tooltip(Tf("Git branch in %s; start a new chat to switch", chat.Workspace))
 		return
 	}
-	chip.Tooltip("Switch Git branch before the session starts")
+	chip.Tooltip(T("Switch Git branch before the session starts"))
 	if chip.Clicked() {
 		a.toggleBranchPicker(&chat.BranchPicker, chat.Workspace)
 	}
@@ -358,11 +357,11 @@ func (a *App) branchSwitched(workspace, name string, except *branchPickerState) 
 func (a *App) branchPickerError(c *mui.Context, state *branchPickerState, font func(float32) float32) {
 	t := c.Theme()
 	if state.SwitchTarget != "" {
-		mui.Text(c, "Could not switch to "+state.SwitchTarget+".").
+		mui.Text(c, Tf("Could not switch to %s.", state.SwitchTarget)).
 			FontSize(font(9)).Bold().TextColor(t.Danger)
 	}
 	if state.SwitchFailed != "" {
-		mutedText(c, "Local changes or untracked files would be overwritten, so nothing was switched.", font(8))
+		mutedText(c, T("Local changes or untracked files would be overwritten, so nothing was switched."), font(8))
 	}
 	mui.Text(c, gitErrorLines(state.Err)).Font("monospace").
 		FontSize(font(8)).TextColor(t.Danger)
@@ -372,11 +371,11 @@ func (a *App) branchPickerError(c *mui.Context, state *branchPickerState, font f
 // tooltip alone is invisible and the stash is the only copy of the changes
 // when the restore conflicts.
 func (a *App) branchCarrySteps(c *mui.Context, font func(float32) float32, name string) {
-	mui.Text(c, "Stash & switch does this:").FontSize(font(8)).Bold()
-	mutedText(c, "1. Stash staged, unstaged and untracked changes.", font(8))
-	mutedText(c, "2. Switch to "+name+".", font(8))
-	mutedText(c, "3. Restore them with git stash pop --index.", font(8))
-	mutedText(c, "If the restore conflicts, the switch still happens and the changes stay in stash@{0}.", font(8))
+	mui.Text(c, T("Stash & switch does this:")).FontSize(font(8)).Bold()
+	mutedText(c, T("1. Stash staged, unstaged and untracked changes."), font(8))
+	mutedText(c, Tf("2. Switch to %s.", name), font(8))
+	mutedText(c, T("3. Restore them with git stash pop --index."), font(8))
+	mutedText(c, T("If the restore conflicts, the switch still happens and the changes stay in stash@{0}."), font(8))
 }
 
 // gitErrorLines keeps a git error's lines and shows tabs as indents so the

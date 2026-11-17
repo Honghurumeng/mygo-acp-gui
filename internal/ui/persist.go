@@ -19,6 +19,7 @@ func (a *App) persistSettings() {
 		Paths:         a.settingsPaths,
 		Appearance:    a.Appearance,
 		Theme:         a.Theme,
+		Language:      a.Language,
 		Fonts:         normalizeFontScales(a.Fonts),
 		ViewerWidth:   normalizeViewerWidth(a.ViewerWidth),
 		Notifications: a.NotificationsEnabled,

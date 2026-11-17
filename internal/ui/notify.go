@@ -70,19 +70,19 @@ func (a *App) notifyDesktop(n desktopNotification) {
 // user can check the system permission without waiting for a real event.
 func (a *App) sendTestNotification() {
 	if !a.NotificationsEnabled {
-		a.NotificationTestNotice = "Turn on system notifications first."
+		a.NotificationTestNotice = T("Turn on system notifications first.")
 		return
 	}
 	if a.notify == nil && !mygo.NotificationsSupported() {
-		a.NotificationTestNotice = "System notifications are not supported on this system."
+		a.NotificationTestNotice = T("System notifications are not supported on this system.")
 		return
 	}
-	a.NotificationTestNotice = "Test notification sent. If no banner appears, check the system notification settings for ACP GUI."
+	a.NotificationTestNotice = T("Test notification sent. If no banner appears, check the system notification settings for ACP GUI.")
 	a.notifyDesktop(desktopNotification{
 		ID:       "acp-gui:test",
 		Title:    "ACP GUI",
-		Subtitle: "Test notification",
-		Body:     "System notifications are working.",
+		Subtitle: T("Test notification"),
+		Body:     T("System notifications are working."),
 		Group:    "acp-gui:test",
 	})
 }
@@ -99,12 +99,12 @@ func (a *App) notifyPermission(p *permissionPrompt) {
 		body = strings.TrimSpace(p.Request.ToolCall.Title)
 	}
 	if body == "" {
-		body = "The agent wants to use a tool."
+		body = T("The agent wants to use a tool.")
 	}
 	key := notificationChatKey(p.Chat)
 	a.notifyDesktop(desktopNotification{
 		ID:       "acp-gui:permission:" + key,
-		Title:    "Permission needed",
+		Title:    T("Permission needed"),
 		Subtitle: p.Chat.name(),
 		Body:     body,
 		Group:    "acp-gui:" + key,
@@ -122,16 +122,16 @@ func (a *App) notifyTurnFinished(chat *Chat, elapsed time.Duration, stopReason s
 	if stopReason == "cancelled" || errors.Is(err, acp.ErrClosed) || !a.canNotify(chat) {
 		return
 	}
-	title := "Task complete"
+	title := T("Task complete")
 	body := notificationSummary(chat)
 	switch {
 	case err != nil:
-		title = "Task failed"
+		title = T("Task failed")
 		body = singleLine(err.Error())
 	case body == "" && elapsed > 0:
-		body = "Finished in " + formatElapsed(elapsed)
+		body = Tf("Finished in %s", formatElapsed(elapsed))
 	case body == "":
-		body = "The agent finished the turn."
+		body = T("The agent finished the turn.")
 	}
 	body = truncate(body, 240)
 	key := notificationChatKey(chat)

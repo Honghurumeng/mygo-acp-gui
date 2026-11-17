@@ -422,3 +422,30 @@ func TestInvalidLastSelectionsKeepOtherFields(t *testing.T) {
 		t.Errorf("lastSelections = %+v, want nil", file.LastSelections)
 	}
 }
+
+func TestLanguageDefaultsToSystemAndRoundTrips(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	store := Open(path)
+	if err := os.WriteFile(path, []byte(`{"version": 1, "lastAgent": "pi"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if file.Language != "" {
+		t.Fatalf("a file without language = %q, want the zero value (system)", file.Language)
+	}
+
+	file.Language = "zh-Hans"
+	if err := store.Save(file); err != nil {
+		t.Fatal(err)
+	}
+	file, err = store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if file.Language != "zh-Hans" {
+		t.Fatalf("language = %q, want zh-Hans", file.Language)
+	}
+}

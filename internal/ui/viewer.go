@@ -135,7 +135,7 @@ func (a *App) viewerCard(c *mui.Context, panel, anchor mui.Element, spec viewerS
 			centered(c, func() {
 				text := spec.BusyText
 				if strings.TrimSpace(text) == "" {
-					text = "Loading…"
+					text = T("Loading…")
 				}
 				busyLine(c, text)
 			})
@@ -143,7 +143,7 @@ func (a *App) viewerCard(c *mui.Context, panel, anchor mui.Element, spec viewerS
 			mui.Column(c).Grow(1).Padding(12, 12).Children(func() {
 				title := spec.ErrorTitle
 				if strings.TrimSpace(title) == "" {
-					title = "Cannot show this file"
+					title = T("Cannot show this file")
 				}
 				dangerAlert(c, title, spec.Err)
 			})
@@ -161,9 +161,9 @@ func (a *App) viewerHeader(c *mui.Context, spec viewerSpec, state *viewerCardSta
 	subtitle := spec.Subtitle
 	if dirty {
 		if strings.TrimSpace(subtitle) == "" {
-			subtitle = "unsaved changes"
+			subtitle = T("unsaved changes")
 		} else {
-			subtitle += " · unsaved changes"
+			subtitle += " · " + T("unsaved changes")
 		}
 	}
 	mui.Row(c).Height(48).Gap(3).Padding(0, 12).AlignItems(mui.Center).
@@ -201,15 +201,15 @@ func (a *App) viewerHeader(c *mui.Context, spec viewerSpec, state *viewerCardSta
 			}
 		}
 		if spec.Save != nil && (spec.Mode == viewerEdit || dirty) {
-			save := primaryButton(c, "Save").FontSize(a.gitFont(9))
+			save := primaryButton(c, T("Save")).FontSize(a.gitFont(9))
 			save.Disabled(spec.Saving)
-			save.Tooltip("Save the file (Cmd/Ctrl+S)")
+			save.Tooltip(T("Save the file (Cmd/Ctrl+S)"))
 			if save.Clicked() && !spec.Saving {
 				a.viewerSave(spec, state)
 			}
 		}
-		if quietButton(c, "✕").Label("Close").FontSize(a.gitFont(9)).
-			Tooltip("Close the viewer").Clicked() && spec.OnClose != nil {
+		if quietButton(c, "✕").Label(T("Close")).FontSize(a.gitFont(9)).
+			Tooltip(T("Close the viewer")).Clicked() && spec.OnClose != nil {
 			spec.OnClose()
 		}
 	})
@@ -223,7 +223,7 @@ func (a *App) viewerStatus(c *mui.Context, spec viewerSpec) {
 	case spec.Saving:
 		mui.Row(c).Gap(4).AlignItems(mui.Center).Padding(3, 12, 1, 12).Children(func() {
 			mui.Spinner(c)
-			a.gitCaption(c, "Saving…")
+			a.gitCaption(c, T("Saving…"))
 		})
 	case spec.SaveErr != "":
 		mui.Text(c, "⚠ "+singleLine(spec.SaveErr)).FontSize(a.gitFont(9)).
@@ -243,11 +243,11 @@ func (a *App) viewerBody(c *mui.Context, state *viewerCardState, spec viewerSpec
 		if spec.Old == spec.New {
 			title := spec.EmptyDiffTitle
 			if strings.TrimSpace(title) == "" {
-				title = "No changes to show"
+				title = T("No changes to show")
 			}
 			text := spec.EmptyDiffText
 			if strings.TrimSpace(text) == "" {
-				text = "Both sides of this file are identical."
+				text = T("Both sides of this file are identical.")
 			}
 			centered(c, func() {
 				emptyState(c, gitCompareIcon, title, text)
@@ -267,11 +267,11 @@ func (a *App) viewerBody(c *mui.Context, state *viewerCardState, spec viewerSpec
 			if strings.TrimSpace(body) == "" {
 				title := spec.EmptyViewTitle
 				if strings.TrimSpace(title) == "" {
-					title = "File is empty"
+					title = T("File is empty")
 				}
 				text := spec.EmptyViewText
 				if strings.TrimSpace(text) == "" {
-					text = "There is no text to show yet."
+					text = T("There is no text to show yet.")
 				}
 				centered(c, func() {
 					emptyState(c, textIcon, title, text)
@@ -333,7 +333,7 @@ func (a *App) viewerSyncEditor(state *viewerCardState, spec viewerSpec) {
 			SoftWrap:    true,
 			LineHeight:  1.4,
 			NoFolding:   true,
-			Placeholder: "Empty file",
+			Placeholder: T("Empty file"),
 		}
 		state.body = spec.Body
 		return
@@ -398,11 +398,11 @@ func (a *App) viewerSave(spec viewerSpec, state *viewerCardState) {
 func viewerModeLabel(mode viewerMode) string {
 	switch mode {
 	case viewerDiff:
-		return "Diff"
+		return T("Diff")
 	case viewerEdit:
-		return "Edit"
+		return T("Edit")
 	default:
-		return "View"
+		return T("View")
 	}
 }
 
@@ -411,22 +411,22 @@ func viewerModeLabel(mode viewerMode) string {
 func viewerModeAction(mode viewerMode) string {
 	switch mode {
 	case viewerDiff:
-		return "Show diff"
+		return T("Show diff")
 	case viewerEdit:
-		return "Edit file"
+		return T("Edit file")
 	default:
-		return "Show file content"
+		return T("Show file content")
 	}
 }
 
 func viewerModeTooltip(mode viewerMode) string {
 	switch mode {
 	case viewerDiff:
-		return "Show the changes between the two sides"
+		return T("Show the changes between the two sides")
 	case viewerEdit:
-		return "Edit the text and save it"
+		return T("Edit the text and save it")
 	default:
-		return "Read the file without editing it"
+		return T("Read the file without editing it")
 	}
 }
 

@@ -13,7 +13,7 @@ func (a *App) jumpToLatestButton(c *mui.Context, chat *Chat) {
 		return
 	}
 	t := c.Theme()
-	button := buttonBase(c, "Jump to latest").
+	button := buttonBase(c, T("Jump to latest")).
 		Padding(5, 11).
 		Radius(14).
 		Background(t.Surface).
@@ -27,7 +27,7 @@ func (a *App) jumpToLatestButton(c *mui.Context, chat *Chat) {
 		button.Background(t.SurfaceHover)
 	}
 	button.Children(func() {
-		mui.Text(c, "↓ Latest").FontSize(a.chatFont(10)).TextColor(t.Text)
+		mui.Text(c, T("↓ Latest")).FontSize(a.chatFont(10)).TextColor(t.Text)
 	})
 	if button.Clicked() {
 		chat.list.ScrollToEnd()

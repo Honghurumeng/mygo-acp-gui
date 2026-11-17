@@ -14,7 +14,7 @@ func (a *App) addWorkspace() {
 	go func() {
 		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
 			Parent:            win,
-			Title:             "Add Workspace",
+			Title:             T("Add Workspace"),
 			Directory:         true,
 			CreateDirectories: true,
 		})
@@ -48,7 +48,7 @@ func (a *App) chooseWorkspace() {
 	go func() {
 		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
 			Parent:            win,
-			Title:             "Choose Workspace",
+			Title:             T("Choose Workspace"),
 			Directory:         true,
 			CreateDirectories: true,
 		})

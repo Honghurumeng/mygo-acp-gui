@@ -21,6 +21,7 @@ import (
 	"github.com/reed/acp-gui/internal/agent"
 	"github.com/reed/acp-gui/internal/archive"
 	"github.com/reed/acp-gui/internal/codexprovider"
+	"github.com/reed/acp-gui/internal/i18n"
 	"github.com/reed/acp-gui/internal/logs"
 	"github.com/reed/acp-gui/internal/modelconfig"
 	"github.com/reed/acp-gui/internal/session"
@@ -63,6 +64,15 @@ type Options struct {
 	// RevealItem shows a file or folder in the system file manager. Nil uses
 	// mygo.Shell.ShowItemInFolder; tests replace it to capture the path.
 	RevealItem func(string)
+	// PreferredLanguages are the languages the user reads, most preferred
+	// first, which the System language setting picks from. Nil means English,
+	// so tests and portable runs are deterministic.
+	PreferredLanguages []string
+	// OnLanguage hears the language setting (system, en or zh-Hans) change, at
+	// startup and when the Settings panel changes it. main uses it to give
+	// MyGo's own controls, menus and dialogs the same language. Nil does
+	// nothing, as in tests.
+	OnLanguage func(setting string)
 }
 
 // MessageRole is how a chat row is drawn.
@@ -308,6 +318,10 @@ type App struct {
 	// persisted in settings.json and applied in View.
 	Appearance string
 	Theme      string
+	// Language is the language the app shows: system (the desktop's
+	// preference), en or zh-Hans. It is persisted in settings.json and drives
+	// both the app's own messages (internal/i18n) and MyGo's.
+	Language string
 	// Fonts scales each text area: the workspace list, the conversation, the
 	// composer and the Git panel. It is persisted in settings.json.
 	Fonts settings.Fonts
@@ -414,6 +428,11 @@ type App struct {
 	settings         *settings.Store
 	settingsPaths    settings.Paths
 	preferredAgentID string
+	// preferredLanguages are the user's languages at startup, which the
+	// System language setting picks from, and onLanguage gives the chosen
+	// setting to main for MyGo's own strings (both from Options).
+	preferredLanguages []string
+	onLanguage         func(string)
 	// lastSelections remembers the model-panel values and session mode per
 	// agent, so a new draft starts where the last conversation left off. It
 	// is loaded from settings.json and rewritten by rememberSelection.
@@ -461,6 +480,8 @@ func New(opts Options) *App {
 		sessions:           make(map[*session.Session]struct{}),
 		logs:               make(map[string]*logs.Log),
 		resolveOpts:        opts.Resolve,
+		preferredLanguages: append([]string(nil), opts.PreferredLanguages...),
+		onLanguage:         opts.OnLanguage,
 		probeAgent:         opts.ProbeAgent,
 		injectedAgents:     opts.Agents != nil,
 		probeConfig:        session.ProbeConfig,
@@ -479,6 +500,7 @@ func New(opts Options) *App {
 
 		Appearance:           AppearanceSystem,
 		Theme:                ThemeDefault,
+		Language:             i18n.System,
 		Fonts:                defaultFontScales(),
 		NotificationsEnabled: true,
 		DockBadgeEnabled:     true,
@@ -580,6 +602,8 @@ func (a *App) loadSettings(dataDir string, workspaceDefault bool) {
 	}
 	a.Appearance = normalizeAppearance(file.Appearance)
 	a.Theme = normalizeTheme(file.Theme)
+	a.Language = i18n.Normalize(file.Language)
+	a.applyLanguage()
 	a.Fonts = normalizeFontScales(file.Fonts)
 	a.ViewerWidth = normalizeViewerWidth(file.ViewerWidth)
 	a.NotificationsEnabled = file.Notifications
@@ -854,15 +878,15 @@ func (a *App) conversation(c *mui.Context, chat *Chat, rows []*Message) {
 func (a *App) header(c *mui.Context) {
 	t := c.Theme()
 	chat := a.activeChat()
-	title := "New conversation"
+	title := T("New conversation")
 	if chat != nil {
 		title = chat.name()
 	}
 	mui.Row(c).Height(60).Gap(8).Padding(0, 16).AlignItems(mui.Center).
 		BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
-		toggle, tip := "≡", "Show sidebar"
+		toggle, tip := "≡", T("Show sidebar")
 		if a.SidebarOpen {
-			toggle, tip = "‹", "Hide sidebar"
+			toggle, tip = "‹", T("Hide sidebar")
 		}
 		if quietButton(c, toggle).Label(tip).FontSize(15).Clicked() {
 			a.SidebarOpen = !a.SidebarOpen
@@ -899,10 +923,10 @@ func (a *App) headerActions(c *mui.Context, chat *Chat) {
 		return quietButton(c, label).Label(tip).FontSize(11)
 	}
 	if chat.Connecting {
-		mutedText(c, "Connecting…", 11)
-		if action("Cancel", "Cancel connecting").Clicked() {
+		mutedText(c, T("Connecting…"), 11)
+		if action(T("Cancel"), T("Cancel connecting")).Clicked() {
 			if chat.taskActive {
-				a.stopTaskRun("Stopped while starting.")
+				a.stopTaskRun(T("Stopped while starting."))
 			} else {
 				a.Disconnect()
 			}
@@ -922,7 +946,7 @@ func (a *App) banner(c *mui.Context) {
 		lines = append(lines, strings.Join(a.Env.Warnings, "; "))
 	}
 	if a.SettingsWarning != "" {
-		lines = append(lines, "Settings: "+a.SettingsWarning)
+		lines = append(lines, Tf("Settings: %s", a.SettingsWarning))
 	}
 	if len(lines) == 0 {
 		return
@@ -942,9 +966,9 @@ func (a *App) statusLine() string {
 	chat := a.activeChat()
 	switch {
 	case a.Resolving:
-		return "Finding agents…"
+		return T("Finding agents…")
 	case chat != nil && chat.Connecting:
-		return "Connecting to " + chat.agentName() + "…"
+		return Tf("Connecting to %s…", chat.agentName())
 	case chat != nil && chat.Session != nil:
 		name := chat.agentName()
 		version := strings.TrimSpace(chat.Agent.Version)
@@ -963,12 +987,12 @@ func (a *App) statusLine() string {
 				version = chat.Info.AgentInfo.Version
 			}
 		}
-		status := "Connected to " + name
+		status := Tf("Connected to %s", name)
 		if version != "" {
 			status += " " + version
 		}
 		if chat.Info.SessionID == "" {
-			return status + " · no active session"
+			return Tf("%s · no active session", status)
 		}
 		return status + " · " + chat.Info.SessionID
 	case a.Env.Summary() != "":
@@ -1002,11 +1026,11 @@ func (a *App) emptyState(c *mui.Context) {
 	switch {
 	case chat != nil && chat.Connecting:
 		centered(c, func() {
-			busyLine(c, "Connecting…")
+			busyLine(c, T("Connecting…"))
 		})
 	case a.Resolving:
 		centered(c, func() {
-			busyLine(c, "Probing pi, Command Code and Codex…")
+			busyLine(c, T("Probing pi, Command Code and Codex…"))
 		})
 	default:
 		glyph, title, text := emptyStateCopy(chat, len(a.Agents))
@@ -1020,15 +1044,15 @@ func (a *App) emptyState(c *mui.Context) {
 func emptyStateCopy(chat *Chat, agents int) (glyph *mui.SVG, title, text string) {
 	switch {
 	case chat != nil && chat.Session != nil && chat.Info.SessionID == "":
-		return messageSquareIcon, "No active session.", "Create a new chat or open a saved session from the sidebar."
+		return messageSquareIcon, T("No active session."), T("Create a new chat or open a saved session from the sidebar.")
 	case chat != nil && chat.Session != nil:
-		return messagesSquareIcon, "Connected. Send a message to start.", "Agent updates stream into this list."
+		return messagesSquareIcon, T("Connected. Send a message to start."), T("Agent updates stream into this list.")
 	case agents == 0:
-		return unplugIcon, "No ACP agent available", "Install pi, Command Code or Codex, then refresh discovery in the sidebar."
+		return unplugIcon, T("No ACP agent available"), T("Install pi, Command Code or Codex, then refresh discovery in the sidebar.")
 	case chat != nil:
-		return sparklesIcon, "Start the conversation.", "Type below and press Enter; the app connects on the first message."
+		return sparklesIcon, T("Start the conversation."), T("Type below and press Enter; the app connects on the first message.")
 	default:
-		return messageSquareIcon, "New conversation", "Create one from the sidebar and type a message."
+		return messageSquareIcon, T("New conversation"), T("Create one from the sidebar and type a message.")
 	}
 }
 
@@ -1037,7 +1061,7 @@ func (a *App) planPanel(c *mui.Context, chat *Chat) {
 		return
 	}
 	t := c.Theme()
-	mui.Collapsible(c, "Plan", &chat.PlanOpen, func() {
+	mui.Collapsible(c, T("Plan"), &chat.PlanOpen, func() {
 		mui.Column(c).Gap(3).Children(func() {
 			for _, entry := range chat.Plan {
 				color := t.TextMuted
@@ -1131,14 +1155,14 @@ func (a *App) message(c *mui.Context, chat *Chat, m *Message) {
 		mui.Column(c).MaxWidth(chatMaxWidth).Children(func() {
 			a.subagentLabel(c, m)
 			if m.Thought != "" {
-				mui.Collapsible(c, "Thinking", &m.ShowThought, func() {
+				mui.Collapsible(c, T("Thinking"), &m.ShowThought, func() {
 					mutedText(c, m.Thought, a.chatFont(12)).Selectable()
 				})
 			}
 			if m.Text == "" && !m.Done {
 				mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
 					mui.Spinner(c)
-					mutedText(c, "Waiting for the agent…", a.chatFont(12))
+					mutedText(c, T("Waiting for the agent…"), a.chatFont(12))
 				})
 				return
 			}
@@ -1182,7 +1206,7 @@ func (a *App) message(c *mui.Context, chat *Chat, m *Message) {
 		if m.Elapsed > 0 {
 			mui.Row(c).MaxWidth(chatMaxWidth).Children(func() {
 				mui.Spacer(c)
-				mutedText(c, "Took "+formatElapsed(m.Elapsed), a.chatFont(9)).Shrink(0).Tooltip("Runtime of this turn")
+				mutedText(c, "Took "+formatElapsed(m.Elapsed), a.chatFont(9)).Shrink(0).Tooltip(T("Runtime of this turn"))
 			})
 		}
 	}
@@ -1211,7 +1235,7 @@ func (a *App) subagentMessage(c *mui.Context, chat *Chat, m *Message) {
 	}
 	title := strings.TrimPrefix(m.Title, "Subagent · ")
 	if title == "" {
-		title = "Agent"
+		title = T("Agent")
 	}
 	root := mui.Column(c).MaxWidth(chatMaxWidth).Padding(10).Radius(10).
 		Background(t.Surface).Border(1, t.Border).
@@ -1220,11 +1244,11 @@ func (a *App) subagentMessage(c *mui.Context, chat *Chat, m *Message) {
 		// Build the collapsible inside the card subtree. Building it before
 		// root.Children attaches the trigger to the conversation row instead.
 		parts := mui.CollapsibleBase(c, &m.DetailOpen)
-		parts.Trigger.Label("Toggle subagent details: " + m.Title).
+		parts.Trigger.Label(Tf("Toggle subagent details: %s", m.Title)).
 			FillWidth().Gap(10).AlignItems(mui.Center).Children(func() {
 			mui.Icon(c, gitBranchIcon).Size(15, 15).Shrink(0).TextColor(statusColor)
 			mui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
-				sectionLabel(c, "SUBAGENT")
+				sectionLabel(c, T("SUBAGENT"))
 				mui.Text(c, title).FontSize(a.chatFont(12)).Bold().SingleLine().MinWidth(0)
 			})
 			mui.Text(c, status).FontSize(a.chatFont(10)).TextColor(statusColor).
@@ -1240,7 +1264,7 @@ func (a *App) subagentMessage(c *mui.Context, chat *Chat, m *Message) {
 		}
 		if reply := lastSubagentReply(chat, m.SubagentID); reply != "" {
 			mui.Row(c).Gap(5).AlignItems(mui.Center).MinWidth(0).Children(func() {
-				sectionLabel(c, "RESULT")
+				sectionLabel(c, T("RESULT"))
 				mui.Text(c, reply).FontSize(a.chatFont(11)).Grow(1).MinWidth(0).SingleLine()
 			})
 		}
@@ -1250,7 +1274,7 @@ func (a *App) subagentMessage(c *mui.Context, chat *Chat, m *Message) {
 					mutedText(c, m.Detail, a.chatFont(10)).Selectable()
 				}
 				if sub != nil && sub.ID != "" {
-					mutedText(c, "Session: "+sub.ID, a.chatFont(10)).Selectable().Tooltip("ACP child session ID")
+					mutedText(c, "Session: "+sub.ID, a.chatFont(10)).Selectable().Tooltip(T("ACP child session ID"))
 				}
 			})
 		})
@@ -1260,9 +1284,9 @@ func (a *App) subagentMessage(c *mui.Context, chat *Chat, m *Message) {
 func subagentCardLabel(title, status string) string {
 	title = strings.TrimSpace(title)
 	if title == "" {
-		title = "Subagent"
+		title = T("Subagent")
 	}
-	return title + ", status " + status
+	return Tf("%s, status %s", title, status)
 }
 
 func lastSubagentReply(chat *Chat, subagentID string) string {
@@ -1289,7 +1313,7 @@ func (a *App) subagentLabel(c *mui.Context, m *Message) {
 	if m == nil || strings.TrimSpace(m.SubagentName) == "" {
 		return
 	}
-	label := "Subagent · " + singleLine(m.SubagentName)
+	label := Tf("Subagent · %s", singleLine(m.SubagentName))
 	if m.SubagentID != "" {
 		labelElement := mutedText(c, label, a.chatFont(10)).SingleLine()
 		labelElement.Tooltip(m.SubagentID)
@@ -1334,7 +1358,7 @@ func (a *App) toolMessage(c *mui.Context, m *Message) {
 		// so a trigger built before it would sit outside the card's surface.
 		parts := mui.CollapsibleBase(c, &m.DetailOpen)
 		parts.Trigger.Grow(1).Gap(6).AlignItems(mui.Center).
-			Label("Toggle tool output: " + m.Title).Children(func() {
+			Label(Tf("Toggle tool output: %s", m.Title)).Children(func() {
 			mark := "▸"
 			if m.DetailOpen {
 				mark = "▾"
@@ -1364,15 +1388,15 @@ func toolStatusLabel(status string) string {
 	case "":
 		return ""
 	case "pending":
-		return "Pending"
+		return T("Pending")
 	case "in_progress", "running":
-		return "In progress"
+		return T("In progress")
 	case "completed", "complete":
-		return "Completed"
+		return T("Completed")
 	case "failed", "error":
-		return "Failed"
+		return T("Failed")
 	case "cancelled", "canceled":
-		return "Cancelled"
+		return T("Cancelled")
 	default:
 		return strings.ToUpper(normalized[:1]) + normalized[1:]
 	}
@@ -1407,7 +1431,9 @@ func (a *App) addError(chat *Chat, err error) {
 	if chat == nil || err == nil {
 		return
 	}
-	msg := err.Error()
+	// The app's own errors (an attachment it refused) go through the
+	// catalog; an agent's text finds no entry and is shown as it came.
+	msg := T(err.Error())
 	if strings.TrimSpace(msg) == "" {
 		return
 	}
@@ -1483,22 +1509,22 @@ func subagentControlLabel(call session.ToolCall) (string, bool) {
 	key = strings.NewReplacer("_", "", "-", "", " ", "").Replace(key)
 	switch key {
 	case "spawn", "spawnagent", "spawnsubagent":
-		return "Spawn subagent", true
+		return T("Spawn subagent"), true
 	case "sendinput", "sendmessagetosubagent":
-		return "Send message to subagent", true
+		return T("Send message to subagent"), true
 	case "followup", "followuptask", "continuesubagent":
-		return "Continue subagent", true
+		return T("Continue subagent"), true
 	case "waitagent", "waitforsubagent":
-		return "Wait for subagent", true
+		return T("Wait for subagent"), true
 	case "listagents", "listsubagents":
-		return "List subagents", true
+		return T("List subagents"), true
 	case "resumeagent", "resumesubagent":
-		return "Resume subagent", true
+		return T("Resume subagent"), true
 	case "closeagent", "closesubagent":
-		return "Close subagent", true
+		return T("Close subagent"), true
 	}
 	if key == "wait" && hasSubagentPayload(call) {
-		return "Wait for subagent", true
+		return T("Wait for subagent"), true
 	}
 	return "", false
 }

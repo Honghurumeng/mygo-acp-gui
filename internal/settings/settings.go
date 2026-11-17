@@ -101,6 +101,10 @@ type File struct {
 	// green, green-soft, vscode, everforest, one-dark or tokyo-night. An
 	// empty value means default.
 	Theme string `json:"theme,omitempty"`
+	// Language is the language the app shows: system (the desktop's
+	// preference, the default), en or zh-Hans. An empty value means system,
+	// so older files keep following the desktop.
+	Language string `json:"language,omitempty"`
 	// Notifications enables desktop notifications. It defaults to true so
 	// older files without the field keep the previous behavior; the field is
 	// written even when false so turning notifications off survives a restart.
@@ -243,6 +247,7 @@ type rawFile struct {
 	Paths               Paths           `json:"paths"`
 	Appearance          string          `json:"appearance"`
 	Theme               string          `json:"theme"`
+	Language            string          `json:"language"`
 	// Pointers distinguish an older file without the setting (default on)
 	// from an explicit false.
 	Notifications *bool `json:"notifications"`
@@ -282,6 +287,7 @@ func decode(data []byte) (File, error) {
 	file.Paths = sanitizePaths(raw.Paths, &problems)
 	file.Appearance = strings.TrimSpace(raw.Appearance)
 	file.Theme = strings.TrimSpace(raw.Theme)
+	file.Language = strings.TrimSpace(raw.Language)
 	if raw.Notifications != nil {
 		file.Notifications = *raw.Notifications
 	}

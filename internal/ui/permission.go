@@ -201,11 +201,11 @@ func (a *App) permissionDialog(c *mui.Context) {
 	p := a.Permission
 	req := p.Request
 
-	permissionModal(c, "Permission required", func() {
+	permissionModal(c, T("Permission required"), func() {
 		if p.Chat != nil {
-			mutedText(c, "Chat: "+p.Chat.name(), 11)
+			mutedText(c, Tf("Chat: %s", p.Chat.name()), 11)
 			if sub := p.Chat.subagent(req.SessionID); sub != nil {
-				mutedText(c, "Subagent: "+subagentName(sub), 11)
+				mutedText(c, Tf("Subagent: %s", subagentName(sub)), 11)
 			}
 		}
 		title := req.ToolCall.Title
@@ -219,7 +219,7 @@ func (a *App) permissionDialog(c *mui.Context) {
 			}
 		} else {
 			if title == "" {
-				title = "The agent wants to use a tool."
+				title = T("The agent wants to use a tool.")
 			}
 			mui.Text(c, title).FontSize(14)
 		}
@@ -227,9 +227,9 @@ func (a *App) permissionDialog(c *mui.Context) {
 			mutedText(c, strings.TrimSpace(req.ToolCall.Kind+" · "+req.ToolCall.Status), 11)
 		}
 		if detail := compactJSON(req.ToolCall.RawInput); detail != "" {
-			codeBlock(c, "json", detail, "Input")
+			codeBlock(c, "json", detail, T("Input"))
 		}
-		mutedText(c, "Choose what the agent may do.", 12)
+		mutedText(c, T("Choose what the agent may do."), 12)
 
 		mui.Row(c).Gap(8).Wrap().Justify(mui.End).Children(func() {
 			for _, option := range req.Options {
@@ -251,7 +251,7 @@ func (a *App) permissionDialog(c *mui.Context) {
 					return
 				}
 			}
-			if quietButton(c, "Cancel").Clicked() {
+			if quietButton(c, T("Cancel")).Clicked() {
 				a.finishPermission(p, acp.CancelledPermission())
 			}
 		})

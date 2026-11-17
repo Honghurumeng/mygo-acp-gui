@@ -82,15 +82,15 @@ func (a *App) taskRunPhaseText() string {
 	}
 	switch a.TaskRun.Phase {
 	case "starting":
-		return "starting"
+		return T("starting")
 	case "executing":
-		return "executing"
+		return T("executing")
 	case "checking":
-		return "checking"
+		return T("checking")
 	case "discarding":
-		return "discarding changes & saving summary"
+		return T("discarding changes & saving summary")
 	case "saving", "committing":
-		return "saving summary & commit"
+		return T("saving summary & commit")
 	default:
 		return ""
 	}
@@ -103,17 +103,17 @@ func (a *App) startTaskQueue() {
 		return
 	}
 	if a.TaskRun.Active {
-		a.TaskError = "A task is already running."
+		a.TaskError = T("A task is already running.")
 		return
 	}
 	workspace := a.activeTaskWorkspace()
 	if workspace == "" || !filepath.IsAbs(workspace) {
-		a.TaskError = "Choose a workspace before running tasks."
+		a.TaskError = T("Choose a workspace before running tasks.")
 		return
 	}
 	if _, ok := a.nextPendingTask(workspace); !ok {
 		a.TaskError = ""
-		a.TaskNotice = "No pending tasks in this workspace."
+		a.TaskNotice = T("No pending tasks in this workspace.")
 		return
 	}
 	a.TaskError = ""
@@ -134,14 +134,14 @@ func (a *App) startNextTaskIn(workspace string) {
 	task, ok := a.nextPendingTask(workspace)
 	if !ok {
 		if a.TaskRun.Queue {
-			a.TaskNotice = "All pending tasks are complete."
+			a.TaskNotice = T("All pending tasks are complete.")
 		}
 		a.TaskRun.Queue = false
 		return
 	}
 	spec, ok := a.taskAgentFor(task)
 	if !ok {
-		a.TaskError = "No agent is available to run tasks."
+		a.TaskError = T("No agent is available to run tasks.")
 		a.TaskRun.Queue = false
 		return
 	}
@@ -248,7 +248,7 @@ func (a *App) taskChatConnected(gen int, taskID string, chat *Chat, err error) {
 		return
 	}
 	if err != nil {
-		a.failTaskRun("Could not start the task agent: " + err.Error())
+		a.failTaskRun(Tf("Could not start the task agent: %s", err.Error()))
 		return
 	}
 	if i := a.taskIndexByID(taskID); i >= 0 {
@@ -276,16 +276,16 @@ func (a *App) taskTurnEnded(gen int, taskID string, chat *Chat, turn *turnState,
 		return
 	}
 	if err != nil {
-		a.failTaskRun("Agent turn failed: " + err.Error())
+		a.failTaskRun(Tf("Agent turn failed: %s", err.Error()))
 		return
 	}
 	if res.StopReason != "" && res.StopReason != "end_turn" {
-		a.failTaskRun("Agent turn stopped: " + res.StopReason)
+		a.failTaskRun(Tf("Agent turn stopped: %s", res.StopReason))
 		return
 	}
 	index := a.taskIndexByID(taskID)
 	if index < 0 {
-		a.failTaskRun("The task was removed while it was running.")
+		a.failTaskRun(T("The task was removed while it was running."))
 		return
 	}
 	summary := lastAgentParagraph(chat, turn)
@@ -318,12 +318,12 @@ func (a *App) startTaskCheck(gen int, task taskstore.Task) {
 			}
 			a.TaskRun.CheckerCancel = nil
 			if err != nil {
-				a.failTaskRun("Checker failed: " + err.Error())
+				a.failTaskRun(Tf("Checker failed: %s", err.Error()))
 				return
 			}
 			verdict, parseErr := parseTaskVerdict(reply)
 			if parseErr != nil {
-				a.failTaskRun("Checker reply: " + parseErr.Error())
+				a.failTaskRun(Tf("Checker reply: %s", parseErr.Error()))
 				return
 			}
 			if !verdict.Complete {
@@ -443,7 +443,7 @@ func parseTaskVerdict(reply string) (taskVerdict, error) {
 		return taskVerdict{}, fmt.Errorf("invalid JSON: %w", err)
 	}
 	if strings.TrimSpace(verdict.Reason) == "" {
-		verdict.Reason = "The checker did not give a reason."
+		verdict.Reason = T("The checker did not give a reason.")
 	}
 	return verdict, nil
 }
@@ -456,12 +456,12 @@ func (a *App) continueTask(gen int, taskID, reason string) {
 	}
 	index := a.taskIndexByID(taskID)
 	if index < 0 {
-		a.failTaskRun("The task was removed while it was running.")
+		a.failTaskRun(T("The task was removed while it was running."))
 		return
 	}
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
-		reason = "The task is not complete yet."
+		reason = T("The task is not complete yet.")
 	}
 	// The feedback belongs to the round just judged. The next checker prompt
 	// carries it with that round's summary.
@@ -469,20 +469,20 @@ func (a *App) continueTask(gen int, taskID, reason string) {
 		a.TaskRun.CheckRounds[n-1].Feedback = reason
 	}
 	if a.Tasks[index].Rounds >= taskMaxRounds {
-		a.failTaskRun(fmt.Sprintf("Task did not finish after %d rounds: %s", taskMaxRounds, reason))
+		a.failTaskRun(Tf("Task did not finish after %d rounds: %s", taskMaxRounds, reason))
 		return
 	}
-	a.Tasks[index].Note = "Checker: " + reason
+	a.Tasks[index].Note = Tf("Checker: %s", reason)
 	a.persistTasks()
 	chat := a.TaskRun.Chat
 	if chat == nil || chat.Session == nil {
-		a.failTaskRun("The task conversation is no longer connected.")
+		a.failTaskRun(T("The task conversation is no longer connected."))
 		return
 	}
 	a.TaskRun.Phase = "executing"
 	chat.Input = taskContinuePrompt(reason)
 	if !a.sendChat(chat) {
-		a.failTaskRun("Could not send the continuation prompt.")
+		a.failTaskRun(T("Could not send the continuation prompt."))
 	}
 }
 
@@ -496,7 +496,7 @@ func (a *App) completeTask(gen int, taskID string, verdict taskVerdict, agentSum
 	}
 	index := a.taskIndexByID(taskID)
 	if index < 0 {
-		a.failTaskRun("The task was removed while it was running.")
+		a.failTaskRun(T("The task was removed while it was running."))
 		return
 	}
 	task := a.Tasks[index]
@@ -525,12 +525,12 @@ func (a *App) completeTask(gen int, taskID string, verdict taskVerdict, agentSum
 			}
 			a.persistTasks()
 			a.TaskError = ""
-			a.TaskNotice = "Task complete: " + task.Title
+			a.TaskNotice = Tf("Task complete: %s", task.Title)
 			if summaryErr != nil {
-				a.TaskError = "Summary: " + summaryErr.Error()
+				a.TaskError = Tf("Summary: %s", summaryErr.Error())
 			}
 			if commitErr != nil {
-				a.TaskError = "Commit: " + commitErr.Error()
+				a.TaskError = Tf("Commit: %s", commitErr.Error())
 			}
 			if commitNote != "" && commitErr == nil && summaryErr == nil {
 				a.TaskNotice += " · " + commitNote
@@ -567,7 +567,7 @@ func (a *App) failTaskRun(reason string) {
 	}
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
-		reason = "The task failed."
+		reason = T("The task failed.")
 	}
 	a.TaskError = reason
 	a.TaskNotice = ""
@@ -645,7 +645,7 @@ func (a *App) finishTaskFailure(reason string) {
 			}
 			a.persistTasks()
 			a.TaskNotice = ""
-			a.TaskError = "Task failed: " + truncate(singleLine(reason), 200)
+			a.TaskError = Tf("Task failed: %s", truncate(singleLine(reason), 200))
 			if discardErr != nil {
 				a.TaskError += " · Discard: " + singleLine(discardErr.Error())
 			}
@@ -680,7 +680,7 @@ func (a *App) finishTaskFailure(reason string) {
 // the task note.
 func discardTaskSnapshot(ctx context.Context, snapshot git.WorktreeSnapshot, ok bool, snapshotErr string) (string, error) {
 	if !ok {
-		note := "Task changes were not discarded."
+		note := T("Task changes were not discarded.")
 		if reason := strings.TrimSpace(snapshotErr); reason != "" {
 			note += " " + singleLine(reason)
 		}
@@ -691,7 +691,7 @@ func discardTaskSnapshot(ctx context.Context, snapshot git.WorktreeSnapshot, ok 
 	if err := snapshot.Restore(callCtx); err != nil {
 		return "", err
 	}
-	return "Task changes discarded.", nil
+	return T("Task changes discarded."), nil
 }
 
 // notifyTaskFinished announces the whole task, not each executor turn. It is
@@ -700,10 +700,10 @@ func (a *App) notifyTaskFinished(chat *Chat, task taskstore.Task, result tasksto
 	if !a.canNotify(chat) {
 		return
 	}
-	title := "Task complete"
+	title := T("Task complete")
 	body := notificationSummary(chat)
 	if result == taskstore.ResultFailure {
-		title = "Task failed"
+		title = T("Task failed")
 		if reason = strings.TrimSpace(reason); reason != "" {
 			body = singleLine(reason)
 		}
@@ -720,10 +720,10 @@ func (a *App) notifyTaskFinished(chat *Chat, task taskstore.Task, result tasksto
 func taskCompletionNote(summaryErr, commitErr error, commitNote string) string {
 	var parts []string
 	if summaryErr != nil {
-		parts = append(parts, "Summary could not be saved: "+singleLine(summaryErr.Error()))
+		parts = append(parts, Tf("Summary could not be saved: %s", singleLine(summaryErr.Error())))
 	}
 	if commitErr != nil {
-		parts = append(parts, "Commit failed: "+singleLine(commitErr.Error()))
+		parts = append(parts, Tf("Commit failed: %s", singleLine(commitErr.Error())))
 	}
 	if len(parts) == 0 {
 		return commitNote
@@ -737,26 +737,26 @@ func taskFailureNote(reason, discardNote string, discardErr, summaryErr error) s
 		parts = append(parts, discardNote)
 	}
 	if discardErr != nil {
-		parts = append(parts, "Discard failed: "+singleLine(discardErr.Error()))
+		parts = append(parts, Tf("Discard failed: %s", singleLine(discardErr.Error())))
 	}
 	if summaryErr != nil {
-		parts = append(parts, "Summary could not be saved: "+singleLine(summaryErr.Error()))
+		parts = append(parts, Tf("Summary could not be saved: %s", singleLine(summaryErr.Error())))
 	}
 	return truncate(strings.Join(parts, " · "), 160)
 }
 
 func commitTaskChanges(ctx context.Context, task taskstore.Task) (string, error) {
 	if !git.Available() {
-		return "Git is not installed; no commit was made.", nil
+		return T("Git is not installed; no commit was made."), nil
 	}
 	callCtx, cancel := context.WithTimeout(ctx, taskCommitTimeout)
 	defer cancel()
 	root, err := git.RepoRoot(callCtx, task.Workspace)
 	switch {
 	case errors.Is(err, git.ErrNotRepository):
-		return "Not a Git repository; no commit was made.", nil
+		return T("Not a Git repository; no commit was made."), nil
 	case errors.Is(err, git.ErrGitNotFound):
-		return "Git is not installed; no commit was made.", nil
+		return T("Git is not installed; no commit was made."), nil
 	case err != nil:
 		return "", err
 	}
@@ -765,9 +765,9 @@ func commitTaskChanges(ctx context.Context, task taskstore.Task) (string, error)
 		return "", err
 	}
 	if !committed {
-		return "No changes to commit.", nil
+		return T("No changes to commit."), nil
 	}
-	return "Committed.", nil
+	return T("Committed."), nil
 }
 
 func taskCommitMessage(task taskstore.Task) string {
@@ -955,7 +955,7 @@ func (a *App) stopTaskRun(reason string) {
 		return
 	}
 	a.TaskError = ""
-	a.TaskNotice = "Task stopped; it is left pending."
+	a.TaskNotice = T("Task stopped; it is left pending.")
 	a.finishTaskRunPending(reason)
 }
 

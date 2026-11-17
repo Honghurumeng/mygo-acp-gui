@@ -1,7 +1,7 @@
 package ui
 
 import (
-	"fmt"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -83,7 +83,7 @@ func (a *App) saveCodexProvider() {
 	draft.ReasoningEfforts = a.selectedCodexProviderEfforts()
 	draft = draft.Normalize()
 	if len(draft.ReasoningEfforts) == 0 {
-		a.CodexProviderNotice = "⚠ Select at least one reasoning level."
+		a.CodexProviderNotice = "⚠ " + T("Select at least one reasoning level.")
 		return
 	}
 	contextWindow, err := parseContextWindow(a.CodexProviderContextWindowText)
@@ -117,20 +117,20 @@ func (a *App) saveCodexProvider() {
 	}
 	a.persistSettings()
 	if err := a.applyCodexProvider(); err != nil {
-		a.CodexProviderNotice = "⚠ Saved, but the Codex launch spec failed: " + err.Error()
+		a.CodexProviderNotice = "⚠ " + Tf("Saved, but the Codex launch spec failed: %s", err.Error())
 		return
 	}
 	if catalogErr != nil {
-		a.CodexProviderNotice = "⚠ Saved, but the Codex model catalog failed: " + catalogErr.Error()
+		a.CodexProviderNotice = "⚠ " + Tf("Saved, but the Codex model catalog failed: %s", catalogErr.Error())
 		return
 	}
 	switch {
 	case draft.Enabled:
-		a.CodexProviderNotice = "Saved. New Codex sessions use this provider."
+		a.CodexProviderNotice = T("Saved. New Codex sessions use this provider.")
 	case len(draft.Models) > 0 || draft.TitleModel != "" || draft.ContextWindow != 0 || draft.AutoCompactPercent != 0:
-		a.CodexProviderNotice = "Saved. New Codex sessions keep your own provider and use these model/context overrides."
+		a.CodexProviderNotice = T("Saved. New Codex sessions keep your own provider and use these model/context overrides.")
 	default:
-		a.CodexProviderNotice = "Saved. Codex uses its own configuration again."
+		a.CodexProviderNotice = T("Saved. Codex uses its own configuration again.")
 	}
 }
 
@@ -212,7 +212,7 @@ func parseContextWindow(text string) (int64, error) {
 	}
 	value, err := strconv.ParseInt(text, 10, 64)
 	if err != nil {
-		return 0, fmt.Errorf("context window must be a whole number of tokens")
+		return 0, errors.New(T("Context window must be a whole number of tokens."))
 	}
 	return value, nil
 }
@@ -224,7 +224,7 @@ func parseCompactPercent(text string) (int, error) {
 	}
 	value, err := strconv.Atoi(text)
 	if err != nil {
-		return 0, fmt.Errorf("auto-compaction percent must be a whole number")
+		return 0, errors.New(T("Auto-compaction percent must be a whole number."))
 	}
 	return value, nil
 }
@@ -244,7 +244,7 @@ func (a *App) codexCompactionPreview() (string, bool) {
 	}
 	usable := contextWindow * 95 / 100
 	limit := contextWindow * int64(percent) / 100
-	return fmt.Sprintf("Preview: compact at %s tokens; usable context ring %s tokens.", formatCount(int(limit)), formatCount(int(usable))), true
+	return Tf("Preview: compact at %s tokens; usable context ring %s tokens.", formatCount(int(limit)), formatCount(int(usable))), true
 }
 
 // applyCodexProvider rebuilds the catalog entry for Codex from the pristine
@@ -296,54 +296,54 @@ func (a *App) codexProviderSettings(c *mui.Context) {
 	}
 	t := c.Theme()
 	mui.Column(c).Gap(10).Children(func() {
-		mui.Text(c, "Codex provider").FontSize(15).Bold()
-		mutedText(c, "Use an OpenAI-compatible provider for Codex instead of the provider in ~/.codex/config.toml. The app passes this configuration to its own Codex child processes and never writes your Codex config. Models, Reasoning levels and Title model also apply when the switch is off, so you can extend your existing Codex provider.", 10)
+		mui.Text(c, T("Codex provider")).FontSize(15).Bold()
+		mutedText(c, T("Use an OpenAI-compatible provider for Codex instead of the provider in ~/.codex/config.toml. The app passes this configuration to its own Codex child processes and never writes your Codex config. Models, Reasoning levels and Title model also apply when the switch is off, so you can extend your existing Codex provider."), 10)
 
 		mui.Row(c).Gap(12).AlignItems(mui.Center).Padding(10, 12).Radius(8).
 			Background(t.Surface).Children(func() {
 			mui.Column(c).Gap(3).Grow(1).Children(func() {
-				mui.Text(c, "Custom provider").FontSize(12)
-				mutedText(c, "Off keeps your own Codex provider; Models, Reasoning levels and Title model below still apply.", 10)
+				mui.Text(c, T("Custom provider")).FontSize(12)
+				mutedText(c, T("Off keeps your own Codex provider; Models, Reasoning levels and Title model below still apply."), 10)
 			})
-			sw := mui.Switch(c, &a.CodexProviderDraft.Enabled).Label("Toggle custom Codex provider")
+			sw := mui.Switch(c, &a.CodexProviderDraft.Enabled).Label(T("Toggle custom Codex provider"))
 			if sw.Changed() {
 				a.CodexProviderNotice = ""
 			}
 		})
 
-		a.codexProviderField(c, "Provider name", "Shown by Codex and in the model panel.",
-			&a.CodexProviderDraft.Name, "Custom Codex provider")
-		a.codexProviderField(c, "Base URL", "OpenAI Responses API root, for example https://api.example.com/v1.",
+		a.codexProviderField(c, T("Provider name"), T("Shown by Codex and in the model panel."),
+			&a.CodexProviderDraft.Name, T("Custom Codex provider"))
+		a.codexProviderField(c, T("Base URL"), T("OpenAI Responses API root, for example https://api.example.com/v1."),
 			&a.CodexProviderDraft.BaseURL, "https://api.example.com/v1")
 		mui.TextInput(c, &a.CodexProviderDraft.APIKey).
-			Label("API key").
-			Placeholder("Optional when the provider needs no key").
+			Label(T("API key")).
+			Placeholder(T("Optional when the provider needs no key")).
 			Password()
-		mutedText(c, "The key is stored in settings.json (mode 0600) and passed to Codex only through its environment.", 9)
+		mutedText(c, T("The key is stored in settings.json (mode 0600) and passed to Codex only through its environment."), 9)
 
 		mui.TextAreaBase(c, &a.CodexProviderModelsText).
-			Label("Models").
-			Placeholder("One model id per line, for example:\ndeepseek-chat\ndeepseek-reasoner").
+			Label(T("Models")).
+			Placeholder(T("One model id per line, for example:\ndeepseek-chat\ndeepseek-reasoner")).
 			Lines(4, 8).
 			Padding(6, 8).
 			FontSize(11).
 			Radius(t.Radius).
 			Border(1, t.Border).
 			Background(t.Background)
-		mutedText(c, "These ids are added to the Codex model list even while the provider switch is off. For DeepSeek targets, the switch on also writes a Codex model catalog with the configured context, compact threshold and checked reasoning levels so Codex does not fall back to unknown-model metadata. The first id is the default model; leave the list empty to use only Codex's own catalog.", 9)
+		mutedText(c, T("These ids are added to the Codex model list even while the provider switch is off. For DeepSeek targets, the switch on also writes a Codex model catalog with the configured context, compact threshold and checked reasoning levels so Codex does not fall back to unknown-model metadata. The first id is the default model; leave the list empty to use only Codex's own catalog."), 9)
 
 		mui.Row(c).Gap(10).Children(func() {
 			mui.Column(c).Grow(1).Gap(2).Children(func() {
 				mui.TextInput(c, &a.CodexProviderContextWindowText).
-					Label("Context window").
+					Label(T("Context window")).
 					Placeholder("1048576")
-				mutedText(c, "Full context size in tokens for the configured models. Blank keeps catalog/Codex defaults. The generated DeepSeek catalog reserves 5% headroom.", 9)
+				mutedText(c, T("Full context size in tokens for the configured models. Blank keeps catalog/Codex defaults. The generated DeepSeek catalog reserves 5% headroom."), 9)
 			})
 			mui.Column(c).Grow(1).Gap(2).Children(func() {
 				mui.TextInput(c, &a.CodexProviderCompactPercentText).
-					Label("Compact at (%)").
+					Label(T("Compact at (%)")).
 					Placeholder("90")
-				mutedText(c, "Trigger percentage of the configured context window; at most 90%. Leave both numeric fields blank for defaults.", 9)
+				mutedText(c, T("Trigger percentage of the configured context window; at most 90%. Leave both numeric fields blank for defaults."), 9)
 			})
 		})
 		if preview, ok := a.codexCompactionPreview(); ok {
@@ -351,7 +351,7 @@ func (a *App) codexProviderSettings(c *mui.Context) {
 		}
 
 		mui.Column(c).Gap(2).Children(func() {
-			mui.Text(c, "Reasoning levels").FontSize(12)
+			mui.Text(c, T("Reasoning levels")).FontSize(12)
 			mui.Row(c).Gap(14).Wrap().Children(func() {
 				for _, level := range codexprovider.ReasoningLevels {
 					level := level
@@ -362,17 +362,17 @@ func (a *App) codexProviderSettings(c *mui.Context) {
 					}
 				}
 			})
-			mutedText(c, "Shown in Thinking for model ids that Codex's catalog does not know. Medium is the default when it is checked; otherwise the first checked level is the default.", 9)
+			mutedText(c, T("Shown in Thinking for model ids that Codex's catalog does not know. Medium is the default when it is checked; otherwise the first checked level is the default."), 9)
 		})
 
-		a.codexProviderField(c, "Title model", "Optional. Empty follows the conversation model; this replaces the fixed gpt-5.6-luna title model.",
-			&a.CodexProviderDraft.TitleModel, "Optional")
+		a.codexProviderField(c, T("Title model"), T("Optional. Empty follows the conversation model; this replaces the fixed gpt-5.6-luna title model."),
+			&a.CodexProviderDraft.TitleModel, T("Optional"))
 
 		mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-			if primaryButton(c, "Save provider").Clicked() {
+			if primaryButton(c, T("Save provider")).Clicked() {
 				a.saveCodexProvider()
 			}
-			caption(c, "Saving updates new Codex processes only.")
+			caption(c, T("Saving updates new Codex processes only."))
 		})
 		if notice := strings.TrimSpace(a.CodexProviderNotice); notice != "" {
 			if strings.HasPrefix(notice, "⚠") {

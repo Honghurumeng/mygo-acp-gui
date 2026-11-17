@@ -120,7 +120,7 @@ func codeBlock(c *mui.Context, lang, code, title string) mui.Element {
 // button.
 func copyButton(c *mui.Context, code string) mui.Element {
 	t := c.Theme()
-	b := buttonBase(c, "Copy").Gap(6).Border(1, t.Border).Background(t.Surface)
+	b := buttonBase(c, T("Copy")).Gap(6).Border(1, t.Border).Background(t.Surface)
 	copied := mui.Local(b, "copied", func() bool { return false })
 	until := mui.Local(b, "until", func() time.Time { return time.Time{} })
 	if *copied {
@@ -142,7 +142,7 @@ func copyButton(c *mui.Context, code string) mui.Element {
 			glyph = checkIcon
 		}
 		mui.Icon(c, glyph).Size(14, 14)
-		mui.Text(c, "Copy").FontSize(t.Rem(0.8)).SingleLine()
+		mui.Text(c, T("Copy")).FontSize(t.Rem(0.8)).SingleLine()
 	})
 	return b
 }

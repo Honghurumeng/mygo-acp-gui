@@ -76,7 +76,7 @@ func (a *App) discover(ctx context.Context) {
 				statuses[i].Status = AgentReady
 			case errors.Is(err, context.DeadlineExceeded):
 				statuses[i].Status = AgentError
-				statuses[i].Detail = "initialize probe timed out after 5s"
+				statuses[i].Detail = T("initialize probe timed out after 5s")
 				a.appendAgentLog(result.ID, []byte("[probe] timeout after 5s\n"))
 			default:
 				statuses[i].Status = AgentNotACP
@@ -105,7 +105,7 @@ func (a *App) discover(ctx context.Context) {
 			if statuses[i].Status == AgentReady {
 				a.Agents = append(a.Agents, result.Spec)
 			} else {
-				details = append(details, fmt.Sprintf("%s: %s (%s)", result.Name, statuses[i].Status, statuses[i].Detail))
+				details = append(details, Tf("%s: %s (%s)", result.Name, statuses[i].Status, statuses[i].Detail))
 			}
 		}
 		a.AgentIndex = 0
@@ -118,7 +118,7 @@ func (a *App) discover(ctx context.Context) {
 		if len(a.Agents) == 0 {
 			a.ResolveError = strings.Join(details, "\n")
 			if a.ResolveError == "" {
-				a.ResolveError = "No builtin ACP agent is available."
+				a.ResolveError = T("No builtin ACP agent is available.")
 			}
 		}
 		// Drafts created before discovery finished can now pick the default
@@ -382,7 +382,7 @@ func (a *App) connectChat(chat *Chat) {
 	if spec.ID == "" {
 		selected, ok := a.preferredAgent()
 		if !ok {
-			chat.ConnectError = "No agent selected."
+			chat.ConnectError = T("No agent selected.")
 			chat.clearPendingSession()
 			chat.pendingSend = false
 			if chat.onConnect != nil {
@@ -516,7 +516,7 @@ func (a *App) connectChat(chat *Chat) {
 				// handshake returning and this update running.
 				chat.Connecting = false
 				chat.Busy = ""
-				chat.ConnectError = "The agent exited immediately after creating the session."
+				chat.ConnectError = T("The agent exited immediately after creating the session.")
 				chat.clearConnect(gen)
 				if chat.onConnect != nil {
 					chat.onConnect(errors.New(chat.ConnectError))
@@ -1307,7 +1307,7 @@ func (a *App) applyUpdate(chat *Chat, ev session.Event) {
 		}
 		applyToolPresentation(msg, call)
 		if msg.Title == "" {
-			msg.Title = "Tool call"
+			msg.Title = T("Tool call")
 		}
 		if call.Status != "" {
 			msg.Status = call.Status
@@ -1573,7 +1573,7 @@ func (a *App) refreshSubagent(chat *Chat, sub *Subagent) {
 		sub.Card.Text = sub.Description
 		parts := make([]string, 0, 1)
 		if sub.CWD != "" {
-			parts = append(parts, "Workspace: "+sub.CWD)
+			parts = append(parts, Tf("Workspace: %s", sub.CWD))
 		}
 		sub.Card.Detail = strings.Join(parts, "\n")
 	}
@@ -1589,7 +1589,7 @@ func (a *App) refreshSubagent(chat *Chat, sub *Subagent) {
 
 func subagentName(sub *Subagent) string {
 	if sub == nil {
-		return "Agent"
+		return T("Agent")
 	}
 	if title := strings.TrimSpace(sub.Title); title != "" {
 		return title
@@ -1599,9 +1599,9 @@ func subagentName(sub *Subagent) string {
 		id = id[len(id)-8:]
 	}
 	if id == "" {
-		return "Agent"
+		return T("Agent")
 	}
-	return "Agent " + id
+	return Tf("Agent %s", id)
 }
 
 func subagentStatus(sub *Subagent) string {
@@ -1638,21 +1638,21 @@ func subagentStatusLabel(status string) string {
 	normalized := strings.TrimSpace(status)
 	switch strings.ToLower(normalized) {
 	case "", "starting":
-		return "Starting"
+		return T("Starting")
 	case "in_progress", "running":
-		return "Running"
+		return T("Running")
 	case "pending", "requires_action", "waiting":
-		return "Waiting"
+		return T("Waiting")
 	case "idle", "completed", "complete":
-		return "Completed"
+		return T("Completed")
 	case "cancelled", "canceled":
-		return "Cancelled"
+		return T("Cancelled")
 	case "failed", "error":
-		return "Failed"
+		return T("Failed")
 	case "disconnected":
-		return "Disconnected"
+		return T("Disconnected")
 	case "unknown":
-		return "Unknown"
+		return T("Unknown")
 	default:
 		return strings.ToUpper(normalized[:1]) + normalized[1:]
 	}
@@ -1745,7 +1745,7 @@ func (a *App) applySubagentToolCall(chat *Chat, sub *Subagent, call *session.Too
 	}
 	applyToolPresentation(msg, *call)
 	if msg.Title == "" {
-		msg.Title = "Tool call"
+		msg.Title = T("Tool call")
 	}
 	if call.Status != "" {
 		msg.Status = call.Status
@@ -1906,7 +1906,7 @@ func (a *App) applyExit(chat *Chat, exit session.Exit) {
 	a.cancelPermissionsFor(chat)
 	a.addTurnSummary(chat, elapsed)
 	if !exit.Expected {
-		msg := "Agent exited unexpectedly."
+		msg := T("Agent exited unexpectedly.")
 		if exit.Err != nil {
 			msg += " " + exit.Err.Error()
 		}
@@ -1925,7 +1925,7 @@ func connectError(err error, spec agent.LaunchSpec) string {
 	var auth *session.AuthRequiredError
 	if errors.As(err, &auth) {
 		var b strings.Builder
-		b.WriteString("Authentication required.")
+		b.WriteString(T("Authentication required."))
 		for _, method := range auth.Methods {
 			b.WriteString("\n• ")
 			if method.Name != "" {
@@ -1939,7 +1939,7 @@ func connectError(err error, spec agent.LaunchSpec) string {
 			}
 		}
 		if spec.LoginHint != "" {
-			b.WriteString("\nRun in a terminal, then reconnect:\n")
+			b.WriteString(T("\nRun in a terminal, then reconnect:\n"))
 			b.WriteString(spec.LoginHint)
 		}
 		return b.String()

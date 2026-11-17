@@ -362,17 +362,17 @@ func (a *App) mentionPalette(c *mui.Context, chat *Chat) {
 			Radius(10).Background(t.Background).Border(1, t.Border).
 			Children(func() {
 				if chat.fileIndexLoading && len(chat.fileIndex) == 0 {
-					a.composerCaption(c, "Indexing workspace files…").Padding(5, 8)
+					a.composerCaption(c, T("Indexing workspace files…")).Padding(5, 8)
 					return
 				}
 				if chat.fileIndexErr != "" {
-					mutedText(c, "Could not index workspace: "+chat.fileIndexErr, a.composerFont(10)).Padding(5, 8)
+					mutedText(c, Tf("Could not index workspace: %s", chat.fileIndexErr), a.composerFont(10)).Padding(5, 8)
 					return
 				}
 				if len(matches) == 0 {
-					label := "No matching files"
+					label := T("No matching files")
 					if chat.MentionQuery != "" {
-						label = "No files match @" + chat.MentionQuery
+						label = Tf("No files match @%s", chat.MentionQuery)
 					}
 					a.composerCaption(c, label).Padding(5, 8)
 					return
@@ -398,7 +398,7 @@ func (a *App) mentionPalette(c *mui.Context, chat *Chat) {
 								a.composerCaption(c, formatBytes(info.Size())).Shrink(0)
 							}
 						})
-						item.Label("Mention " + relative)
+						item.Label(Tf("Mention %s", relative))
 						if item.Clicked() {
 							a.acceptMention(chat, relative)
 						}

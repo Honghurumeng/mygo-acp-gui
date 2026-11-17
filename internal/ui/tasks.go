@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
@@ -41,7 +40,7 @@ func (a *App) loadTaskStore(dataDir string) {
 			continue
 		}
 		a.Tasks[i].Status = taskstore.StatusPending
-		a.Tasks[i].Note = "Interrupted when the app quit; ready to run again."
+		a.Tasks[i].Note = T("Interrupted when the app quit; ready to run again.")
 		changed = true
 	}
 	if changed {
@@ -139,30 +138,30 @@ func (a *App) taskPanelHeader(c *mui.Context) {
 	t := c.Theme()
 	workspace := a.activeTaskWorkspace()
 	pending, ongoing, complete := a.taskCounts(workspace)
-	line := "No workspace"
+	line := T("No workspace")
 	if workspace != "" {
 		line = filepath.Base(workspace)
 		if line == "" || line == "." || line == string(filepath.Separator) {
 			line = workspace
 		}
-		line += fmt.Sprintf(" · %d pending · %d ongoing", pending, ongoing)
+		line += Tf(" · %d pending · %d ongoing", pending, ongoing)
 		if complete > 0 {
-			line += fmt.Sprintf(" · %d complete", complete)
+			line += Tf(" · %d complete", complete)
 		}
 	}
 	if a.TaskRun.Active && !sameWorkspace(a.TaskRun.Workspace, workspace) {
-		line = "Running " + truncate(a.TaskRun.Title, 28) + " in " + filepath.Base(a.TaskRun.Workspace)
+		line = Tf("Running %s in %s", truncate(a.TaskRun.Title, 28), filepath.Base(a.TaskRun.Workspace))
 	}
 	mui.Row(c).Height(54).Gap(6).Padding(8, 12).AlignItems(mui.Center).
 		BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
 		mui.Column(c).Gap(1).Grow(1).MinWidth(0).Children(func() {
 			mui.Row(c).Gap(5).AlignItems(mui.Center).Children(func() {
-				a.rightPanelName(c, "Tasks")
+				a.rightPanelName(c, T("Tasks"))
 				if a.TaskRun.Active {
 					mui.Spinner(c)
 				}
 				mui.Spacer(c)
-				if quietButton(c, "＋").Label("New task").FontSize(a.gitFont(12)).Clicked() {
+				if quietButton(c, "＋").Label(T("New task")).FontSize(a.gitFont(12)).Clicked() {
 					a.openNewTask()
 				}
 			})
@@ -184,8 +183,8 @@ func (a *App) taskPanelBody(c *mui.Context) {
 			tasks := a.tasksForWorkspace(workspace)
 			if len(tasks) == 0 {
 				mui.Column(c).Gap(3).Padding(6, 2).Children(func() {
-					mutedText(c, "No tasks yet.", a.gitFont(11))
-					mutedText(c, "Create a task and run the pending queue. Tasks run one at a time in list order.", a.gitFont(9))
+					mutedText(c, T("No tasks yet."), a.gitFont(11))
+					mutedText(c, T("Create a task and run the pending queue. Tasks run one at a time in list order."), a.gitFont(9))
 				})
 				return
 			}
@@ -200,22 +199,22 @@ func (a *App) taskActions(c *mui.Context, workspace string) {
 	pending, _, _ := a.taskCounts(workspace)
 	busy := a.TaskRun.Active
 	mui.Row(c).Gap(6).AlignItems(mui.Center).Padding(4, 12, 6, 12).Children(func() {
-		run := primaryButton(c, "Run pending").FontSize(a.gitFont(10))
+		run := primaryButton(c, T("Run pending")).FontSize(a.gitFont(10))
 		run.Disabled(busy || pending == 0 || workspace == "" || !filepath.IsAbs(workspace))
-		run.Label("Run pending tasks").Tooltip("Run pending tasks in list order")
+		run.Label(T("Run pending tasks")).Tooltip(T("Run pending tasks in list order"))
 		if run.Clicked() && !busy && pending > 0 {
 			a.startTaskQueue()
 		}
 		phase := a.TaskRun.Phase
 		canStop := busy && phase != "saving" && phase != "committing" && phase != "discarding"
-		stop := dangerButton(c, "Stop").FontSize(a.gitFont(10))
-		stop.Label("Stop task queue").Tooltip("Stop after the current step and leave the task pending")
+		stop := dangerButton(c, T("Stop")).FontSize(a.gitFont(10))
+		stop.Label(T("Stop task queue")).Tooltip(T("Stop after the current step and leave the task pending"))
 		stop.Disabled(!canStop)
 		if stop.Clicked() && canStop {
-			a.stopTaskRun("Stopped by user.")
+			a.stopTaskRun(T("Stopped by user."))
 		}
 		if busy {
-			a.gitCaption(c, "serial queue")
+			a.gitCaption(c, T("serial queue"))
 		}
 	})
 }
@@ -256,7 +255,7 @@ func (a *App) taskRow(c *mui.Context, task taskstore.Task) {
 		}
 
 		item := mui.ButtonBase(c).Grow(1).MinWidth(0).Gap(1).
-			Padding(1, 2).Radius(6).Label("Task " + task.Title)
+			Padding(1, 2).Radius(6).Label(Tf("Task %s", task.Title))
 		item.Children(func() {
 			title := mui.Text(c, truncate(task.Title, 46)).FontSize(a.gitFont(10)).
 				Bold().SingleLine().MinWidth(0)
@@ -283,17 +282,17 @@ func (a *App) taskRow(c *mui.Context, task taskstore.Task) {
 
 		switch task.Status {
 		case taskstore.StatusPending:
-			a.taskIconButton(c, "↑", "Move task up", "Move task up", func() { a.moveTask(task.ID, -1) })
-			a.taskIconButton(c, "↓", "Move task down", "Move task down", func() { a.moveTask(task.ID, 1) })
-			a.taskIconButton(c, "✎", "Edit task", "Edit task", func() { a.openEditTask(task.ID) })
+			a.taskIconButton(c, "↑", T("Move task up"), T("Move task up"), func() { a.moveTask(task.ID, -1) })
+			a.taskIconButton(c, "↓", T("Move task down"), T("Move task down"), func() { a.moveTask(task.ID, 1) })
+			a.taskIconButton(c, "✎", T("Edit task"), T("Edit task"), func() { a.openEditTask(task.ID) })
 		case taskstore.StatusComplete:
-			view := quietButton(c, "View").FontSize(a.gitFont(9)).Label("View task summary")
+			view := quietButton(c, T("View")).FontSize(a.gitFont(9)).Label(T("View task summary"))
 			if view.Clicked() {
 				a.openTaskSummary(task.ID)
 			}
 		}
 		if task.Status != taskstore.StatusOngoing {
-			a.taskIconButton(c, "✕", "Delete task", "Delete task", func() { a.requestDeleteTask(task.ID) })
+			a.taskIconButton(c, "✕", T("Delete task"), T("Delete task"), func() { a.requestDeleteTask(task.ID) })
 		}
 	})
 }
@@ -308,11 +307,11 @@ func (a *App) taskIconButton(c *mui.Context, glyph, label, tip string, fn func()
 }
 
 func (a *App) taskStatusLine(task taskstore.Task) string {
-	line := string(task.Status)
+	line := T(string(task.Status))
 	switch task.Status {
 	case taskstore.StatusOngoing:
 		if task.Rounds > 0 {
-			line += fmt.Sprintf(" · round %d", task.Rounds)
+			line += Tf(" · round %d", task.Rounds)
 		}
 		if task.ID == a.TaskRun.TaskID {
 			if phase := a.taskRunPhaseText(); phase != "" {
@@ -333,9 +332,9 @@ func (a *App) taskStatusLine(task taskstore.Task) string {
 
 func taskResultLabel(task taskstore.Task) string {
 	if task.Result == taskstore.ResultFailure {
-		return "failure"
+		return T("failure")
 	}
-	return "pass"
+	return T("pass")
 }
 
 func taskTimeLabel(value string) string {
@@ -345,16 +344,16 @@ func taskTimeLabel(value string) string {
 	}
 	at = at.Local()
 	if at.Year() == time.Now().Year() {
-		return at.Format("Jan 2 15:04")
+		return at.Format(TS("1月2日 15:04", "Jan 2 15:04"))
 	}
-	return at.Format("Jan 2, 2006 15:04")
+	return at.Format(TS("2006年1月2日 15:04", "Jan 2, 2006 15:04"))
 }
 
 // openNewTask starts the editor for the active workspace.
 func (a *App) openNewTask() {
 	workspace := a.activeTaskWorkspace()
 	if workspace == "" || !filepath.IsAbs(workspace) {
-		a.TaskError = "Choose a workspace before adding a task."
+		a.TaskError = T("Choose a workspace before adding a task.")
 		return
 	}
 	a.TaskEditorOpen = true
@@ -372,7 +371,7 @@ func (a *App) openEditTask(id string) {
 		return
 	}
 	if task.Status != taskstore.StatusPending {
-		a.TaskError = "Only pending tasks can be edited."
+		a.TaskError = T("Only pending tasks can be edited.")
 		return
 	}
 	a.TaskEditorOpen = true
@@ -388,21 +387,21 @@ func (a *App) taskEditorDialog(c *mui.Context) {
 		return
 	}
 	t := c.Theme()
-	heading := "New task"
+	heading := T("New task")
 	if a.TaskEditID != "" {
-		heading = "Edit task"
+		heading = T("Edit task")
 	}
 	mui.Modal(c, &a.TaskEditorOpen, func() {
 		mui.Column(c).Gap(9).Width(460).Children(func() {
 			mui.Text(c, heading).FontSize(a.workspaceFont(16)).Bold()
-			mui.Text(c, "Tasks run serially in list order. Pending tasks can be edited, reordered or deleted.").
+			mui.Text(c, T("Tasks run serially in list order. Pending tasks can be edited, reordered or deleted.")).
 				FontSize(a.workspaceFont(10)).TextColor(t.TextMuted)
 			mui.TextInput(c, &a.TaskEditTitle).
-				Label("Task title").
-				Placeholder("What should the agent do?")
+				Label(T("Task title")).
+				Placeholder(T("What should the agent do?"))
 			mui.TextAreaBase(c, &a.TaskEditText).
-				Label("Task details").
-				Placeholder("Context, files, acceptance criteria…").
+				Label(T("Task details")).
+				Placeholder(T("Context, files, acceptance criteria…")).
 				Lines(6, 12).
 				Padding(6, 8).
 				FontSize(a.workspaceFont(11)).
@@ -413,10 +412,10 @@ func (a *App) taskEditorDialog(c *mui.Context) {
 				mui.Text(c, "⚠ "+a.TaskEditorError).FontSize(a.workspaceFont(10)).TextColor(t.Danger)
 			}
 			mui.Row(c).Gap(8).Justify(mui.End).Children(func() {
-				if quietButton(c, "Cancel").Clicked() {
+				if quietButton(c, T("Cancel")).Clicked() {
 					a.closeTaskEditor()
 				}
-				if primaryButton(c, "Save task").Clicked() {
+				if primaryButton(c, T("Save task")).Clicked() {
 					a.saveTaskEditor()
 				}
 			})
@@ -440,12 +439,12 @@ func (a *App) saveTaskEditor() {
 	title := strings.TrimSpace(a.TaskEditTitle)
 	text := strings.TrimSpace(a.TaskEditText)
 	if title == "" {
-		a.TaskEditorError = "A task needs a title."
+		a.TaskEditorError = T("A task needs a title.")
 		return
 	}
 	workspace := strings.TrimSpace(a.TaskEditWorkspace)
 	if workspace == "" || !filepath.IsAbs(workspace) {
-		a.TaskEditorError = "The task workspace is no longer available."
+		a.TaskEditorError = T("The task workspace is no longer available.")
 		return
 	}
 	if a.TaskEditID == "" {
@@ -457,20 +456,20 @@ func (a *App) saveTaskEditor() {
 			Status:    taskstore.StatusPending,
 			CreatedAt: time.Now().UTC().Format(time.RFC3339),
 		})
-		a.TaskNotice = "Task added."
+		a.TaskNotice = T("Task added.")
 	} else {
 		task := a.taskByID(a.TaskEditID)
 		if task == nil || !sameWorkspace(task.Workspace, workspace) {
-			a.TaskEditorError = "This task is no longer available."
+			a.TaskEditorError = T("This task is no longer available.")
 			return
 		}
 		if task.Status != taskstore.StatusPending {
-			a.TaskEditorError = "Only pending tasks can be edited."
+			a.TaskEditorError = T("Only pending tasks can be edited.")
 			return
 		}
 		task.Title = title
 		task.Text = text
-		a.TaskNotice = "Task updated."
+		a.TaskNotice = T("Task updated.")
 	}
 	a.TaskError = ""
 	a.persistTasks()
@@ -485,7 +484,7 @@ func (a *App) requestDeleteTask(id string) {
 		return
 	}
 	if task.Status == taskstore.StatusOngoing {
-		a.TaskError = "Stop the running task before deleting it."
+		a.TaskError = T("Stop the running task before deleting it.")
 		return
 	}
 	a.TaskDeleteOpen = true
@@ -504,18 +503,18 @@ func (a *App) taskDeleteDialog(c *mui.Context) {
 	}
 	mui.Modal(c, &a.TaskDeleteOpen, func() {
 		mui.Column(c).Gap(10).Width(380).Children(func() {
-			mui.Text(c, "Delete task?").FontSize(a.workspaceFont(16)).Bold()
+			mui.Text(c, T("Delete task?")).FontSize(a.workspaceFont(16)).Bold()
 			mui.Text(c, task.Title).FontSize(a.workspaceFont(12)).Bold()
-			hint := "The task is removed from the queue. Its Markdown summary, if one exists, stays in the workspace tasks folder."
+			hint := T("The task is removed from the queue. Its Markdown summary, if one exists, stays in the workspace tasks folder.")
 			if task.Status != taskstore.StatusComplete {
-				hint = "The task is removed from the queue. This cannot be undone."
+				hint = T("The task is removed from the queue. This cannot be undone.")
 			}
 			mui.Text(c, hint).FontSize(a.workspaceFont(10)).TextColor(t.TextMuted)
 			mui.Row(c).Gap(8).Justify(mui.End).Children(func() {
-				if quietButton(c, "Cancel").Clicked() {
+				if quietButton(c, T("Cancel")).Clicked() {
 					a.closeTaskDelete()
 				}
-				if dangerButton(c, "Delete this task").Clicked() {
+				if dangerButton(c, T("Delete this task")).Clicked() {
 					a.deleteTask(task.ID)
 				}
 			})
@@ -539,7 +538,7 @@ func (a *App) deleteTask(id string) {
 	}
 	task := a.Tasks[index]
 	if task.Status == taskstore.StatusOngoing {
-		a.TaskError = "Stop the running task before deleting it."
+		a.TaskError = T("Stop the running task before deleting it.")
 		a.closeTaskDelete()
 		return
 	}
@@ -548,7 +547,7 @@ func (a *App) deleteTask(id string) {
 		a.closeTaskSummary()
 	}
 	a.TaskError = ""
-	a.TaskNotice = "Task deleted."
+	a.TaskNotice = T("Task deleted.")
 	a.persistTasks()
 	a.closeTaskDelete()
 }
@@ -579,7 +578,7 @@ func (a *App) moveTask(id string, delta int) {
 	}
 	a.Tasks[from], a.Tasks[to] = a.Tasks[to], a.Tasks[from]
 	a.TaskError = ""
-	a.TaskNotice = "Task order updated."
+	a.TaskNotice = T("Task order updated.")
 	a.persistTasks()
 }
 
@@ -604,7 +603,7 @@ func (a *App) openTaskSummary(id string) {
 	gen := a.TaskSummaryGen
 	if strings.TrimSpace(task.SummaryPath) == "" {
 		a.TaskSummaryBusy = false
-		a.TaskSummaryErr = "No summary was saved for this task."
+		a.TaskSummaryErr = T("No summary was saved for this task.")
 		return
 	}
 	workspace := task.Workspace
@@ -666,9 +665,9 @@ func (a *App) taskSummaryCard(c *mui.Context, panel, anchor mui.Element) {
 	if task == nil {
 		return
 	}
-	title := "Task summary · " + a.TaskSummaryTitle
+	title := Tf("Task summary · %s", a.TaskSummaryTitle)
 	if task.Result == taskstore.ResultFailure {
-		title = "Task failure · " + a.TaskSummaryTitle
+		title = Tf("Task failure · %s", a.TaskSummaryTitle)
 	}
 	var save func(string)
 	if strings.TrimSpace(a.TaskSummaryPath) != "" && !a.TaskSummaryBusy && a.TaskSummaryErr == "" {
@@ -698,12 +697,12 @@ func (a *App) taskSummaryCard(c *mui.Context, panel, anchor mui.Element) {
 		Notice:         a.TaskSummaryNotice,
 		Busy:           a.TaskSummaryBusy,
 		Err:            a.TaskSummaryErr,
-		BusyText:       "Reading summary…",
-		ErrorTitle:     "Cannot show this summary",
-		EmptyViewTitle: "Summary is empty",
-		EmptyViewText:  "The checker saved no Markdown for this task.",
-		EmptyDiffTitle: "Summary is empty",
-		EmptyDiffText:  "There is no text to compare yet.",
+		BusyText:       T("Reading summary…"),
+		ErrorTitle:     T("Cannot show this summary"),
+		EmptyViewTitle: T("Summary is empty"),
+		EmptyViewText:  T("The checker saved no Markdown for this task."),
+		EmptyDiffTitle: T("Summary is empty"),
+		EmptyDiffText:  T("There is no text to compare yet."),
 		HeightPercent:  80,
 	})
 }
@@ -735,7 +734,7 @@ func (a *App) saveTaskSummary(text string) {
 				return
 			}
 			a.TaskSummaryBody = text
-			a.TaskSummaryNotice = "Saved."
+			a.TaskSummaryNotice = T("Saved.")
 			a.refreshAfterFileSave(workspace)
 		})
 	}()

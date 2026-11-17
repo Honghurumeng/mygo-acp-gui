@@ -9,7 +9,9 @@ import (
 	"runtime"
 
 	"github.com/egoist/mygo"
+	_ "github.com/egoist/mygo/locales/zh-Hans" // MyGo's own strings in Chinese
 	"github.com/egoist/mygo/ui"
+	"github.com/reed/acp-gui/internal/i18n"
 	appui "github.com/reed/acp-gui/internal/ui"
 )
 
@@ -17,6 +19,20 @@ func main() {
 	app := mygo.App
 	// Set the name before anything reads the data directory.
 	app.SetName("ACP GUI")
+	// Declare the languages the app is written in, so MyGo's own controls,
+	// menus and dialogs pick between them with the app's texts (internal/i18n
+	// says those). SetLocale then shows the one the settings chose.
+	app.SetLanguages(i18n.Languages...)
+
+	// applyLocale gives MyGo's own strings the language the app shows: the
+	// setting, or the user's preference when it follows the system.
+	applyLocale := func(setting string) {
+		if setting == i18n.System {
+			app.SetLocale("")
+			return
+		}
+		app.SetLocale(setting)
+	}
 
 	var gui *appui.App
 	var win *mygo.Window
@@ -70,9 +86,11 @@ func main() {
 			log.Printf("data: %v", err)
 		}
 		gui = appui.New(appui.Options{
-			Version:   app.Version(),
-			Resources: resources,
-			DataDir:   dataDir,
+			Version:            app.Version(),
+			Resources:          resources,
+			DataDir:            dataDir,
+			PreferredLanguages: app.PreferredLanguages(),
+			OnLanguage:         applyLocale,
 		})
 		openWindow()
 	})
@@ -99,6 +117,14 @@ func main() {
 		}
 	})
 	app.OnDidBecomeActive(func() { mygo.ClearNotifications() })
+
+	// A System language choice follows the user's languages, also when the
+	// desktop changes them while the app runs.
+	app.OnLocaleChanged(func(string) {
+		if gui != nil {
+			gui.PreferredLanguagesChanged(app.PreferredLanguages())
+		}
+	})
 
 	// Quitting stops the agents: every session's process group is closed.
 	app.OnBeforeQuit(func(*mygo.QuitEvent) { quitting = true })

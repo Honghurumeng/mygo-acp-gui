@@ -2,11 +2,10 @@
 
 ## 目标
 用 Go + MyGo 做原生 ACP GUI：检测内置的 pi / command-code / codex 是否可用，选择 agent 和工作区后聊天。
-当前实现是仓库根目录的 Go + MyGo 工程。
 
 ## 文档规则
-- 本文件最多 40 行，只放目标、铁律和文档索引。
-- 其余设计必须写进 `docs/design/` 下的单独文档；只要会超过 40 行，绝对改用单独文档记录。
+- 本文件最多 50 行，只放目标、铁律和文档索引。
+- 其余设计必须写进 `docs/design/` 下的单独文档；只要会超过 50 行，绝对改用单独文档记录。
 - 新增或修改设计后，同步更新下面的索引和对应文档。
 
 ## 设计文档
@@ -27,6 +26,7 @@
 - `docs/design/components.md`：本地 UI 组件层（widgets.go 样式、components.go 有状态组件、图标子集）、交互约定。
 - `docs/design/themes.md`：外观（system/light/dark）、主题目录（default/nord/solarized/catppuccin/claude/green/green-soft/vscode/everforest/one-dark/tokyo-night）、持久化、原生外观同步。
 - `docs/design/fonts.md`：分区字体大小（workspace 列表、对话流、输入框、Git 面板）、百分比缩放、持久化。
+- `docs/design/i18n.md`：中英双语（系统/en/zh-Hans）、`T`/`Tf`/`TS`、词典与 MyGo 自带文案、设置面板切换、翻译校验。
 - `docs/design/plan.md`：测试、MVP 范围、后续、非目标、待定问题、参考链接。
 
 ## 铁律
@@ -35,5 +35,5 @@
 - 退出清理 agent 进程组；initialize 探测 5 秒超时，配置探测异步执行，失败不阻塞启动。
 - 不做 registry 全量发现/在线目录/自动安装；只支持内置表，新 agent 走代码 + 发版。
 - pi / codex 不走 npx；直接用 `resources/agents/{pi-acp,codex-acp}/*.bundle.mjs`，不在启动时打包；pi 重打走 `scripts/vendor-pi-acp-local.sh` 或 `scripts/vendor-pi-acp.sh`，codex 重打走 `scripts/vendor-codex-acp-local.sh`（本地补丁源码，`CODEX_PATH` 指向系统 codex）。
-- 任务串行执行；每个任务新建 executor 会话，判断另起隔离 checker 进程并携带前几轮上下文；成功只 commit 一次，失败回滚改动并标记 complete/failure，不 push。
 - 每次打包发版前先升级 `mygo.json` 的 `version`（semver，当前从 0.4.0 起），并同步 `docs/design/architecture.md` 的版本号，再执行 `go tool mygo build`。
+- 对页面UI进行修改时，需要同步修改i18n。

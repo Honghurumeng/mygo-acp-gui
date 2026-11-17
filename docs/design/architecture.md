@@ -47,6 +47,7 @@ MyGo 原生窗口 (Go + ui)
   internal/files/          workspace 文件树、文本读取/保存与新建/重命名/移动/删除（不经过 shell）
   internal/tasks/          tasks.json 任务索引 + workspace/tasks/*.md 总结读写
   internal/logs/           每个 agent 的滚动日志文件（已实现）
+  internal/i18n/           应用文案词典（英文原文为 key，zh-Hans.json 内置）、语言解析与 Set/T/Tf（见 i18n.md）
   internal/git/            Git 探测、status 解析、提交、本地分支创建/切换、远端操作、任务失败回滚快照（不经过 shell）
   internal/ui/             多会话侧栏、聊天、流式 Markdown、权限队列、系统通知、Dock 角标、Git / Files 面板、主题系统、窗口更新（已实现）
   internal/ui/icons/       pi / Command Code / Codex 图标（SVG，侧栏 + 标题栏）
@@ -66,7 +67,7 @@ MyGo 原生窗口 (Go + ui)
 - `go.mod`：module `github.com/reed/acp-gui`，Go 1.27.3（`GOTOOLCHAIN=auto` 会自动拉取）。
 - MyGo CLI 通过 `tool github.com/egoist/mygo/cmd/mygo` 固定在 `go.mod`，统一用 `go tool mygo`。
 - 无前端构建：原生 UI，入口 `main.go`，配置在 `mygo.json`。
-- App：name `ACP GUI`、slug `acp-gui`、identifier `dev.reed.acp-gui`、version `0.5.0`。
+- App：name `ACP GUI`、slug `acp-gui`、identifier `dev.reed.acp-gui`、version `0.6.0`。
 - `go tool mygo build` 产物在 `build/<os>-<arch>/`（已 gitignore）；`resources/` 整目录进 `.app`。
 - 当前已实现 `internal/acp`、`internal/agent`、`internal/session`、`internal/archive`、`internal/ui` 的 MVP 链路（见下方“当前链路”）。
 
@@ -199,8 +200,8 @@ logs/                每个 agent 的 stderr / 协议日志（1 MiB 滚动，保
 
 `settings.json` 由 `internal/settings` 读写：
 
-- 结构：`{version, lastAgent, lastWorkspace, workspaces, removedWorkspaces, lastSelections, appearance, theme, notifications, dockBadge, paths:{shell,node,pi,commandCode,codex}, codexProvider:{enabled,name,baseURL,apiKey,models,contextWindow,autoCompactPercent,reasoningEfforts,titleModel}}`。`workspaces` 保留全部已知目录（含软删除项），`removedWorkspaces` 是软删除标记，二者都按侧栏顺序保存；`lastSelections` 按 agent ID 保存 `{configOptions:{id:value}, mode}`（模型、thinking、其他 select 和 session mode，见 [features.md](features.md)）；`appearance`/`theme` 缺省为 `system`/`default`（见 [themes.md](themes.md)）；`notifications` 和 `dockBadge` 缺省为 true，显式 false 会持久化。
-- 保存时机：切换会话、选择 agent/目录/model/thinking/mode、添加/移除/恢复工作区、切换设置面板里的外观/主题/系统通知/Dock 角标、保存 Codex 自定义供应商（含推理档位复选框）、Connect 校验成功、退出。写入是原子的（同目录临时文件 + rename，0600），父目录不存在时创建。
+- 结构：`{version, lastAgent, lastWorkspace, workspaces, removedWorkspaces, lastSelections, appearance, theme, language, notifications, dockBadge, paths:{shell,node,pi,commandCode,codex}, codexProvider:{enabled,name,baseURL,apiKey,models,contextWindow,autoCompactPercent,reasoningEfforts,titleModel}}`。`workspaces` 保留全部已知目录（含软删除项），`removedWorkspaces` 是软删除标记，二者都按侧栏顺序保存；`lastSelections` 按 agent ID 保存 `{configOptions:{id:value}, mode}`（模型、thinking、其他 select 和 session mode，见 [features.md](features.md)）；`appearance`/`theme` 缺省为 `system`/`default`（见 [themes.md](themes.md)）；`language` 缺省为空（跟随系统），可选 `system`/`en`/`zh-Hans`（见 [i18n.md](i18n.md)）；`notifications` 和 `dockBadge` 缺省为 true，显式 false 会持久化。
+- 保存时机：切换会话、选择 agent/目录/model/thinking/mode、添加/移除/恢复工作区、切换设置面板里的语言/外观/主题/系统通知/Dock 角标、保存 Codex 自定义供应商（含推理档位复选框）、Connect 校验成功、退出。写入是原子的（同目录临时文件 + rename，0600），父目录不存在时创建。
 - 加载容错：文件缺失用默认值；JSON 损坏、相对路径、未来版本只产生警告（标题栏/侧栏显示），其余字段照常使用，绝不阻塞启动。
 - 路径优先级：`ACP_GUI_*` 环境变量 > `settings.json` 的 `paths` > 登录 shell 解析。显式覆盖无效时保留 shell 结果并警告，不会把可用的路径清空。
 - `codexProvider` 只对新建的 Codex 子进程生效，不写 `~/.codex/config.toml`；`apiKey` 存在 0600 的 settings.json 中，只通过 `ACP_GUI_CODEX_PROVIDER_API_KEY` 传给孩子进程。provider 开启且模型非空时，`settings.json` 之外的 `<data>/codex-models.json` 由 `internal/codexprovider` 原子生成，路径写入子进程的 `CODEX_CONFIG.model_catalog_json`；关闭 provider 或清空模型时删除该文件。可选的 `contextWindow`/`autoCompactPercent` 会写入 `CODEX_CONFIG.model_context_window`/`model_auto_compact_token_limit`，catalog 使用同一上下文和换算后的 token 阈值；provider 关闭时这两个限制仍可单独覆盖。`reasoningEfforts` 缺省为单一的 `medium`，保存时至少勾选一项。非法 Base URL、模型 id、上下文或压缩比例在加载时警告并禁用该条，保存时拒绝。详见 [codex-provider.md](codex-provider.md)。

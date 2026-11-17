@@ -72,7 +72,7 @@ func imageCountLabel(n int) string {
 	if n == 1 {
 		return "1 image"
 	}
-	return fmt.Sprintf("%d images", n)
+	return Tf("%d images", n)
 }
 
 // jumpEntryTime is the compact send time shown at the right of a history
@@ -94,9 +94,9 @@ func formatJumpTime(sentAt, now time.Time) string {
 	case local.Year() == now.Year() && local.YearDay() == now.YearDay():
 		return local.Format("15:04")
 	case local.Year() == now.Year():
-		return local.Format("Jan 2 15:04")
+		return local.Format(TS("1月2日 15:04", "Jan 2 15:04"))
 	default:
-		return local.Format("Jan 2, 2006 15:04")
+		return local.Format(TS("2006年1月2日 15:04", "Jan 2, 2006 15:04"))
 	}
 }
 
@@ -114,11 +114,11 @@ func truncateRunes(text string, limit int) string {
 // left of the input card, after the attach button.
 func (a *App) jumpButton(c *mui.Context, chat *Chat) {
 	count := chat.userMessageCount()
-	button := a.composerControl(quietButton(c, "Jump").Label("Jump to your message").FontSize(a.composerFont(10)))
+	button := a.composerControl(quietButton(c, T("Jump")).Label(T("Jump to your message")).FontSize(a.composerFont(10)))
 	if count == 0 {
-		button.Tooltip("No messages of yours to jump to yet")
+		button.Tooltip(T("No messages of yours to jump to yet"))
 	} else {
-		button.Tooltip("Jump to one of your previous messages")
+		button.Tooltip(T("Jump to one of your previous messages"))
 	}
 	button.Disabled(count == 0)
 	if button.Clicked() {
@@ -152,26 +152,26 @@ func (a *App) jumpDialog(c *mui.Context, chat *Chat) {
 	mui.Modal(c, &chat.JumpOpen, func() {
 		mui.Column(c).Width(560).Gap(8).Children(func() {
 			mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-				mui.Text(c, "Jump to a message").FontSize(a.chatFont(16)).Bold().Grow(1)
+				mui.Text(c, T("Jump to a message")).FontSize(a.chatFont(16)).Bold().Grow(1)
 				if len(entries) > 0 {
-					label := fmt.Sprintf("%d message", len(entries))
+					label := Tf("%d message", len(entries))
 					if len(entries) != 1 {
 						label += "s"
 					}
 					a.chatCaption(c, label)
 				}
 			})
-			mutedText(c, "Your messages in this conversation, oldest first. Choose one to scroll to it.", a.chatFont(10))
+			mutedText(c, T("Your messages in this conversation, oldest first. Choose one to scroll to it."), a.chatFont(10))
 			switch {
 			case len(entries) == 0:
-				mutedText(c, "No messages of yours yet.", a.chatFont(11))
+				mutedText(c, T("No messages of yours yet."), a.chatFont(11))
 			default:
 				mui.Scroll(c).TrackScroll(&chat.jumpScroll).MaxHeight(listMaxHeight).Gap(2).Children(func() {
 					for _, entry := range entries {
 						entry := entry
 						item := mui.ButtonBase(c).FillWidth().Gap(8).AlignItems(mui.Center).
 							Justify(mui.Start).Padding(6, 8).Radius(6).
-							Label(fmt.Sprintf("Jump to message %d", entry.number))
+							Label(Tf("Jump to message %d", entry.number))
 						if item.Hovered() {
 							item.Background(t.Surface)
 						}
@@ -180,14 +180,14 @@ func (a *App) jumpDialog(c *mui.Context, chat *Chat) {
 								Width(24).TextAlign(mui.End).Shrink(0)
 							text := jumpEntryText(entry.msg)
 							if text == "" {
-								text = "(empty message)"
+								text = T("(empty message)")
 							}
 							mui.Text(c, text).FontSize(a.chatFont(11)).Grow(1).SingleLine()
 							stamp := mutedText(c, jumpEntryTime(entry.msg), a.chatFont(9)).Shrink(0)
 							if entry.msg != nil && !entry.msg.SentAt.IsZero() {
-								stamp.Tooltip("Sent " + entry.msg.SentAt.Local().Format("2006-01-02 15:04:05"))
+								stamp.Tooltip(Tf("Sent %s", entry.msg.SentAt.Local().Format("2006-01-02 15:04:05")))
 							} else {
-								stamp.Tooltip("Send time not recorded; this message came from the agent's history")
+								stamp.Tooltip(T("Send time not recorded; this message came from the agent's history"))
 							}
 							mutedText(c, "→", a.chatFont(10)).Shrink(0)
 						})
@@ -199,7 +199,7 @@ func (a *App) jumpDialog(c *mui.Context, chat *Chat) {
 				})
 			}
 			mui.Row(c).Justify(mui.End).Children(func() {
-				if quietButton(c, "Close").Clicked() {
+				if quietButton(c, T("Close")).Clicked() {
 					chat.JumpOpen = false
 				}
 			})

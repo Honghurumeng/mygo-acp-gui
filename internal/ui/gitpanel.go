@@ -320,7 +320,7 @@ func (a *App) runGitAction(label string, requireRepo bool, fn func(context.Conte
 			}
 			a.Git.Busy = ""
 			if err != nil {
-				a.Git.Error = label + ": " + gitErrorText(err)
+				a.Git.Error = T(label) + ": " + gitErrorText(err)
 			} else {
 				a.Git.Notice = gitNoticeFor(label)
 				if label == "Commit" {
@@ -346,19 +346,19 @@ func gitTimeoutFor(label string) time.Duration {
 func gitNoticeFor(label string) string {
 	switch label {
 	case "Initialize repository":
-		return "Repository initialized."
+		return T("Repository initialized.")
 	case "Commit":
-		return "Committed."
+		return T("Committed.")
 	case "Fetch":
-		return "Fetched."
+		return T("Fetched.")
 	case "Pull":
-		return "Pulled."
+		return T("Pulled.")
 	case "Push":
-		return "Pushed."
+		return T("Pushed.")
 	case "Undo last commit":
-		return "Last commit undone; changes stay staged."
+		return T("Last commit undone; changes stay staged.")
 	case "Discard all":
-		return "Discarded all changes."
+		return T("Discarded all changes.")
 	default:
 		return ""
 	}
@@ -369,10 +369,10 @@ func gitErrorText(err error) string {
 		return ""
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
-		return "git timed out"
+		return T("git timed out")
 	}
 	if errors.Is(err, context.Canceled) {
-		return "git cancelled"
+		return T("git cancelled")
 	}
 	return strings.TrimSpace(err.Error())
 }
@@ -402,7 +402,7 @@ func (a *App) gitPanelHeader(c *mui.Context) {
 					mui.Spinner(c)
 				}
 				if a.Git.Busy != "" {
-					a.gitCaption(c, a.Git.Busy+"…")
+					a.gitCaption(c, T(a.Git.Busy)+"…")
 				}
 				mui.Spacer(c)
 				a.gitBehindBadge(c)
@@ -469,13 +469,13 @@ func (a *App) gitHeaderLine() (string, string) {
 	}
 	switch {
 	case !a.Git.Checked:
-		return "Reading…", ""
+		return T("Reading…"), ""
 	case !a.Git.Available:
-		return "git not found", ""
+		return T("git not found"), ""
 	case a.Git.NoRepo:
-		return "No repository", ""
+		return T("No repository"), ""
 	case a.Git.Error != "" && a.Git.RepoRoot == "":
-		return "Error", a.Git.Error
+		return T("Error"), a.Git.Error
 	case a.Git.RepoRoot != "":
 		label := filepath.Base(a.Git.RepoRoot)
 		if label == "" || label == "." || label == string(filepath.Separator) {
@@ -490,7 +490,7 @@ func (a *App) gitHeaderLine() (string, string) {
 		}
 		return line, a.Git.RepoRoot
 	default:
-		return "Reading…", ""
+		return T("Reading…"), ""
 	}
 }
 
@@ -500,11 +500,11 @@ func (a *App) gitHeaderLine() (string, string) {
 func (a *App) gitHeaderBranch(c *mui.Context, line, tip string) {
 	t := c.Theme()
 	state := &a.Git.BranchPicker
-	button := buttonBase(c, "Switch Git branch").Padding(0, 0).Radius(4)
+	button := buttonBase(c, T("Switch Git branch")).Padding(0, 0).Radius(4)
 	if tip != "" {
-		button.Tooltip(tip + " · Click to switch branch")
+		button.Tooltip(tip + " · " + T("Click to switch branch"))
 	} else {
-		button.Tooltip("Click to switch branch")
+		button.Tooltip(T("Click to switch branch"))
 	}
 	if button.Hovered() || state.Open {
 		button.Background(t.SurfaceHover)
@@ -604,7 +604,7 @@ func (a *App) gitPanelBody(c *mui.Context) {
 func (a *App) gitLoading(c *mui.Context) {
 	mui.Column(c).Grow(1).Center().Gap(8).Children(func() {
 		mui.Spinner(c)
-		mutedText(c, "Reading repository…", a.gitFont(10))
+		mutedText(c, T("Reading repository…"), a.gitFont(10))
 	})
 }
 
@@ -612,9 +612,9 @@ func (a *App) gitUnavailable(c *mui.Context) {
 	t := c.Theme()
 	workspace := a.Git.Workspace
 	mui.Column(c).Grow(1).Padding(14, 14).Gap(8).Children(func() {
-		mui.Text(c, "Git is not installed.").FontSize(a.gitFont(13)).Bold().TextColor(t.Warning)
-		mutedText(c, "Install Git, make sure it is on PATH, then refresh.", a.gitFont(10))
-		if quietButton(c, "Refresh").FontSize(a.gitFont(10)).Clicked() {
+		mui.Text(c, T("Git is not installed.")).FontSize(a.gitFont(13)).Bold().TextColor(t.Warning)
+		mutedText(c, T("Install Git, make sure it is on PATH, then refresh."), a.gitFont(10))
+		if quietButton(c, T("Refresh")).FontSize(a.gitFont(10)).Clicked() {
 			a.startGitLoad(workspace, true)
 		}
 	})
@@ -624,12 +624,12 @@ func (a *App) gitNoRepository(c *mui.Context) {
 	workspace := a.Git.Workspace
 	busy := a.Git.Busy != "" || a.Git.Loading
 	mui.Column(c).Grow(1).Padding(14, 14).Gap(8).Children(func() {
-		mui.Text(c, "Not a Git repository").FontSize(a.gitFont(13)).Bold()
-		mutedText(c, "This workspace is not inside a Git repository.", a.gitFont(10))
+		mui.Text(c, T("Not a Git repository")).FontSize(a.gitFont(13)).Bold()
+		mutedText(c, T("This workspace is not inside a Git repository."), a.gitFont(10))
 		mutedText(c, workspace, a.gitFont(9)).Selectable()
-		button := primaryButton(c, "Initialize Git repository").FontSize(a.gitFont(10))
+		button := primaryButton(c, T("Initialize Git repository")).FontSize(a.gitFont(10))
 		button.Disabled(busy)
-		button.Tooltip("Run git init in this workspace")
+		button.Tooltip(T("Run git init in this workspace"))
 		if button.Clicked() && !busy {
 			a.runGitAction("Initialize repository", false, func(ctx context.Context, dir string) error {
 				return git.Init(ctx, dir)
@@ -638,7 +638,7 @@ func (a *App) gitNoRepository(c *mui.Context) {
 		if a.Git.Busy != "" {
 			mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
 				mui.Spinner(c)
-				a.gitCaption(c, a.Git.Busy+"…")
+				a.gitCaption(c, T(a.Git.Busy)+"…")
 			})
 		}
 		if a.Git.Error != "" {
@@ -651,10 +651,10 @@ func (a *App) gitInitialError(c *mui.Context) {
 	t := c.Theme()
 	workspace := a.Git.Workspace
 	mui.Column(c).Grow(1).Padding(14, 14).Gap(8).Children(func() {
-		mui.Text(c, "Git unavailable").FontSize(a.gitFont(13)).Bold().TextColor(t.Danger)
+		mui.Text(c, T("Git unavailable")).FontSize(a.gitFont(13)).Bold().TextColor(t.Danger)
 		message := truncate(singleLine(a.Git.Error), 240)
 		mui.Text(c, message).FontSize(a.gitFont(10)).TextColor(t.Danger).Selectable().Tooltip(a.Git.Error)
-		if quietButton(c, "Refresh").FontSize(a.gitFont(10)).Clicked() {
+		if quietButton(c, T("Refresh")).FontSize(a.gitFont(10)).Clicked() {
 			a.startGitLoad(workspace, true)
 		}
 	})
@@ -666,8 +666,8 @@ func (a *App) gitCommitBox(c *mui.Context) {
 	staged := len(a.Git.Staged)
 	mui.Column(c).Gap(6).Padding(6, 12, 6, 12).Children(func() {
 		mui.TextAreaBase(c, &a.Git.Message).
-			Label("Commit message").
-			Placeholder("Commit message").
+			Label(T("Commit message")).
+			Placeholder(T("Commit message")).
 			Lines(2, 4).
 			Padding(5, 7).
 			// The same size as the Staged/Changes rows: the Git panel's one
@@ -677,10 +677,10 @@ func (a *App) gitCommitBox(c *mui.Context) {
 			Border(1, t.Border).
 			Background(t.Background).
 			Disabled(busy)
-		button := primaryButton(c, "Commit").FontSize(a.gitFont(10)).FillWidth()
+		button := primaryButton(c, T("Commit")).FontSize(a.gitFont(10)).FillWidth()
 		disabled := busy || staged == 0 || strings.TrimSpace(a.Git.Message) == ""
 		button.Disabled(disabled)
-		button.Tooltip("Commit the staged changes")
+		button.Tooltip(T("Commit the staged changes"))
 		if button.Clicked() && !disabled {
 			message := strings.TrimSpace(a.Git.Message)
 			a.runGitAction("Commit", true, func(ctx context.Context, root string) error {
@@ -724,9 +724,9 @@ func (a *App) gitChanges(c *mui.Context) {
 			// Leave room for the overlay scrollbar so it never covers the
 			// stage/unstage button of a row.
 			mui.Column(c).Gap(3).Padding(0, gitListGutter, 0, 0).Children(func() {
-				a.gitSectionHeader(c, "Staged", len(staged), gitSectionAction{
-					label: "Unstage all",
-					tip:   "Unstage all files in this section",
+				a.gitSectionHeader(c, T("Staged"), len(staged), gitSectionAction{
+					label: T("Unstage all"),
+					tip:   T("Unstage all files in this section"),
 					show:  len(staged) > 0,
 					fn: func() {
 						a.runGitAction("Unstage all", true, func(ctx context.Context, root string) error {
@@ -735,7 +735,7 @@ func (a *App) gitChanges(c *mui.Context) {
 					},
 				})
 				if len(staged) == 0 {
-					a.gitCaption(c, "No staged changes")
+					a.gitCaption(c, T("No staged changes"))
 				} else {
 					for _, file := range staged {
 						a.gitFileRow(c, file, true)
@@ -743,17 +743,17 @@ func (a *App) gitChanges(c *mui.Context) {
 				}
 
 				mui.Box(c).Height(6)
-				a.gitSectionHeader(c, "Changes", len(changes),
+				a.gitSectionHeader(c, T("Changes"), len(changes),
 					gitSectionAction{
-						label:  "Discard all",
-						tip:    "Discard every staged and unstaged change; asks first",
+						label:  T("Discard all"),
+						tip:    T("Discard every staged and unstaged change; asks first"),
 						danger: true,
 						show:   len(staged) > 0 || len(changes) > 0,
 						fn:     func() { a.Git.DiscardOpen = true },
 					},
 					gitSectionAction{
-						label: "Stage all",
-						tip:   "Stage all files in this section",
+						label: T("Stage all"),
+						tip:   T("Stage all files in this section"),
 						show:  len(changes) > 0,
 						fn: func() {
 							a.runGitAction("Stage all", true, func(ctx context.Context, root string) error {
@@ -763,7 +763,7 @@ func (a *App) gitChanges(c *mui.Context) {
 					},
 				)
 				if len(changes) == 0 {
-					a.gitCaption(c, "No changes")
+					a.gitCaption(c, T("No changes"))
 				} else {
 					for _, file := range changes {
 						a.gitFileRow(c, file, false)
@@ -837,7 +837,7 @@ func (a *App) gitFileRow(c *mui.Context, file git.File, staged bool) {
 	mui.Row(c).Gap(4).AlignItems(mui.Center).Children(func() {
 		mui.Text(c, code).Font("monospace").FontSize(a.gitFont(8)).TextColor(color)
 		preview := mui.ButtonBase(c).Gap(5).Grow(1).Padding(1, 2).Radius(4).
-			Justify(mui.Start).Label("Diff of " + path)
+			Justify(mui.Start).Label(Tf("Diff of %s", path))
 		switch {
 		case preview.Pressed():
 			preview.Background(t.SurfacePressed)
@@ -859,9 +859,9 @@ func (a *App) gitFileRow(c *mui.Context, file git.File, staged bool) {
 		if preview.Clicked() {
 			a.openGitPreview(file, staged)
 		}
-		label, action := "＋", "Stage "
+		label, action := "＋", T("Stage ")
 		if staged {
-			label, action = "－", "Unstage "
+			label, action = "－", T("Unstage ")
 		}
 		button := quietButton(c, label).Label(action + path).FontSize(a.gitFont(9))
 		button.Disabled(busy)
@@ -987,7 +987,7 @@ func (a *App) saveGitPreview(text string) {
 				return
 			}
 			a.Git.PreviewNew = text
-			a.Git.PreviewNotice = "Saved."
+			a.Git.PreviewNotice = T("Saved.")
 			a.refreshAfterFileSave(workspace)
 		})
 	}()
@@ -1122,25 +1122,25 @@ func (a *App) gitGraph(c *mui.Context) {
 	busy := a.Git.Busy != "" || a.Git.Loading
 	mui.Column(c).FillHeight().BorderWidth(1, 0, 0, 0).BorderColor(t.Border).Children(func() {
 		mui.Row(c).Gap(2).AlignItems(mui.Center).Padding(4, 8, 4, 8).Children(func() {
-			a.gitToolButton(c, "Fetch", "Fetch from the remote", busy, func() {
+			a.gitToolButton(c, T("Fetch"), T("Fetch from the remote"), busy, func() {
 				a.runGitAction("Fetch", true, func(ctx context.Context, root string) error {
 					return git.Fetch(ctx, root)
 				})
 			})
-			a.gitToolButton(c, "Pull", "Pull the current branch; uses a same-named remote branch when it has no upstream", busy, func() {
+			a.gitToolButton(c, T("Pull"), T("Pull the current branch; uses a same-named remote branch when it has no upstream"), busy, func() {
 				a.runGitAction("Pull", true, func(ctx context.Context, root string) error {
 					return git.PullBranch(ctx, root)
 				})
 			})
-			a.gitToolButton(c, "Push", "Push the current branch; sets its upstream when it has none", busy, func() {
+			a.gitToolButton(c, T("Push"), T("Push the current branch; sets its upstream when it has none"), busy, func() {
 				a.runGitAction("Push", true, func(ctx context.Context, root string) error {
 					return git.PushBranch(ctx, root)
 				})
 			})
-			a.gitToolButton(c, "Refresh", "Reload status and graph", busy, func() {
+			a.gitToolButton(c, T("Refresh"), T("Reload status and graph"), busy, func() {
 				a.startGitLoad(a.Git.Workspace, true)
 			})
-			a.gitToolButton(c, "Undo", "Undo the last commit (soft reset)", busy || !a.Git.HasCommits, func() {
+			a.gitToolButton(c, T("Undo"), T("Undo the last commit (soft reset)"), busy || !a.Git.HasCommits, func() {
 				a.runGitAction("Undo last commit", true, func(ctx context.Context, root string) error {
 					return git.UndoLastCommit(ctx, root)
 				})
@@ -1167,15 +1167,15 @@ func (a *App) gitDiscardDialog(c *mui.Context) {
 	confirm := false
 	mui.Modal(c, &a.Git.DiscardOpen, func() {
 		mui.Column(c).Gap(10).Width(380).Children(func() {
-			mui.Text(c, "Discard all changes?").FontSize(a.gitFont(16)).Bold()
-			mui.Text(c, "Tracked files go back to the last commit, and untracked files and folders are deleted. Ignored files stay. This cannot be undone.").
+			mui.Text(c, T("Discard all changes?")).FontSize(a.gitFont(16)).Bold()
+			mui.Text(c, T("Tracked files go back to the last commit, and untracked files and folders are deleted. Ignored files stay. This cannot be undone.")).
 				FontSize(a.gitFont(11)).TextColor(t.TextMuted)
-			mutedText(c, fmt.Sprintf("%d staged · %d unstaged", len(a.Git.Staged), len(a.Git.Changes)), a.gitFont(10))
+			mutedText(c, Tf("%d staged · %d unstaged", len(a.Git.Staged), len(a.Git.Changes)), a.gitFont(10))
 			mui.Row(c).Gap(8).Justify(mui.End).Children(func() {
-				if quietButton(c, "Cancel").Clicked() {
+				if quietButton(c, T("Cancel")).Clicked() {
 					a.Git.DiscardOpen = false
 				}
-				if dangerButton(c, "Discard").Disabled(busy).Clicked() {
+				if dangerButton(c, T("Discard")).Disabled(busy).Clicked() {
 					confirm = true
 					a.Git.DiscardOpen = false
 				}
@@ -1215,22 +1215,22 @@ func (a *App) gitBranchCreateDialog(c *mui.Context) {
 	}
 	mui.Modal(c, &a.Git.BranchCreateOpen, func() {
 		mui.Column(c).Gap(9).Width(400).Children(func() {
-			mui.Text(c, "Create branch").FontSize(a.gitFont(16)).Bold()
-			mui.Text(c, "At "+base).FontSize(a.gitFont(10)).
+			mui.Text(c, T("Create branch")).FontSize(a.gitFont(16)).Bold()
+			mui.Text(c, Tf("At %s", base)).FontSize(a.gitFont(10)).
 				TextColor(t.TextMuted).SingleLine().Selectable().
 				Tooltip(a.Git.BranchCreateBase)
-			mui.TextInput(c, &a.Git.BranchCreateName).Label("Branch name").
+			mui.TextInput(c, &a.Git.BranchCreateName).Label(T("Branch name")).
 				Placeholder("feature/name")
-			mutedText(c, "The branch starts at this commit; the work tree and the current branch stay as they are.", a.gitFont(9))
+			mutedText(c, T("The branch starts at this commit; the work tree and the current branch stay as they are."), a.gitFont(9))
 			if a.Git.BranchCreateErr != "" {
 				mui.Text(c, "⚠ "+truncate(singleLine(a.Git.BranchCreateErr), 240)).
 					FontSize(a.gitFont(10)).TextColor(t.Danger).MaxLines(3)
 			}
 			mui.Row(c).Gap(8).Justify(mui.End).Children(func() {
-				if quietButton(c, "Cancel").Clicked() {
+				if quietButton(c, T("Cancel")).Clicked() {
 					a.closeGitBranchCreate()
 				}
-				create := primaryButton(c, "Create")
+				create := primaryButton(c, T("Create"))
 				create.Disabled(busy || strings.TrimSpace(a.Git.BranchCreateName) == "")
 				if create.Clicked() && !busy {
 					a.submitGitBranchCreate()
@@ -1253,11 +1253,11 @@ func (a *App) submitGitBranchCreate() {
 	workspace, root := a.Git.Workspace, a.Git.RepoRoot
 	name, base := strings.TrimSpace(a.Git.BranchCreateName), a.Git.BranchCreateBase
 	if workspace == "" || root == "" || base == "" {
-		a.Git.BranchCreateErr = "The repository is no longer available."
+		a.Git.BranchCreateErr = T("The repository is no longer available.")
 		return
 	}
 	if name == "" {
-		a.Git.BranchCreateErr = "Enter a branch name."
+		a.Git.BranchCreateErr = T("Enter a branch name.")
 		return
 	}
 	a.Git.Gen++
@@ -1281,7 +1281,7 @@ func (a *App) submitGitBranchCreate() {
 			}
 			a.closeGitBranchCreate()
 			a.Git.BranchPicker.close()
-			a.Git.Notice = "Branch " + name + " created."
+			a.Git.Notice = Tf("Branch %s created.", name)
 			a.startGitLoad(workspace, false)
 		})
 	}()
@@ -1292,20 +1292,20 @@ func (a *App) submitGitBranchCreate() {
 func (a *App) gitPreviewTitle(mode viewerMode) string {
 	switch {
 	case a.Git.PreviewCommit != "":
-		return "Commit " + shortCommitHash(a.Git.PreviewCommit) + " · " + a.Git.PreviewPath
+		return Tf("Commit %s · %s", shortCommitHash(a.Git.PreviewCommit), a.Git.PreviewPath)
 	case a.Git.PreviewStaged:
 		if mode == viewerView || mode == viewerEdit {
-			return "Staged file · " + a.Git.PreviewPath
+			return Tf("Staged file · %s", a.Git.PreviewPath)
 		}
-		return "Staged diff · " + a.Git.PreviewPath
+		return Tf("Staged diff · %s", a.Git.PreviewPath)
 	}
 	switch mode {
 	case viewerView:
-		return "File · " + a.Git.PreviewPath
+		return Tf("File · %s", a.Git.PreviewPath)
 	case viewerEdit:
-		return "Edit · " + a.Git.PreviewPath
+		return Tf("Edit · %s", a.Git.PreviewPath)
 	default:
-		return "Diff · " + a.Git.PreviewPath
+		return Tf("Diff · %s", a.Git.PreviewPath)
 	}
 }
 
@@ -1364,8 +1364,8 @@ func (a *App) gitDiffCard(c *mui.Context, panel, anchor mui.Element) {
 		Notice:     a.Git.PreviewNotice,
 		Busy:       a.Git.PreviewBusy,
 		Err:        a.Git.PreviewErr,
-		BusyText:   "Loading diff…",
-		ErrorTitle: "Cannot show this diff",
+		BusyText:   T("Loading diff…"),
+		ErrorTitle: T("Cannot show this diff"),
 	})
 }
 

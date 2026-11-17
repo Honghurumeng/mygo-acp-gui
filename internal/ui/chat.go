@@ -2,7 +2,6 @@ package ui
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"sync"
 
@@ -145,14 +144,14 @@ func (c *Chat) name() string {
 		return ""
 	}
 	if title := strings.TrimSpace(c.TaskTitle); title != "" {
-		return "Task: " + singleLine(title)
+		return Tf("Task: %s", singleLine(title))
 	}
 	if title := strings.TrimSpace(c.Title); title != "" {
 		// Views give the full label a SingleLine text, which layout cuts to
 		// their width; a fixed rune count here would ignore the window size.
 		return singleLine(title)
 	}
-	return fmt.Sprintf("Chat %d", c.ID)
+	return Tf("Chat %d", c.ID)
 }
 
 func (c *Chat) agentName() string {
@@ -488,7 +487,7 @@ func (a *App) removeChat(chat *Chat) {
 		return
 	}
 	if chat.taskActive {
-		a.stopTaskRun("The task conversation was closed.")
+		a.stopTaskRun(T("The task conversation was closed."))
 	}
 	chat.Closed = true
 	chat.cancelConnect()

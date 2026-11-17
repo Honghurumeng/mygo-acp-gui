@@ -49,8 +49,8 @@ func (a *App) composer(c *mui.Context) {
 
 			c.Key("composer-input")
 			input := mui.TextAreaBase(c, &chat.Input).
-				Placeholder("Message").
-				Label("Message").
+				Placeholder(T("Message")).
+				Label(T("Message")).
 				Lines(1, 20).
 				Grow(1).
 				Padding(2, 2).
@@ -126,7 +126,7 @@ func (a *App) composer(c *mui.Context) {
 			// never has to truncate or overlap its neighbors.
 			mui.Row(c).Gap(6).AlignItems(mui.Center).Wrap().Children(func() {
 				mui.Row(c).Gap(6).AlignItems(mui.Center).Shrink(0).Children(func() {
-					attach := a.composerControl(quietButton(c, "＋").Label("Attach images").FontSize(a.composerFont(14))).Tooltip("Attach or paste images")
+					attach := a.composerControl(quietButton(c, "＋").Label(T("Attach images")).FontSize(a.composerFont(14))).Tooltip(T("Attach or paste images"))
 					attach.Disabled(!chat.canAttach())
 					if attach.Clicked() {
 						a.chooseImages()
@@ -184,11 +184,11 @@ func (a *App) modeChip(c *mui.Context, chat *Chat) {
 	if current == "" {
 		current = modeLabel(modes[0])
 	}
-	chip := a.composerControl(chipBase(c)).Label("Session mode: " + current)
+	chip := a.composerControl(chipBase(c)).Label(Tf("Session mode: %s", current))
 	chip.Children(func() {
 		mui.Text(c, current).FontSize(a.composerFont(9)).SingleLine()
 	})
-	chip.Tooltip("Session mode")
+	chip.Tooltip(T("Session mode"))
 	chip.Disabled(chat.taskActive || chat.ConfigBusy != "" || chat.Connecting || chat.Streaming || chat.Busy != "" || (chat.Session != nil && chat.Info.SessionID == ""))
 	if chip.Clicked() {
 		chat.ModeOpen = !chat.ModeOpen
@@ -259,7 +259,7 @@ func (a *App) modelChip(c *mui.Context, chat *Chat) {
 	}
 	if model == "" {
 		if chat.Session != nil {
-			model = "Model"
+			model = T("Model")
 		} else {
 			model = chat.agentName()
 		}
@@ -268,13 +268,13 @@ func (a *App) modelChip(c *mui.Context, chat *Chat) {
 		thinking = configChoiceName(option, option.CurrentValue)
 	}
 	if model == "" {
-		model = "Agent"
+		model = T("Agent")
 	}
 	chipName := model
 	if thinking != "" {
 		chipName += " · " + thinking
 	}
-	chip := a.composerControl(chipBase(c)).Shrink(0).Label("Agent and model: " + chipName)
+	chip := a.composerControl(chipBase(c)).Shrink(0).Label(Tf("Agent and model: %s", chipName))
 	chip.Children(func() {
 		// The mark sits inside the chip, so it cannot make the action row
 		// taller than composerControlHeight.
@@ -284,7 +284,7 @@ func (a *App) modelChip(c *mui.Context, chat *Chat) {
 			a.composerCaption(c, "· "+thinking).Shrink(0)
 		}
 	})
-	chip.Tooltip("Agent, provider, model and thinking")
+	chip.Tooltip(T("Agent, provider, model and thinking"))
 	chip.Disabled(chat.taskActive)
 	if chip.Clicked() {
 		chat.ModelOpen = !chat.ModelOpen
@@ -320,9 +320,9 @@ func (a *App) modelPanel(c *mui.Context, chat *Chat) {
 	configLocked := locked
 
 	mui.Row(c).Height(252).Gap(1).Children(func() {
-		a.modelColumn(c, "Agent", func(inner *mui.Context) {
+		a.modelColumn(c, T("Agent"), func(inner *mui.Context) {
 			if len(a.Agents) == 0 {
-				a.composerCaption(inner, "No agents")
+				a.composerCaption(inner, T("No agents"))
 				return
 			}
 			agentLocked := chat.taskActive || chat.Session != nil || chat.Connecting
@@ -346,15 +346,15 @@ func (a *App) modelPanel(c *mui.Context, chat *Chat) {
 			}
 		})
 
-		a.modelColumn(c, "Provider", func(inner *mui.Context) {
+		a.modelColumn(c, T("Provider"), func(inner *mui.Context) {
 			providers := modelProviders(option)
 			if chat.Session == nil && a.agentConfigBusy[chat.Agent.ID] {
-				a.composerCaption(inner, "Refreshing providers…")
+				a.composerCaption(inner, T("Refreshing providers…"))
 			}
 			if len(providers) == 0 {
-				label := "Connect first"
+				label := T("Connect first")
 				if chat.Session == nil {
-					label = "No options yet"
+					label = T("No options yet")
 				}
 				a.composerCaption(inner, label)
 				return
@@ -373,11 +373,11 @@ func (a *App) modelPanel(c *mui.Context, chat *Chat) {
 			}
 		})
 
-		a.modelColumn(c, "Model", func(inner *mui.Context) {
+		a.modelColumn(c, T("Model"), func(inner *mui.Context) {
 			if option == nil {
-				label := "No model option"
+				label := T("No model option")
 				if chat.Session == nil {
-					label = "No options yet"
+					label = T("No options yet")
 				}
 				a.composerCaption(inner, label)
 				return
@@ -385,7 +385,7 @@ func (a *App) modelPanel(c *mui.Context, chat *Chat) {
 			provider := chat.currentProvider(options)
 			choices := modelChoices(option, provider)
 			if len(choices) == 0 {
-				a.composerCaption(inner, "No models")
+				a.composerCaption(inner, T("No models"))
 				return
 			}
 			for _, choice := range choices {
@@ -402,15 +402,15 @@ func (a *App) modelPanel(c *mui.Context, chat *Chat) {
 			}
 		})
 
-		a.modelColumn(c, "Thinking", func(inner *mui.Context) {
+		a.modelColumn(c, T("Thinking"), func(inner *mui.Context) {
 			if thinking == nil || len(thinking.Options) == 0 {
-				label := "No thinking options"
+				label := T("No thinking options")
 				if thinking == nil && chat.Session == nil {
-					label = "No options yet"
+					label = T("No options yet")
 				} else if thinking != nil && chat.Session == nil {
-					label = "Connect to load levels"
+					label = T("Connect to load levels")
 					if a.agentConfigBusy[chat.Agent.ID] {
-						label = "Loading levels…"
+						label = T("Loading levels…")
 					}
 				}
 				a.composerCaption(inner, label)
@@ -485,7 +485,7 @@ func (a *App) usageChip(c *mui.Context, chat *Chat) {
 			label = "<1%"
 		}
 	}
-	chip := a.composerControl(chipBase(c).Padding(3, 7)).Label("Context usage: " + label)
+	chip := a.composerControl(chipBase(c).Padding(3, 7)).Label(Tf("Context usage: %s", label))
 	chip.Children(func() {
 		ring := mui.Box(c).Size(14, 14)
 		ring.Draw(func(p *mui.Painter, r mui.Rect) {
@@ -493,9 +493,9 @@ func (a *App) usageChip(c *mui.Context, chat *Chat) {
 		})
 		mui.Text(c, label).FontSize(a.composerFont(9))
 	})
-	tip := "Context " + formatCount(chat.Usage.Used) + " · window size not reported"
+	tip := Tf("Context %s · window size not reported", formatCount(chat.Usage.Used))
 	if known {
-		tip = "Context " + formatCount(chat.Usage.Used)
+		tip = Tf("Context %s", formatCount(chat.Usage.Used))
 		if chat.Usage.Size > 0 {
 			tip += " / " + formatCount(chat.Usage.Size)
 		}
@@ -553,10 +553,10 @@ func (a *App) sendButton(c *mui.Context, chat *Chat) {
 		disabled bool
 	)
 	if chat.Streaming {
-		button = a.composerControl(dangerButton(c, "Stop"))
+		button = a.composerControl(dangerButton(c, T("Stop")))
 		disabled = chat.Cancelling
 	} else {
-		button = a.composerControl(primaryButton(c, "Send"))
+		button = a.composerControl(primaryButton(c, T("Send")))
 		disabled = !chat.canSend() || !chat.hasPrompt()
 	}
 	button.FontSize(a.composerFont(10)).Bold().Disabled(disabled)
