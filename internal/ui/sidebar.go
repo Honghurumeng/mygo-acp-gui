@@ -401,6 +401,12 @@ func (a *App) sidebarStatus(c *mui.Context) {
 					if detail != "" {
 						row.Tooltip(status.Name + ": " + detail)
 					}
+					if latest := strings.TrimSpace(status.LatestVersion); latest != "" {
+						mutedText(c, Tf("Update available: %s", agentVersionLabel(latest)), a.workspaceFont(9)).
+							TextColor(t.Warning).SingleLine().
+							Tooltip(Tf("%s %s is installed; the latest version is %s. Update it yourself; ACP GUI does not update agents.",
+								status.Name, agentVersionLabel(status.Version), agentVersionLabel(latest)))
+					}
 				}
 				if !a.Resolving && !a.anyLiveChat() && !a.injectedAgents {
 					if quietButton(c, T("Refresh agents")).FontSize(a.workspaceFont(9)).Clicked() {

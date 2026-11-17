@@ -500,6 +500,8 @@
  "Untracked": "未跟踪",
  "Use New file or New folder above.": "请使用上方的“新建文件”或“新建文件夹”。",
  "Use an OpenAI-compatible provider for Codex instead of the provider in ~/.codex/config.toml. The app passes this configuration to its own Codex child processes and never writes your Codex config. Models, Reasoning levels and Title model also apply when the switch is off, so you can extend your existing Codex provider.": "为 Codex 使用 OpenAI 兼容的供应商，替代 ~/.codex/config.toml 中的供应商。应用只把该配置传给自己的 Codex 子进程，绝不写入你的 Codex 配置。模型、推理等级和标题模型在开关关闭时也生效，因此可以扩展现有的 Codex 供应商。",
+ "Update available: %s": "有新版本：%s",
+ "%s %s is installed; the latest version is %s. Update it yourself; ACP GUI does not update agents.": "%s 已安装 %s；最新版本为 %s。请自行更新，ACP GUI 不会更新 agent。",
  "View": "查看",
  "View attached image": "查看附件图片",
  "View message image": "查看消息图片",

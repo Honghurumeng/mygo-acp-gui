@@ -27,6 +27,7 @@ import (
 	"github.com/reed/acp-gui/internal/session"
 	"github.com/reed/acp-gui/internal/settings"
 	taskstore "github.com/reed/acp-gui/internal/tasks"
+	"github.com/reed/acp-gui/internal/updatecheck"
 )
 
 // Options configures the app. A non-nil Agents slice skips discovery, which
@@ -73,6 +74,10 @@ type Options struct {
 	// MyGo's own controls, menus and dialogs the same language. Nil does
 	// nothing, as in tests.
 	OnLanguage func(setting string)
+	// CheckUpdates looks up newer versions of the installed builtin CLIs. Nil
+	// uses updatecheck.Check against the npm registry; tests inject a fixed
+	// answer so discovery never reaches the network.
+	CheckUpdates func(context.Context, []updatecheck.Target) map[string]updatecheck.Result
 }
 
 // MessageRole is how a chat row is drawn.
@@ -144,6 +149,10 @@ type AgentStatus struct {
 	Status      string
 	Detail      string
 	InstallHint string
+	// LatestVersion is a newer version found by the startup update check.
+	// Empty means the installed CLI is current, the check failed or the
+	// check was not possible; it never changes Status.
+	LatestVersion string
 }
 
 // AgentModeState is the session mode list cached from a config probe.
@@ -406,6 +415,7 @@ type App struct {
 	probeAgent         func(context.Context, agent.LaunchSpec) error
 	probeConfig        func(context.Context, agent.LaunchSpec) (session.Info, error)
 	probeModels        func(context.Context, agent.LaunchSpec, session.ModelProbe) (session.Info, error)
+	checkUpdates       func(context.Context, []updatecheck.Target) map[string]updatecheck.Result
 	readClipboardImage func() []byte
 	openImages         func() ([]string, error)
 	fileIndexer        func(string) ([]string, error)
@@ -483,6 +493,7 @@ func New(opts Options) *App {
 		preferredLanguages: append([]string(nil), opts.PreferredLanguages...),
 		onLanguage:         opts.OnLanguage,
 		probeAgent:         opts.ProbeAgent,
+		checkUpdates:       updatecheck.Check,
 		injectedAgents:     opts.Agents != nil,
 		probeConfig:        session.ProbeConfig,
 		probeModels:        session.ProbeConfigModels,
@@ -529,6 +540,9 @@ func New(opts Options) *App {
 	}
 	if opts.ProbeModels != nil {
 		a.probeModels = opts.ProbeModels
+	}
+	if opts.CheckUpdates != nil {
+		a.checkUpdates = opts.CheckUpdates
 	}
 	a.readClipboardImage = opts.ReadClipboardImage
 	if a.readClipboardImage == nil {

@@ -11,7 +11,7 @@
 ## 设计文档
 - `docs/design/architecture.md`：整体架构、Go 包划分、ACP 客户端、MyGo UI、数据与安全。
 - `docs/design/acp-conformance.md`：ACP v1 稳定/草稿边界、私有扩展、能力协商缺口与合规待办。
-- `docs/design/discovery.md`：内置 agent 表（pi、command-code、codex）、launch spec、路径解析、initialize 探测、状态机、手动测试。
+- `docs/design/discovery.md`：内置 agent 表（pi、command-code、codex）、launch spec、路径解析、initialize 探测、状态机、npm 新版本提示、手动测试。
 - `docs/design/pi.md`：pi-acp vendor、SDK/zod 依赖、Node/pi 版本、PATH、认证、更新。
 - `docs/design/pi-fork.md`：fork pi-acp 的最小改动、vendor 接入与验证。
 - `docs/design/command-code.md`：Command Code 启动、已验证 ACP 流程、权限/取消、测试。

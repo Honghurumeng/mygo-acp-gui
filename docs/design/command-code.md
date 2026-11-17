@@ -9,6 +9,7 @@ Command Code 是用户自备的 CLI，应用只定位已有安装，不安装、
 | 内置 id | `command-code` |
 | 启动命令 | `<绝对路径>/command-code acp` |
 | 版本探测 | `command-code --version`（5 秒超时；失败只影响版本显示） |
+| 更新检测 | 比较本机版本与 npm 包 `command-code` 的 `latest`；只在侧栏提示，不自动更新（见 [discovery.md](discovery.md#更新检测只提示)） |
 | 显式覆盖 | `ACP_GUI_COMMAND_CODE=/absolute/path` |
 | 运行时 | Node.js 22+（command-code 的 bin 通过 `env node` 启动） |
 | 登录提示 | `command-code login`（只在 UI 展示，不代跑） |

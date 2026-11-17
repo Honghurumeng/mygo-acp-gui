@@ -14,6 +14,7 @@ import (
 
 	mui "github.com/egoist/mygo/ui"
 	"github.com/reed/acp-gui/internal/agent"
+	"github.com/reed/acp-gui/internal/updatecheck"
 )
 
 // fakeDiscoveryEnvironment writes version-only tools and vendored bundle
@@ -76,6 +77,11 @@ func newDiscoveryApp(t *testing.T, resources string, resolve agent.ResolveOption
 		Resources:  resources,
 		Resolve:    resolve,
 		ProbeAgent: probe,
+		// Discovery tests use fake paths and fake versions; never let the
+		// background update check reach the real npm registry.
+		CheckUpdates: func(context.Context, []updatecheck.Target) map[string]updatecheck.Result {
+			return nil
+		},
 	})
 	t.Cleanup(func() {
 		app.Shutdown()
@@ -152,6 +158,59 @@ func TestDiscoveryPublishesStatusesAndKeepsAvailableAgents(t *testing.T) {
 		if !tt.HasText(text) {
 			t.Errorf("sidebar status %q missing; texts: %q", text, tt.Texts())
 		}
+	}
+}
+
+func TestDiscoveryReportsNewerAgentVersions(t *testing.T) {
+	resources, resolve, _ := fakeDiscoveryEnvironment(t)
+	app := newDiscoveryApp(t, resources, resolve, func(context.Context, agent.LaunchSpec) error {
+		return nil
+	})
+	var targets []updatecheck.Target
+	app.checkUpdates = func(_ context.Context, got []updatecheck.Target) map[string]updatecheck.Result {
+		targets = append([]updatecheck.Target(nil), got...)
+		return map[string]updatecheck.Result{
+			agent.PiID:          {Current: "1.5.2", Latest: "1.6.0"},
+			agent.CommandCodeID: {Current: "1.88.5", Latest: "1.88.5"},
+			agent.CodexID:       {Current: "0.169.0", Latest: "0.170.0"},
+		}
+	}
+
+	app.discover(context.Background())
+	app.Flush()
+
+	wantPackages := map[string]string{
+		agent.PiID:          "@earendil-works/pi-coding-agent",
+		agent.CommandCodeID: "command-code",
+		agent.CodexID:       "@openai/codex",
+	}
+	if len(targets) != len(wantPackages) {
+		t.Fatalf("update targets = %+v", targets)
+	}
+	for _, target := range targets {
+		if got := wantPackages[target.ID]; got == "" || target.Package != got {
+			t.Errorf("target %s package = %q, want %q", target.ID, target.Package, got)
+		}
+	}
+
+	byID := map[string]AgentStatus{}
+	for _, status := range app.AgentStatuses {
+		byID[status.ID] = status
+	}
+	if got := byID[agent.PiID].LatestVersion; got != "1.6.0" {
+		t.Errorf("pi latest = %q, want 1.6.0", got)
+	}
+	if got := byID[agent.CommandCodeID].LatestVersion; got != "" {
+		t.Errorf("command-code latest = %q, want no notice", got)
+	}
+	if got := byID[agent.CodexID].LatestVersion; got != "0.170.0" {
+		t.Errorf("codex latest = %q, want 0.170.0", got)
+	}
+
+	tt := mui.NewTester(app.View, 1200, 760)
+	tt.Frame()
+	if !tt.HasText("Update available: v1.6.0") {
+		t.Errorf("update notice missing; texts: %q", tt.Texts())
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"github.com/reed/acp-gui/internal/acp"
 	"github.com/reed/acp-gui/internal/agent"
 	"github.com/reed/acp-gui/internal/session"
+	"github.com/reed/acp-gui/internal/updatecheck"
 )
 
 // discover resolves the login shell environment, builds the builtin launch
@@ -138,6 +139,68 @@ func (a *App) discover(ctx context.Context) {
 		// run still shows history from agents that were never connected.
 		for _, spec := range a.Agents {
 			a.syncSavedSessionsOnce(spec.ID)
+		}
+	})
+
+	// The update check is advisory and runs after the statuses are published,
+	// so an offline or slow registry never delays startup or changes a status.
+	a.checkAgentUpdates(ctx, results)
+}
+
+// updateCheckTimeout bounds the whole npm lookup. Individual HTTP requests
+// have their own shorter timeout, and the lookups run concurrently.
+const updateCheckTimeout = 8 * time.Second
+
+// checkAgentUpdates asks npm for each launchable builtin's latest version and
+// adds a notice to its status row. It only compares versions: nothing is
+// downloaded, installed or run, and a failed lookup is silently ignored.
+func (a *App) checkAgentUpdates(ctx context.Context, results []agent.LaunchResult) {
+	if a.checkUpdates == nil || a.closed.Load() {
+		return
+	}
+	targets := make([]updatecheck.Target, 0, len(results))
+	for _, result := range results {
+		if result.Err != nil || result.ID == "" || result.Package == "" {
+			continue
+		}
+		current := strings.TrimSpace(result.Spec.Version)
+		if current == "" {
+			continue
+		}
+		targets = append(targets, updatecheck.Target{
+			ID:      result.ID,
+			Package: result.Package,
+			Current: current,
+		})
+	}
+	if len(targets) == 0 {
+		return
+	}
+
+	checkCtx, cancel := context.WithTimeout(ctx, updateCheckTimeout)
+	defer cancel()
+	found := a.checkUpdates(checkCtx, targets)
+	if len(found) == 0 {
+		return
+	}
+	a.Post(func() {
+		if a.closed.Load() {
+			return
+		}
+		for i := range a.AgentStatuses {
+			status := &a.AgentStatuses[i]
+			result, ok := found[status.ID]
+			if !ok || result.Err != nil || status.Status == AgentProbing || status.Status == AgentMissing {
+				continue
+			}
+			// A retry can replace the status while the lookup is in flight;
+			// only apply an answer for the same installed version.
+			if strings.TrimSpace(status.Version) != strings.TrimSpace(result.Current) {
+				continue
+			}
+			if updatecheck.CompareVersions(status.Version, result.Latest) < 0 {
+				status.LatestVersion = strings.TrimSpace(result.Latest)
+			}
 		}
 	})
 }
@@ -355,6 +418,7 @@ func (a *App) retryDiscovery() {
 	for i := range a.AgentStatuses {
 		a.AgentStatuses[i].Status = AgentProbing
 		a.AgentStatuses[i].Detail = ""
+		a.AgentStatuses[i].LatestVersion = ""
 	}
 	a.startDiscovery()
 }

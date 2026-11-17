@@ -12,6 +12,11 @@ type BuiltinAgent struct {
 	ID          string
 	Name        string
 	InstallHint string
+	// Package is the npm package that publishes the installed CLI. It is
+	// only used to look up the latest version for a notice; an empty value
+	// disables the check. It is not a catalog and is never installed by the
+	// app.
+	Package string
 }
 
 // Builtins is the fixed list this app supports.
@@ -20,16 +25,19 @@ var Builtins = []BuiltinAgent{
 		ID:          PiID,
 		Name:        "pi",
 		InstallHint: "Install Node.js 22+, pi, and the vendored pi-acp bundle (see docs/design/pi.md).",
+		Package:     "@earendil-works/pi-coding-agent",
 	},
 	{
 		ID:          CommandCodeID,
 		Name:        "Command Code",
 		InstallHint: "Install command-code with Node.js 22+, then run: command-code login",
+		Package:     "command-code",
 	},
 	{
 		ID:          CodexID,
 		Name:        "Codex",
 		InstallHint: "Install Node.js 22+ and the Codex CLI, then run: codex login (see docs/design/codex.md).",
+		Package:     "@openai/codex",
 	},
 }
 

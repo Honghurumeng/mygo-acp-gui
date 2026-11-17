@@ -35,6 +35,7 @@ resources/agents/codex-acp/
 - **Codex CLI 已安装并在 PATH 上**：应用用登录 shell 解析绝对路径，然后把 `CODEX_PATH` 传给 bundle。适配器内部执行 `codex app-server`。
 - Codex CLI 需要支持 `app-server`；本仓库用 `codex-cli 0.169.0` 实测通过。官方 2.6.0 的 npm 依赖声明是 `@openai/codex ^0.166.0`。
 - 用户自己的 Codex 登录/配置（默认 `~/.codex/`）：应用不读取、不复制、不代登录。设置里的自定义供应商只通过子进程环境传入，不写 `~/.codex/config.toml`。
+- 启动发现后只查询 npm 包 `@openai/codex` 的 `latest`，与本机 `codex --version` 比较；有新版本时在侧栏提示，不下载、不安装、不更新 bundle（见 [discovery.md](discovery.md#更新检测只提示)）。
 
 ### 本地补丁
 
