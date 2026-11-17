@@ -93,7 +93,7 @@ Codex 内置 catalog 不包含自定义 model id。provider 开启、模型列�
 - 每个条目同时写入 `base_instructions` 和 `model_messages.instructions_template`：setup 脚本里的 Codex 指令 prompt（`internal/codexprovider/catalog_instructions.txt`）后追加 V1 专用多代理说明。说明明确 namespace 已可直接使用，要求直接调用 `multi_agent_v1.spawn_agent` / `send_input` / `followup_task` / `wait_agent` 等工具，不要执行 shell 命令来发现或启用它，也不要把 `functions.exec`、`codex exec` 或外部 agent CLI 当成原生子会话；工具失败时如实报告，不得静默回退或伪造结果。Codex 0.164+ 拒绝缺少指令字段的 catalog 条目（`model ... is missing both ...`），不能依赖它自己的默认指令；`base_instructions` 只兼容仍读旧字段的版本，新版本优先 `model_messages.instructions_template`。生成的 catalog 每个模型约 36 KB，只写数据目录，不写进 settings.json。
 - 文件在启动加载设置和保存 provider 时原子重写；provider 关闭或模型为空时删除，避免陈旧 metadata。
 - 该 catalog 会替换 Codex 内置 catalog，所以开启自定义 provider 时模型列表以这些自定义模型为准；非 DeepSeek 目标或 provider 关闭时不写 catalog，仍只追加 ACP 模型，warning 可能继续。
-- 测试：`go test ./internal/codexprovider`（id 替换、可配置 context/compact、档位、指令字段、V1 直接 namespace 与多代理说明、V1 强制、原子写/删除）、`go test ./internal/ui -run TestCodexProviderWritesModelCatalog`。
+- 测试：`go test ./internal/codexprovider`（id 替换、可配置 context/compact、档位、指令字段、V1 直接 namespace 与多代理说明、V1 强制、原子替换/删除）、`go test ./internal/ui -run TestCodexProviderWritesModelCatalog`。
 
 ## 生效范围
 
@@ -115,10 +115,10 @@ Codex 内置 catalog 不包含自定义 model id。provider 开启、模型列�
 
 ## 测试
 
-- `go test ./internal/codexprovider`：URL/模型/上下文/压缩比例/推理档位校验、默认模型与默认档位、环境变量和 `CODEX_CONFIG` 内容、catalog 生成/原子写/删除。
+- `go test ./internal/codexprovider`：URL/模型/上下文/压缩比例/推理档位校验、默认模型与默认档位、环境变量和 `CODEX_CONFIG` 内容、catalog 生成/原子替换（0600、无临时文件残留）/删除。
 - `go test ./internal/agent`：`CodexLaunchSpec` 在启用/禁用/非法 provider 下的环境。
 - `go test ./internal/settings`：`codexProvider` 往返和非法条目的警告 + 自动禁用。
-- `go test ./internal/ui -run TestSettingsCodexProvider`：设置分区、上下文/压缩输入、推理档位复选框、保存、持久化和错误提示；`TestCodexProviderWritesModelCatalog` 覆盖 catalog 的 context/compact 字段、落盘和启动重写。
+- `go test ./internal/ui -run TestSettingsCodexProvider`：设置分区、上下文/压缩输入、推理档位复选框、保存、持久化和错误提示；`TestCodexProviderWritesModelCatalog` 覆盖 catalog 的 context/compact 字段、落盘和启动重写；`TestSaveCodexProviderRebuildsLaunchSpecAndClearsCache` 覆盖保存后重建 Codex launch spec、清缓存、draft 更新和只改推理档位时保留 model/mode。
 - `codex-acp-main` 内 `CustomModels.test.ts`、`TitleGenerator.test.ts`：自定义模型合并、档位解析/默认档位、标题模型优先级。
 - 手工冒烟：用本地 mock Responses 服务填 Base URL 和上下文/压缩比例，勾选几个推理档位，在模型面板确认自定义模型和这些档位出现并切换；确认上下文环使用配置的可用大小，跨过触发点后 Codex 执行压缩；再确认标题生成请求使用 `titleModel` 或当前模型。
 

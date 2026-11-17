@@ -23,9 +23,11 @@
  *   FAKE_AGENT_CHILD_PID_FILE  启动一个子进程并把 pid 写入该文件，
  *                              用于验证关闭时会杀掉整个进程组。
  *   FAKE_AGENT_NO_SESSION      让 session/new 返回 -32000，模拟需要登录的 agent。
+ *   FAKE_AGENT_SESSION_LOG     把进程、会话和 prompt 开始/结束追加到文件，
+ *                              用于验证 executor 复用会话、checker 独立进程和任务串行。
  */
 import { spawn } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import readline from 'node:readline';
 
 const MODELS = ['demo/small', 'demo/large', 'demo/reasoning'];
@@ -140,6 +142,7 @@ function publishCommands(sessionId) {
 function finishTurn(turn, reason = 'end_turn', usage = null) {
   if (!turn || turn.finished) return;
   turn.finished = true;
+  logSession('finish', turn.sessionId, reason);
   if (turn.timer) clearTimeout(turn.timer);
   if (active === turn) active = null;
   const result = { stopReason: reason };
@@ -154,6 +157,19 @@ function sendChunk(turn, text, meta = null) {
   };
   if (meta) update._meta = meta;
   sendUpdate({ sessionId: turn.sessionId, update });
+}
+
+const sessionLogFile = process.env.FAKE_AGENT_SESSION_LOG;
+function logSession(kind, sessionId, detail = '') {
+  if (!sessionLogFile) return;
+  try {
+    appendFileSync(
+      sessionLogFile,
+      `${Date.now()} ${process.pid} ${kind} ${sessionId} ${JSON.stringify(String(detail).slice(0, 200))}\n`,
+    );
+  } catch {
+    // Logging is a test fixture; never disturb the agent turn.
+  }
 }
 
 function sendSubagentChunk(childSessionId, text) {
@@ -345,7 +361,10 @@ function requestPermission(turn) {
         status: selected.startsWith('allow') ? 'completed' : 'failed',
       },
     });
-    if (selected.startsWith('allow')) {
+    if (selected === 'allow-always') {
+      sendChunk(turn, 'permission granted always');
+      finishTurn(turn);
+    } else if (selected.startsWith('allow')) {
       sendChunk(turn, 'permission granted');
       finishTurn(turn);
     } else if (outcome.outcome === 'cancelled') {
@@ -382,6 +401,7 @@ function startTurn(turn, text, images = 0, mcpCount = 0, files = 0, embedded = 0
   const taskCheck = text.includes('TASK_COMPLETION_CHECK');
   const taskExec = text.includes('TASK_EXECUTION');
   const permission = text.includes('/permission') && !taskCheck;
+  const permissionExit = text.includes('/permission-exit');
   const thought = text.includes('/thought');
   const plan = text.includes('/plan');
   const turnUsage = text.includes('/turnusage');
@@ -437,8 +457,20 @@ function startTurn(turn, text, images = 0, mcpCount = 0, files = 0, embedded = 0
     });
   }
 
+  if (text.includes('/exit')) {
+    sendChunk(turn, 'crashing now');
+    setTimeout(() => process.exit(7), 50);
+    return;
+  }
+
   if (text.includes('/subagent')) {
     startSubagent(turn, text.includes('/permission'));
+    return;
+  }
+
+  if (permissionExit) {
+    requestPermission(turn);
+    setTimeout(() => process.exit(8), 80);
     return;
   }
 
@@ -550,6 +582,9 @@ rl.on('line', (line) => {
         result: {
           protocolVersion: 1,
           agentInfo: { name: 'fake-agent', title: 'Fake ACP agent', version: '0.0.1' },
+          authMethods: [
+            { id: 'fake-login', name: 'Fake login', description: 'Run fake login in a terminal' },
+          ],
           agentCapabilities: {
             loadSession: true,
             promptCapabilities: { audio: false, image: true, embeddedContext: true },
@@ -572,6 +607,7 @@ rl.on('line', (line) => {
       sessionCounter += 1;
       lastSessionId = sessionCounter === 1 ? 'fake-session' : `fake-session-${sessionCounter}`;
       lastMCPServers = params.mcpServers ?? [];
+      logSession('new', lastSessionId, process.cwd());
       send({
         jsonrpc: '2.0',
         id,
@@ -680,6 +716,7 @@ rl.on('line', (line) => {
         timer: null,
       };
       active = turn;
+      logSession('prompt', turn.sessionId, text);
       startTurn(turn, text, images, lastMCPServers.length, files, embedded);
       return;
     }

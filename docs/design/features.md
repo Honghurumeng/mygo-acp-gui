@@ -127,6 +127,7 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 - 输入框支持直接粘贴剪贴板图片：`OnPaste` 只在剪贴板文本为空时读取 `mygo.Clipboard.ReadImage()`，把 PNG 字节转 base64 后作为 image 块；不写临时文件、不把路径塞进文本。文本剪贴板仍走编辑器原生的文本粘贴，不会同时生成附件。
 - 图片粘贴与 `＋` 共用数量、大小和 `promptCapabilities.image` 校验；剪贴板图片在后台解码，UI 线程只追加附件。
 - 不做内嵌终端、不代传本地路径；图片字节直接进 ACP。
+- 测试：`internal/ui/attachments_test.go` 覆盖 MIME 识别、4 张/15 MB 限制、删除、文件选择器、剪贴板、agent 不支持图片的拒绝。
 
 ## @ 文件引用
 

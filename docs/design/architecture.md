@@ -106,7 +106,7 @@ MyGo 原生窗口 (Go + ui)
 - UI 状态只在主线程修改。session 回调通过 `Window.Update`（测试中通过队列）提交，不直接改状态。
 - 每个会话是一个 `ui.Chat`，保存自己的 Session、Info、消息、输入草稿、配置、附件和连接代数；App 持有 `Chats`、`Active`、工作区列表和侧栏折叠状态。回调捕获 chat 指针，因此后台会话仍能流式更新。
 - `App.Archived` 是本地会话索引，按 `(agentId, sessionId)` 去重；`SavedSessions` 只是它排序后的 UI 视图。启动时侧栏不调用 `session/list`，因此 agent 慢、未登录或未安装不影响历史列表。
-- 测试用 `scripts/fake-agent.mjs`：prompt 流式输出、`/slow` + cancel、`/permission`、`/subagent` 子会话、config/mode、list/load/close、图片/MCP 计数、命令/plan/usage、任务 executor/checker 标记、子进程清理。
+- 测试用 `scripts/fake-agent.mjs`：prompt 流式输出、`/slow` + cancel、`/permission`、`/subagent` 子会话、config/mode、list/load/close、图片/MCP 计数、命令/plan/usage、任务 executor/checker 标记、`/exit` 中途退出、权限挂起时退出、session 进程日志、子进程清理。
 
 ## ACP 客户端
 

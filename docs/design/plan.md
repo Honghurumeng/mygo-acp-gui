@@ -5,13 +5,15 @@
 ### 单元 / 集成
 
 - `internal/acp`：行分帧（多 chunk、CRLF、非 JSON、U+2028 内容）、请求/响应匹配、权限回执
-- `internal/agent`：内置表、launch spec 解析、路径解析、探测超时与进程组清理
+- `internal/agent`：内置表、launch spec 解析、路径解析、登录 shell/交互 shell/npm 回退、版本解析
+- `internal/session`：probe 正常/非 JSON stdout/立即退出/stderr tail/上下文超时、`session/new` 认证失败、进程组清理
 - `internal/settings`：缺失/损坏/未来版本、相对路径、原子写入
 - `internal/logs`：追加、1 MiB 滚动与备份、超大 chunk、并发写入
 - `internal/files`：排序、跳过 `.git`、新建/重命名/移动/删除、重名、非法名字、越界路径、符号链接
-- 探测 fixture：正常 agent、慢 agent、只打印 stderr 的 agent、立即退出的 agent、stdout 混入日志的 agent
+- `internal/ui`：启动发现状态机、侧栏状态、draft 补选 agent、权限允许/拒绝/取消、异常退出、Git 远程操作、任务进程隔离/串行、附件数量与大小限制
 
-复用 `scripts/fake-agent.mjs` 作为假 agent，跑 UI/客户端集成测试；fixture 放在 `testdata/`。
+探测失败 fixture 直接写在 `internal/session/probe_errors_test.go`，用 POSIX shell 模拟；不再依赖不存在的 `testdata/`。
+复用 `scripts/fake-agent.mjs` 作为假 agent，跑 UI/客户端集成测试。真正的 CLI 探针用 `ACP_REAL_*` 环境变量显式开启。
 
 `scripts/fake-agent.mjs` 目前支持：
 
@@ -21,14 +23,17 @@
 - `/thought` 先发 `agent_thought_chunk`；
 - `TASK_EXECUTION` 返回任务执行总结，`TASK_COMPLETION_CHECK` 返回 `{complete, reason, summary}` 供任务 runner 测试；`/refuse` 让 executor 以 refusal 结束，`/writefile <path>` 让 executor 在 workspace 写一个文件，用于验证失败回滚；
 - `FAKE_TASK_CHECK_STATE` + 任务文本里的 `/eventually` 让连续 checker 第一次 incomplete、第二次 complete；`/alwaysincomplete` 让 checker 一直拒绝，用于测 8 轮失败；
-- `FAKE_AGENT_CHILD_PID_FILE` 启动一个子进程，验证关闭时整个进程组都被清理。
+- `FAKE_AGENT_CHILD_PID_FILE` 启动一个子进程，验证关闭时整个进程组都被清理；
+- `/exit` 在流式输出中途退出，`/permission-exit` 在权限请求挂起时退出，用于测 `applyExit`、stderr 和权限取消；
+- `FAKE_AGENT_SESSION_LOG` 记录进程、会话、`session/new` cwd 以及 prompt start/finish，用于断言 executor 跨轮复用会话、checker 每轮独立进程、任务串行；
+- `FAKE_AGENT_NO_SESSION` 让 `session/new` 返回 `-32000`，配合 initialize 的 `authMethods` 测 `needs-auth`。
 
 对应测试：
 
 ```bash
 go test ./... -race
-go test ./internal/session -run 'TestFakeAgent|TestCloseKillsProcessGroup' -v
-go test ./internal/ui -run 'TestChatWithFakeAgent|TestMultipleChats|TestBackgroundChat|TestPermissionFrom|TestCloseTab|TestSavedSessionOpensNewTab|TestGitPanel|TestFilePanel' -v
+go test ./internal/session -run 'TestFakeAgent|TestCloseKillsProcessGroup|TestProbe|TestStartReportsAuth|TestVendored' -v
+go test ./internal/ui -run 'TestDiscovery|TestChatWithFakeAgent|TestMultipleChats|TestBackgroundChat|TestPermission|TestCloseTab|TestSavedSessionOpensNewTab|TestGitPanel|TestFilePanel|TestTask|TestAttachment' -v
 ```
 
 pi-acp bundle 冒烟（只 `initialize`，不 spawn pi、不碰凭据）：
@@ -148,7 +153,11 @@ scripts/vendor-codex-acp.sh          # 官方 codex-acp，不含补丁
 - [x] settings.json 持久化（上次 agent/工作区、每个 agent 的模型/thinking/mode、侧栏工作区列表 + `removedWorkspaces` 软删除、paths 覆盖、外观/主题；原子写入 + 容错加载）
 - [ ] 诊断面板（stderr / 日志查看；目前只有 `logs/<agent>.log` 文件写入）
 - [x] 基础测试：framing、launch spec、登录 shell 解析、fake agent 会话、UI 发送/流式/停止/权限、进程组清理
-- [x] 新能力测试：probe、config/mode、list/load/close、侧栏已保存会话 UI、图片 prompt、命令面板、图片发送 UI、设置持久化、agent 日志写入
+- [x] 发现测试：三种内置 agent 的 ready/not-installed/installed-not-acp/error/needs-auth 状态、缺 agent 不阻塞、draft 补选、保存 agent 回退、刷新探测
+- [x] 失败路径测试：probe 非 JSON/立即退出/stderr/超时、认证 `-32000`、agent 中途退出、权限挂起时退出、权限 Reject/Allow always
+- [x] Git 远程测试：临时 bare remote 下的 Fetch/Pull/Push、UnstageAll、UI Fetch/Pull/Push/Undo/Unstage all
+- [x] Task 断言：成功任务文件和 commit message、executor 跨轮同 session、checker 每轮独立进程/cwd、prompt 不重叠（串行）
+- [x] 新能力测试：probe、config/mode、list/load/close、侧栏已保存会话 UI、图片 prompt、命令面板、图片发送 UI、附件数量/大小/删除、设置持久化、agent 日志写入
 - [x] 存档测试：文件读写/容错、重命名与软删除跨重启、删除后同步不复活、按记录的 agent load、工作区软删除/恢复跨重启
 - [x] 主题系统：System/Light/Dark 外观 + Default/Nord/Solarized/Catppuccin/Claude/Green/Green Soft/VS Code/Everforest/One Dark/Tokyo Night 配色，设置面板切换、跨重启恢复、原生窗口外观同步（见 [themes.md](themes.md)）
 

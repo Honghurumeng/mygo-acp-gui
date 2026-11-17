@@ -123,4 +123,4 @@ go test ./internal/ui -run 'TestTask|TestParseTask' -v -count=1
 go test ./internal/git -run 'TestCommitAll|TestWorktreeSnapshot' -v
 ```
 
-覆盖：索引读写 / 损坏与重复行 / ongoing 重启回 pending / 旧 complete 行补 pass、总结路径与 slug、任务创建 / 编辑 / 排序 / 删除与跨重启、Run pending 串行执行、`/eventually` 先 incomplete 后 complete、checker 多轮上下文、每任务 commit 次数、失败不 commit + 回滚任务文件 + 保留用户已有改动 + failure 标记 + 继续执行剩余 pending、任务聊天释放与总结卡片打开、Stop 后回 pending、verdict 解析与总结生成。
+覆盖：索引读写 / 损坏与重复行 / ongoing 重启回 pending / 旧 complete 行补 pass、总结路径与 slug、任务创建 / 编辑 / 排序 / 删除与跨重启（含 New task / Edit task / Move / Delete 按钮）、Run pending 串行执行、`/eventually` 先 incomplete 后 complete、checker 多轮上下文、每任务 commit 次数与 commit message/文件内容、executor 跨轮同 session、checker 每轮独立进程和临时 cwd、prompt start/finish 不重叠、失败不 commit + 回滚任务文件 + 保留用户已有改动 + failure 标记 + 继续执行剩余 pending、任务聊天释放与总结卡片打开、Stop 后回 pending、verdict 解析与总结生成。

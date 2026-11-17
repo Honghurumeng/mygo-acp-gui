@@ -142,5 +142,5 @@ go test ./internal/git -v
 go test ./internal/ui -run 'TestGitPanel' -v -count=1
 ```
 
-`internal/git` 测试覆盖状态/重命名解析、分支头解析、init、stage/unstage、commit、首提交撤销、discard all（已暂存/未暂存/未跟踪/首提交前、忽略文件保留）、嵌套工作区，以及 diff 两侧（未暂存/已暂存/未跟踪/新增/删除/重命名、二进制与超大文件、越界路径）、提交日志解析（含 committer time、HEAD 标记）、refs 解析、fetch 未 pull 的 `Incoming` 标记与 pull 后清除、commit 文件列表与提交 diff 两侧（首提交/单文件/重命名/删除）、提交文件数与增删行数统计、merge 的 lane 分配与 8 lane 上限、父提交必须在子提交之后；UI 测试覆盖无仓库提示与 init、无 git 提示、窗口获得焦点后刷新、一轮对话结束后刷新、Stage all + Commit 全链路、Discard all 确认/取消与位置、共享卡片打开（位于 Git 面板左侧、面板仍可见、点外部关闭）、响应式布局（窄卡片
+`internal/git` 测试覆盖状态/重命名解析、分支头解析、init、stage/unstage（含 `UnstageAll` 和首提交前）、commit、首提交撤销、discard all（已暂存/未暂存/未跟踪/首提交前、忽略文件保留）、嵌套工作区，以及 diff 两侧（未暂存/已暂存/未跟踪/新增/删除/重命名、二进制与超大文件、越界路径）、提交日志解析（含 committer time、HEAD 标记）、refs 解析、fetch 未 pull 的 `Incoming` 标记与 pull 后清除、commit 文件列表与提交 diff 两侧（首提交/单文件/重命名/删除）、提交文件数与增删行数统计、merge 的 lane 分配与 8 lane 上限、父提交必须在子提交之后；`TestFetchPullPushAndUnstageAll` 用临时 bare remote 跑通 Fetch/Pull/Push/UnstageAll；UI 测试覆盖无仓库提示与 init、无 git 提示、窗口获得焦点后刷新、一轮对话结束后刷新、Stage all + Commit 全链路、Fetch/Pull/Push/Undo/Unstage all 按钮与 notice、Discard all 确认/取消与位置、共享卡片打开（位于 Git 面板左侧、面板仍可见、点外部关闭）、响应式布局（窄卡片
 Unified/宽卡片 Split、点阈值宽度）、未暂存文件编辑保存、暂存与历史只读、fetch 后 `↓N` 芯片与描边远端芯片、pull 后芯片和徽标消失，以及二进制报错、提交图渲染与窄面板裁剪、点击提交展开/收起文件列表、从展开列表打开提交 diff、hover 详情卡（位于图表左侧、无短 hash/父提交、含文件与行数统计）与复制 hash。

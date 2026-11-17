@@ -533,3 +533,59 @@ func TestSavedSessionsReplayImages(t *testing.T) {
 		t.Fatal("replayed history image did not open the preview")
 	}
 }
+
+func TestConnectAuthErrorMarksAgentAndShowsLoginHint(t *testing.T) {
+	app, tt := newFakeApp(t)
+	app.Agents[0].Env = append(append([]string(nil), app.Agents[0].Env...), "FAKE_AGENT_NO_SESSION=1")
+	app.Connect()
+	waitFor(t, app, tt, func() bool {
+		chat := current(app)
+		return !chat.Connecting && chat.ConnectError != ""
+	})
+	if !tt.HasText("Authentication required") || !tt.HasText("Fake login") {
+		t.Errorf("login hint missing; texts: %q", tt.Texts())
+	}
+	if !tt.HasText("needs-auth") {
+		t.Errorf("agent status is not shown as needs-auth; texts: %q", tt.Texts())
+	}
+	var found bool
+	for _, status := range app.AgentStatuses {
+		if status.ID == "fake" {
+			found = true
+			if status.Status != AgentNeedsAuth {
+				t.Errorf("agent status = %q, want needs-auth", status.Status)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("fake agent status missing: %+v", app.AgentStatuses)
+	}
+}
+
+func TestMarkAgentAuthFallsBackToError(t *testing.T) {
+	app := New(Options{Version: "test", Workspace: t.TempDir(), Agents: []agent.LaunchSpec{{ID: "fake", Name: "fake"}}})
+	t.Cleanup(func() {
+		app.Shutdown()
+		app.Flush()
+	})
+	app.markAgentAuth("fake", errors.New("connection refused"))
+	if len(app.AgentStatuses) != 1 || app.AgentStatuses[0].Status != AgentError {
+		t.Fatalf("status = %+v", app.AgentStatuses)
+	}
+	if !strings.Contains(app.AgentStatuses[0].Detail, "connection refused") {
+		t.Errorf("detail = %q", app.AgentStatuses[0].Detail)
+	}
+}
+
+func TestDisconnectDraftIsANoop(t *testing.T) {
+	app := New(Options{Version: "test", Workspace: t.TempDir(), Agents: []agent.LaunchSpec{}})
+	t.Cleanup(func() {
+		app.Shutdown()
+		app.Flush()
+	})
+	chat := app.activeChat()
+	app.Disconnect()
+	if chat == nil || chat.Closed || chat.Session != nil {
+		t.Fatalf("draft after Disconnect = %+v", chat)
+	}
+}

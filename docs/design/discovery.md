@@ -100,6 +100,8 @@ ACP 没有独立的 provider 可用性查询；`session/new` 返回的 model `co
 
 实现：`ready` 通过 initialize 探测；路径解析失败为 `not-installed`；握手失败/非 JSON 为 `installed-not-acp`；超时/崩溃为 `error`；`needs-auth` 在用户点 Connect 后由 `session/new` 触发，并更新该 agent 状态。只有 `ready` 的 agent 进入可连接下拉框。
 
+自动测试：`internal/ui/discovery_test.go` 用注入的 probe 断言每个状态、缺 agent 不阻塞、draft 补选、保存 agent 回退和 Refresh agents；`internal/session/probe_errors_test.go` 用 POSIX shell 覆盖非 JSON stdout、立即退出、stderr tail、上下文超时；`TestStartReportsAuthRequired` + fake agent `FAKE_AGENT_NO_SESSION` 覆盖 `-32000`/`authMethods`；UI 连接失败路径断言状态变为 `needs-auth`。
+
 ## 手动命令行测试
 
 macOS/Linux（需有 `timeout`；否则用 probe 脚本）：

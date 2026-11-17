@@ -27,17 +27,23 @@ func (a *App) chooseImages() {
 		a.addError(chat, errAttachmentCount)
 		return
 	}
-	win := a.window()
+	open := a.openImages
+	if open == nil {
+		win := a.window()
+		open = func() ([]string, error) {
+			return mygo.Dialog.Open(mygo.OpenDialogOptions{
+				Parent:   win,
+				Title:    "Attach Images",
+				Multiple: true,
+				Filters: []mygo.FileFilter{{
+					Name:       "Images",
+					Extensions: []string{"png", "jpg", "jpeg", "gif", "webp", "bmp"},
+				}},
+			})
+		}
+	}
 	go func() {
-		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
-			Parent:   win,
-			Title:    "Attach Images",
-			Multiple: true,
-			Filters: []mygo.FileFilter{{
-				Name:       "Images",
-				Extensions: []string{"png", "jpg", "jpeg", "gif", "webp", "bmp"},
-			}},
-		})
+		paths, err := open()
 		if err != nil {
 			a.Post(func() { a.addError(chat, err) })
 			return

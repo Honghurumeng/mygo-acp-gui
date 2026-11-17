@@ -175,3 +175,30 @@ func TestEnvironmentAddsTheCatalogPath(t *testing.T) {
 		t.Errorf("model_catalog_json = %q", codexConfig.Catalog)
 	}
 }
+
+func TestSaveCatalogIsAtomicAndPrivate(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, CatalogFileName)
+	config := Config{
+		Enabled: true,
+		BaseURL: "https://api.example.com/v1",
+		Models:  []string{"deepseek-chat"},
+	}
+	if err := config.SaveCatalog(path); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Errorf("catalog mode = %o, want 600", perm)
+	}
+	leftovers, err := filepath.Glob(filepath.Join(dir, ".codex-models-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(leftovers) > 0 {
+		t.Errorf("temporary catalog files left behind: %v", leftovers)
+	}
+}

@@ -70,7 +70,7 @@ func (a *App) discover(ctx context.Context) {
 			defer wg.Done()
 			probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
-			_, err := session.Probe(probeCtx, result.Spec)
+			err := a.probeAgent(probeCtx, result.Spec)
 			switch {
 			case err == nil:
 				statuses[i].Status = AgentReady

@@ -39,6 +39,10 @@ type Options struct {
 	// DataDir enables settings.json persistence; empty keeps everything in
 	// memory (tests, portable runs).
 	DataDir string
+	// ProbeAgent checks one builtin agent during discovery. Nil uses
+	// session.Probe; tests can replace it to drive the status machine
+	// without spawning a process.
+	ProbeAgent func(context.Context, agent.LaunchSpec) error
 	// ProbeConfig reads an agent's session config options during discovery
 	// and when the draft model panel needs a refresh. Nil uses
 	// session.ProbeConfig; tests can replace it.
@@ -50,6 +54,9 @@ type Options struct {
 	// ReadClipboardImage returns the clipboard image as PNG, or nil. Nil
 	// uses mygo.Clipboard.ReadImage; tests inject a fixed image.
 	ReadClipboardImage func() []byte
+	// OpenImages opens the native multi-image picker. Nil uses
+	// mygo.Dialog.Open; tests inject paths without a window.
+	OpenImages func() ([]string, error)
 	// FileIndex lists workspace-relative files for @ mentions. Nil uses the
 	// built-in workspace walker; tests inject a small deterministic list.
 	FileIndex func(string) ([]string, error)
@@ -382,9 +389,11 @@ type App struct {
 	// again; discovery runs once per app, not once per window.
 	discoveryStarted   bool
 	resolveOpts        agent.ResolveOptions
+	probeAgent         func(context.Context, agent.LaunchSpec) error
 	probeConfig        func(context.Context, agent.LaunchSpec) (session.Info, error)
 	probeModels        func(context.Context, agent.LaunchSpec, session.ModelProbe) (session.Info, error)
 	readClipboardImage func() []byte
+	openImages         func() ([]string, error)
 	fileIndexer        func(string) ([]string, error)
 	revealItem         func(string)
 	// notify shows a desktop notification. Nil uses mygo (see notify.go);
@@ -452,6 +461,7 @@ func New(opts Options) *App {
 		sessions:           make(map[*session.Session]struct{}),
 		logs:               make(map[string]*logs.Log),
 		resolveOpts:        opts.Resolve,
+		probeAgent:         opts.ProbeAgent,
 		injectedAgents:     opts.Agents != nil,
 		probeConfig:        session.ProbeConfig,
 		probeModels:        session.ProbeConfigModels,
@@ -483,6 +493,12 @@ func New(opts Options) *App {
 	} else {
 		a.Resolving = true
 	}
+	if a.probeAgent == nil {
+		a.probeAgent = func(ctx context.Context, spec agent.LaunchSpec) error {
+			_, err := session.Probe(ctx, spec)
+			return err
+		}
+	}
 	if opts.ProbeConfig != nil {
 		a.probeConfig = opts.ProbeConfig
 		// An injected config probe is the whole probe: tests that replace it
@@ -496,6 +512,7 @@ func New(opts Options) *App {
 	if a.readClipboardImage == nil {
 		a.readClipboardImage = mygo.Clipboard.ReadImage
 	}
+	a.openImages = opts.OpenImages
 	a.fileIndexer = opts.FileIndex
 	if a.fileIndexer == nil {
 		a.fileIndexer = scanWorkspaceFiles

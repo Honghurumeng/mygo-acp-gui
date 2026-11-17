@@ -6,6 +6,7 @@ import (
 
 	mui "github.com/egoist/mygo/ui"
 	"github.com/reed/acp-gui/internal/agent"
+	"github.com/reed/acp-gui/internal/session"
 )
 
 func TestSubagentSessionStreamsIntoParentChat(t *testing.T) {
@@ -271,4 +272,42 @@ func rowsAfterContain(rows []*Message, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestSubagentUserChunkUsesInboundRow(t *testing.T) {
+	app := New(Options{Version: "test", Workspace: t.TempDir(), Agents: []agent.LaunchSpec{}})
+	t.Cleanup(func() {
+		app.Shutdown()
+		app.Flush()
+	})
+	chat := app.activeChat()
+	sub := app.ensureSubagent(chat, "child", "root")
+	if sub == nil {
+		t.Fatal("subagent was not created")
+	}
+	app.applySubagentEvent(chat, session.Event{Kind: session.UpdateUserChunk, SessionID: "child", Text: "do the thing"})
+	app.applySubagentEvent(chat, session.Event{Kind: session.UpdateUserChunk, SessionID: "child", Text: " now"})
+	var inbound []*Message
+	for _, message := range chat.Messages {
+		if message.Role == RoleInbound && message.SubagentID == "child" {
+			inbound = append(inbound, message)
+		}
+	}
+	if len(inbound) != 1 || inbound[0].Text != "do the thing now" {
+		t.Fatalf("inbound rows = %+v", inbound)
+	}
+
+	// An assistant reply closes the inbound row; the next user chunk starts a
+	// new one instead of appending to the conversation's earlier row.
+	app.applySubagentEvent(chat, session.Event{Kind: session.UpdateMessageChunk, SessionID: "child", Text: "working"})
+	app.applySubagentEvent(chat, session.Event{Kind: session.UpdateUserChunk, SessionID: "child", Text: "next"})
+	inbound = nil
+	for _, message := range chat.Messages {
+		if message.Role == RoleInbound && message.SubagentID == "child" {
+			inbound = append(inbound, message)
+		}
+	}
+	if len(inbound) != 2 || inbound[0].Text != "do the thing now" || inbound[1].Text != "next" {
+		t.Fatalf("inbound rows after reply = %+v", inbound)
+	}
 }

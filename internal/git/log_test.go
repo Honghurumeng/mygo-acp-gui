@@ -258,6 +258,9 @@ func TestReadCommitsMarksFetchedNotPulled(t *testing.T) {
 }
 
 func TestCommitFilesListsChangesAgainstFirstParent(t *testing.T) {
+	if !Available() {
+		t.Skip("git not installed")
+	}
 	ctx := context.Background()
 	dir := initRepo(t)
 	writeFile(t, dir, "a.txt", "a\n")
@@ -309,6 +312,9 @@ func TestCommitFilesListsChangesAgainstFirstParent(t *testing.T) {
 }
 
 func TestCommitStatCountsFilesAndLines(t *testing.T) {
+	if !Available() {
+		t.Skip("git not installed")
+	}
 	ctx := context.Background()
 	dir := initRepo(t)
 	writeFile(t, dir, "a.txt", "one\n")
@@ -346,6 +352,9 @@ func headHash(t *testing.T, dir string) string {
 }
 
 func TestCommitDiffReadsBothSides(t *testing.T) {
+	if !Available() {
+		t.Skip("git not installed")
+	}
 	ctx := context.Background()
 	dir := initRepo(t)
 	writeFile(t, dir, "a.txt", "one\n")
