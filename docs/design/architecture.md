@@ -116,18 +116,20 @@ MyGo 原生窗口 (Go + ui)
   - agent → 客户端：notification（`session/update`）、request（`session/request_permission`）
   - 未知 agent→client 请求：回 `-32601 method not supported`
 - pi / codex 用 vendored 单文件 bundle 启动，不经过 npx，也不在启动时构建（见 [pi.md](pi.md)、[codex.md](codex.md)）
+- 稳定 v1、v1 draft、pi/codex 私有扩展和能力协商缺口的边界见 [acp-conformance.md](acp-conformance.md)。`protocolVersion: 1` 下只有 `schema/v1/schema.json` 的字段算稳定规范；`subagents` 在 `schema/v1/schema.unstable.json` 中。
 - 必备方法：
   - `initialize`（声明 `clientCapabilities`）
   - `session/new`（cwd 必须是绝对路径）
   - `session/prompt`（在 goroutine 中调用，一轮结束才 resolve）
   - `session/cancel`（notification）
-  - `session/set_config_option`（model / thought_level）；旧适配器回退 `session/set_model` / `session/set_mode`
+  - `session/set_config_option`（model / thought_level）和 `session/set_mode`；legacy `models` 块只合成 `model` 选项，代码尚未实现 `session/set_model` 回退
   - 权限响应：`{"outcome":{"outcome":"selected","optionId":"..."}}`；取消：`{"outcome":{"outcome":"cancelled"}}`
 - `session/update` 需要处理：
   - `agent_message_chunk`、`agent_thought_chunk`
   - `tool_call`、`tool_call_update`（pending → in_progress → completed/failed）
-  - `subagent_update`（标准 ACP 子会话公告/状态）；子消息、思考和工具调用使用 child `sessionId`
-  - `session_message`（会话间消息）；只渲染 recipient envelope，子任务和子代理回传进入父聊天
+  - `subagent_update`（ACP v1 draft/unstable 子会话公告/状态，不是稳定 v1）；子消息、思考和工具调用使用 child `sessionId`
+  - `session_message`（ACP v1 draft/unstable 会话间消息）；只渲染 recipient envelope，子任务和子代理回传进入父聊天
+  - `session_message_chunk`（同一 draft 的流式消息块）；当前尚未处理，见 [acp-conformance.md](acp-conformance.md)
   - `plan`
   - `current_mode_update`、`config_option_update`、`available_commands_update`
   - 未知 `sessionUpdate`：安静忽略，不要崩
@@ -135,7 +137,7 @@ MyGo 原生窗口 (Go + ui)
   - JSON-RPC error 保留 `code` / `data`；`-32000` 或 `authMethods` → 展示登录指引，不代登录
   - stdout 非 JSON → 协议错误日志
   - stderr 单独收集，写入 agent 日志文件
-- 能力声明与现有实现一致：
+- 当前发送的能力声明（`subagents` 属于 ACP v1 draft）：
 
 ```go
 ClientCapabilities{
@@ -145,7 +147,7 @@ ClientCapabilities{
 }
 ```
 
-`fs: false` / `terminal: false` 仍表示客户端不代读文件、不提供终端；`subagents: {}` 只声明客户端能接收 agent 管理的 child session。pi 自己的工具在工作区内读写执行；客户端只负责展示和审批。
+`fs: false` / `terminal: false` 仍表示客户端不代读文件、不提供终端。`subagents: {}` 在当前 draft 中声明客户端理解 child association、work-state、session-directed messages/chunks 和受限会话语义；当前实现只覆盖了一部分（没有 `session_message_chunk`、没有 upsert、`null` 清除未实现），完整差异见 [acp-conformance.md](acp-conformance.md)。pi 自己的工具在工作区内读写执行；客户端只负责展示和审批。
 
 ## 进程管理
 
@@ -163,7 +165,7 @@ ClientCapabilities{
 - 消息流：`markdown.Stream` 显示进行中的回复，结束后切换 `markdown.View`（同一位置）。
 - 聊天列表：`ui.List`，`FollowEnd` + `FollowAnimation = &ui.Smooth`；用户上滑后停止跟随。
 - 思考/工具：`ui.Collapsible`；工具卡片用 `ui.CollapsibleBase` 做成整卡可点击：默认折叠，标题（指令）单行省略，展开后显示完整指令与入参/输出，再次点击重新折叠。
-- 子代理：`Chat.Subagents` 按 child `sessionId` 保存独立状态卡、流式行和工具 map；父 envelope 上的 `subagent_update` 建立映射，子 envelope 的 update 仍落到父聊天。子权限沿用父 Chat 队列并标注 `Subagent`，退出/重放结束时统一关闭未完成的 child 流。
+- 子代理（ACP v1 draft）：`Chat.Subagents` 按 child `sessionId` 保存独立状态卡、流式行和工具 map；父 envelope 上的 `subagent_update` 建立映射，子 envelope 的 update 仍落到父聊天。子权限沿用父 Chat 队列并标注 `Subagent`，退出/重放结束时统一关闭未完成的 child 流。
 - 权限：`session/request_permission` 回调阻塞；弹窗用 MyGo `ui.DialogBase` + 本地 `arrive`/`shade` 做遮罩与入场，展示工具名、入参和 agent 给出的 `options`；`rawInput.description` 存在时作为主标题，工具 `title` 降为次行；只有弹窗按钮会作答（选项回 `optionId`，`Cancel` 回 `cancelled`），点遮罩或按 Esc 被吞掉，避免误拒绝。
 - 通用外观（按钮、弹窗、空状态、代码块、图标）都在 `internal/ui` 的 `widgets.go` 与 `components.go`，不依赖第三方 UI 库；见 [components.md](components.md)。
 - 配置：模型面板按 agent → provider → model → thinking 选择；模型/思考来自 `configOptions`（切换模型时由响应/`config_option_update` 整组替换），mode 来自真实 `modes`，不硬编码。Codex 还可在设置里配置一个自定义 provider 和额外模型；provider 只写入本次启动的 Codex 子进程环境，模型列表由 `CODEX_ACP_MODELS` 追加，DeepSeek 目标（provider 名称、Base URL 或模型 id 含 deepseek）另生成 `<data>/codex-models.json` 并通过 `CODEX_CONFIG.model_catalog_json` 提供 DeepSeek 模型元数据（slug 使用设置里的 id），自定义模型的推理档位由设置里的复选框生成 `CODEX_ACP_REASONING_EFFORTS`，标题模型由 `CODEX_ACP_TITLE_MODEL` 覆盖（见 [codex-provider.md](codex-provider.md)）。pi-acp v1 把 thinking levels 同时放进 `modes` 的兼容块会被过滤。agent 只在会话开始前可选；未连接的草稿用发现阶段的配置探测缓存显示模型、thinking 和 mode，选择在 Connect 后补发。每个 agent 的 model/thinking/mode 存入 `settings.json` 的 `lastSelections`，新建草稿和切换 agent 时恢复，Connect 时用 agent 返回的列表校验。ACP 只报告当前模型的档位，所以配置探测会在同一个临时进程里把未缓存模型逐个切换并存入 `<data>/model-config.json`（`internal/modelconfig`）；下次启动用模型列表对照该文件，只扫新模型。草稿切到已缓存的 model 直接显示其档位，未缓存时才隐藏并等 Connect 后由 agent 给出。
@@ -233,6 +235,7 @@ logs/                每个 agent 的 stderr / 协议日志（1 MiB 滚动，保
 
 ## 相关文档
 
+- [ACP 规范符合性](acp-conformance.md)
 - [Agent 发现](discovery.md)
 - [pi 集成](pi.md)
 - [Command Code 集成](command-code.md)

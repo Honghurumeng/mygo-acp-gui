@@ -115,6 +115,8 @@ GUI 侧 `internal/session/events.go` 保留消息块的完整 `Content`，`inter
 
 ### 历史回放的消息边界、时间与失败轮次
 
+`_meta.piAcp.replay` 是 pi-acp fork 的私有扩展，不是 ACP 标准。稳定 v1 的 `ContentChunk` 已有标准 `messageId`；当前客户端仍优先使用 `_meta` 做 replay 键，`messageId` 的消费缺口见 [acp-conformance.md](acp-conformance.md)。
+
 pi 把请求失败持久化成 assistant 消息：`content: []`、`stopReason: "error"`、`errorMessage: "..."`。上游 `loadSession` 只为 text/thinking 块发 chunk，因此失败轮次在回放里完全消失。GUI 过去按角色合并连续 chunk；两个相邻 user 消息（中间只有失败轮次）会被并成一条，用户轮次序号随之减少，`sessions.json` 里按序号匹配的 `sentAt` / `durationMs` 全部错位。真实会话里连续三次 `hello` 请求失败，重载后曾显示成一条消息且三组时间互相错位。
 
 fork 改动（`src/acp/agent.ts` 的 `loadSession`）：

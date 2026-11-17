@@ -71,7 +71,7 @@
 - 继续 prompt 只包含 `TASK_EXECUTION`、checker reason 和“继续”，不新建会话。
 - checker prompt 标记 `TASK_COMPLETION_CHECK`，明确“没有工具、不要检查文件”，要求只输出 JSON，不能带 code fence。
 - checker 历史按轮次累积：第 1 轮是第 1 轮最后一段；第 2 轮是第 1 轮最后一段 + 第 1 轮 checker 反馈 + 第 2 轮最后一段；以后各轮依次追加。这样每次全新的 checker 也知道前几轮改了什么、为什么被退回。
-- 已知边界：判定只信任 executor 的总结，不验证真实成果；checker 可能误判，用户仍能在编辑器 / Git 面板里检查。最后一段由连续空行分隔，取最后一条有文本的 root assistant 行的最后一段。checker 的临时 ACP 进程同样只累计 root session 文本，忽略标准子代理 child session。
+- 已知边界：判定只信任 executor 的总结，不验证真实成果；checker 可能误判，用户仍能在编辑器 / Git 面板里检查。最后一段由连续空行分隔，取最后一条有文本的 root assistant 行的最后一段。checker 的临时 ACP 进程同样只累计 root session 文本，忽略 ACP v1 draft 子代理的 child session（见 [acp-conformance.md](acp-conformance.md)）。
 
 ## 失败回滚与 complete(failure)
 

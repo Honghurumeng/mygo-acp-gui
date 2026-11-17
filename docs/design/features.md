@@ -29,9 +29,11 @@
 
 ### 子代理
 
-标准 ACP v1 子代理通过 `initialize.clientCapabilities.subagents = {}` 协商。应用把 agent 管理的 child session 挂在父 `Chat` 下，而不是新建侧栏会话：`subagent_update` 建立 child id、名称、描述、cwd、运行状态和取消能力；`session_message` 的 recipient 视图显示会话间任务/回传；后续 child `sessionId` 的文本、思考、工具调用与历史重放都进入父聊天。
+ACP v1 draft（unstable）子代理通过 `initialize.clientCapabilities.subagents = {}` 协商；稳定 ACP v1 没有这个能力，当前应用默认在 `initialize` 中发送它。应用把 agent 管理的 child session 挂在父 `Chat` 下，而不是新建侧栏会话：`subagent_update` 建立 child id、名称、描述、cwd、运行状态和取消能力；`session_message` 的 recipient 视图显示会话间任务/回传；后续 child `sessionId` 的文本、思考、工具调用与历史重放都进入父聊天。
 
 每个 child 维护独立的流式文本和工具 map，因此子代理工具不会截断主代理当前回复。子代理公告使用专用 `RoleSubagent` 状态卡：名称、任务摘要、最终回复摘要与 Starting/Running/Waiting/Completed/Cancelled/Failed/Disconnected/Unknown 用户文案直接可见，workspace 和 ACP child session id 折叠在详情中；未知状态不再冒充 disconnected。child 的行默认按 `SubagentID` 收进卡片，只有展开卡片才把该 child 的任务、回复和工具调用按原顺序插在卡片下方，避免并行子代理把主线程冲散。权限弹窗继续按父 Chat 排队，并额外显示子代理名称。`spawn/send_input/followup_task/wait_agent/list_agents/resume_agent/close_agent` 等编排调用映射为用户可读事件，不为 `wait`/`closeAgent` 展开 `agentsStates`、thread id 等传输 JSON；无 payload 的工具事件显示为紧凑行。父回合取消/结束时关闭未完成的 child 行，退出进程时标记为 disconnected。兼容旧版 `subagent_spawned` / `subagent_state_update`，但不实现 AIR 私有 native-subagent 扩展。
+
+当前实现只覆盖 draft 的一部分：没有解析 `session_message_chunk`，`session_message` 没有按 `messageId` 做 upsert，`subagent_update` 的 `null` 清除语义未实现；`state.idle` 被当成完成态，父回合结束时还会强制结束运行中的 child。完整差异、风险和待办见 [acp-conformance.md](acp-conformance.md)。
 - 每个会话保留自己的消息列表滚动位置、输入草稿、图片附件、配置选择和计划面板。
 - 顶部工具栏只保留侧栏开关、会话标题和 `Cancel`（仅连接中）；右侧面板的开关由窗口最右缘的窄图标栏完成，会话由工作区上的 `＋` 创建。
 - 右侧 Files 面板按当前 workspace 懒加载文件树，显示 Git 状态，支持右键揭示/重命名/删除、新建文件和文件夹、拖动移动，点文件在共享卡片里查看/编辑；详见 [files.md](files.md)、[viewer.md](viewer.md)。
@@ -42,7 +44,7 @@
 
 ## ACP 状态提示
 
-pi-acp 的启动信息（pi 版本、Extensions、Skills 等）、重试、自动压缩和排队状态不是模型回答。fork 给这些 `agent_message_chunk` 打 `_meta.piAcp.startupInfo` 或 `_meta.piAcp.notice`；GUI 丢弃启动信息，把 notice 画成居中的系统行，同一次重试/压缩/排队的开始和结束更新同一行。扩展 `ctx.ui.notify` 也按系统提示显示。状态行会结束当前 assistant 行，状态之后的文本另起一行，不会把“Retrying…”和回答粘在一起。
+pi-acp 的启动信息（pi 版本、Extensions、Skills 等）、重试、自动压缩和排队状态不是模型回答。fork 给这些 `agent_message_chunk` 打 `_meta.piAcp.startupInfo` 或 `_meta.piAcp.notice`；GUI 丢弃启动信息，把 notice 画成居中的系统行，同一次重试/压缩/排队的开始和结束更新同一行。扩展 `ctx.ui.notify` 也按系统提示显示。状态行会结束当前 assistant 行，状态之后的文本另起一行，不会把“Retrying…”和回答粘在一起。这些 `_meta.piAcp.*` 是 pi-acp fork 的私有扩展，不是 ACP 标准，其他 agent 不保证；完整清单见 [acp-conformance.md](acp-conformance.md)。
 
 ## 系统通知
 
@@ -73,7 +75,7 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 
 ## 配置与模式
 
-`Info` 解析 `configOptions`（model、effort 等）和 `modes`，并兼容只有 `models` 的旧 agent（合成为 `model` 配置项）。ACP 的权威来源是 `configOptions`：agent 在 `session/new` / `session/load` 返回完整列表，在 `session/set_config_option` 的响应和 `config_option_update` 通知里返回**整个新列表**；客户端必须整份替换，不能沿用切换前的档位。
+`Info` 解析 `configOptions`（model、effort 等）和 `modes`，并兼容只有 `models` 的旧 agent（合成为 `model` 配置项；当前没有实现 `session/set_model` 回退，见 [acp-conformance.md](acp-conformance.md)）。ACP 的权威来源是 `configOptions`：agent 在 `session/new` / `session/load` 返回完整列表，在 `session/set_config_option` 的响应和 `config_option_update` 通知里返回**整个新列表**；客户端必须整份替换，不能沿用切换前的档位。
 
 旧版 pi-acp 还把 thinking levels 塞进 `modes`（name 为 `Thinking: …`），同时提供 `thought_level` config option。这些不是权限/session mode，客户端在 `modes` 的每个 id 都命中 thinking 选项值时丢弃整个 `modes` 块及其 `currentModeId`，避免出现一份模型切换后不会刷新的重复“Session mode”菜单；Command Code 的 `default` / `plan` 等真实 mode 不受影响。
 
@@ -91,7 +93,7 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 
 ## 已保存会话与本地存档
 
-本地存档 `<data>/sessions.json` 是侧栏历史列表的来源，由 `internal/archive` 读写。它把会话列表、session ID 和 agent 关联起来，并保存四个本地字段：
+本地存档 `<data>/sessions.json` 是侧栏历史列表的来源，由 `internal/archive` 读写。它把会话列表、session ID 和 agent 关联起来，并保存四个本地字段。注意：当前 `session/list`、`session/load`、`session/close` 没有按 agent capability 预检；不支持的 agent 会得到错误展示，见 [acp-conformance.md](acp-conformance.md)。
 
 - `show`：`true` 正常显示；`false` 表示用户删除，只从侧栏隐藏，记录不删。
 - `showName`：用户重命名后的显示名，优先于 agent 返回的 `title`。

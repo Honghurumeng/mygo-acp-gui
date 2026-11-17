@@ -139,7 +139,7 @@ GUI 以 `thought_level` config option 为唯一 thinking 来源：`session/set_c
 vendored pi-acp fork 在每轮 `session/prompt` 结束后做两件事：
 
 - 调 pi RPC `get_session_stats`，把 `contextUsage.tokens/contextWindow` 发成 ACP `usage_update`（有 `cost` 时按 USD 附带累计费用），UI 显示 composer 右侧的上下文环和 used/size。
-- 从 pi `message_update.usage` 读取本轮 input/output/cache/reasoning/totalTokens，映射为 `PromptResponse.usage`，UI 显示 `turn 1.2k in · 100 out · 40 thought`。
+- 从 pi `message_update.usage` 读取本轮 input/output/cache/reasoning/totalTokens，映射为 `PromptResponse.usage`（ACP v1 draft 字段，见 [acp-conformance.md](acp-conformance.md)），UI 显示 `turn 1.2k in · 100 out · 40 thought`。
 
 `/compact` 结束后也会立即刷新一次 `usage_update`；`contextUsage.tokens` 为 `null`（刚压缩完）或查询失败时跳过，不影响对话。上游 npm `@geohar/pi-acp@0.4.0` 没有这两处映射，因此必须使用本仓库 fork 打出的 bundle；客户端不需要改。
 

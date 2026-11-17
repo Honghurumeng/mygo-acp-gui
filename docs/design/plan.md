@@ -148,7 +148,7 @@ scripts/vendor-codex-acp.sh          # 官方 codex-acp，不含补丁
 - [x] codex-acp 官方单文件 bundle vendored（`resources/agents/codex-acp/`）+ 系统 Codex CLI（`CODEX_PATH`）
 - [x] 系统 Node / pi / command-code / codex 定位（登录 shell + 绝对路径覆盖）+ 登录指引（只展示，不代登录）
 - [x] Command Code 启动与完整聊天流程：initialize、session/new、流式、权限、取消、退出清理
-- [x] Codex 启动与完整聊天流程：本地补丁 codex-acp bundle + 系统 codex、initialize、session/new、流式、取消、标准 ACP 子代理、退出清理
+- [x] Codex 启动与完整聊天流程：本地补丁 codex-acp bundle + 系统 codex、initialize、session/new、流式、取消、ACP v1 draft 子代理、退出清理
 - [x] 退出清理（Setpgid + 进程组 SIGTERM/SIGKILL）
 - [x] settings.json 持久化（上次 agent/工作区、每个 agent 的模型/thinking/mode、侧栏工作区列表 + `removedWorkspaces` 软删除、paths 覆盖、外观/主题；原子写入 + 容错加载）
 - [ ] 诊断面板（stderr / 日志查看；目前只有 `logs/<agent>.log` 文件写入）
@@ -171,6 +171,11 @@ scripts/vendor-codex-acp.sh          # 官方 codex-acp，不含补丁
 - [x] settings.json 持久化（上次 agent/工作区）
 - [x] 移除 CrychicUI：通用外观改到 `internal/ui/widgets.go` / `components.go`，图标内嵌 Lucide 子集，release 二进制约减 1.3 MB（见 [components.md](components.md)）
 - [ ] MCP servers 配置 UI（JSON 编辑 + 校验 + 持久化；当前协议层只发送空 `mcpServers` 数组）
+- [ ] ACP 合规收口（详见 [acp-conformance.md](acp-conformance.md)）：明确 `subagents` 默认策略（严格稳定 v1 关闭 / 完整 v1 draft 支持），删除不存在的 `SessionCapabilities.Subagents`
+- [ ] 补齐 draft 子代理语义：`session_message_chunk`、`session_message` upsert、`subagent_update` 的 `null` 清除、idle 可复用
+- [ ] 给 `session/load` / `session/list` / `session/close` 加 capability 预检，不支持时静默降级
+- [ ] 用稳定 `ContentChunk.messageId` 做 replay 行身份；`_meta.piAcp.replay` 仅作 fallback
+- [ ] 支持 grouped/boolean `configOptions`（或逐项跳过坏选项）和 `session_info_update` 的 `null` 清除
 - [ ] ACP 报文监视器
 - [ ] Windows / Linux 打包验证
 
@@ -192,7 +197,7 @@ scripts/vendor-codex-acp.sh          # 官方 codex-acp，不含补丁
 
 ## 参考
 
-- ACP 协议：https://agentclientprotocol.com
+- ACP 协议：https://agentclientprotocol.com；v1 schema stable/unstable：https://github.com/agentclientprotocol/agent-client-protocol/tree/main/schema/v1
 - `@geohar/pi-acp`：npm 包（MIT）；fork `https://github.com/georgeharker/pi-acp`，原始项目 `https://github.com/svkozak/pi-acp`。
 - `@agentclientprotocol/codex-acp`：官方 ACP 适配器（Apache-2.0），`https://github.com/agentclientprotocol/codex-acp`；Codex CLI：`https://github.com/openai/codex`。
 - pi RPC 文档（本机安装包内）：`docs/rpc.md`、`docs/rpc-commands.md`、`docs/json.md`、`docs/rpc-extension-ui.md`

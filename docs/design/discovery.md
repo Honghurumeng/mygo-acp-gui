@@ -82,7 +82,7 @@ ACP 没有独立的 provider 可用性查询；`session/new` 返回的 model `co
    - 超时 / 退出 → 标记失败，保留 stderr 末尾
 5. 关闭 stdin，先 SIGTERM，宽限后杀**进程组**。
 
-探测时声明 `fs: false`、`terminal: false`，与本应用实际能力一致；不要为了“探测成功”而声明用不到的能力。
+探测时声明 `fs: false`、`terminal: false`，与本应用实际能力一致；不要为了“探测成功”而声明用不到的能力。实际的 `DefaultClientCapabilities` 还会带 `subagents:{}`（ACP v1 draft，不是稳定 v1，见 [acp-conformance.md](acp-conformance.md)）；手写命令行示例省略它不影响 initialize。
 
 `session/new` 是第二层验证（能否真正开会话），用户点“连接”时做；`session/new` 返回 `-32000` 或 `auth_required` 时进入“需要登录”状态，只展示 agent 的 `authMethods`（名称、描述、可复制命令）；应用不代登录、不内嵌终端，由用户自己在外部终端解决后重连。
 
@@ -141,8 +141,10 @@ Windows PowerShell：
 Codex 的响应（`codex-acp@2.6.0` + `codex-cli 0.169.0`，可能先多一行 `_auth/status_update` 通知）：
 
 ```json
-{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentInfo":{"name":"@agentclientprotocol/codex-acp","title":"Codex","version":"2.6.0"},"agentCapabilities":{"auth":{"logout":{}},"providers":{},"loadSession":true,"promptCapabilities":{"embeddedContext":true,"image":true},"sessionCapabilities":{"resume":{},"list":{},"close":{},"delete":{},"fork":{},"title":{},"additionalDirectories":{},"subagents":{},"systemPrompt":{}},"mcpCapabilities":{"acp":false,"http":true,"sse":false}},"authMethods":[{"id":"api-key","name":"API Key"},{"id":"chat-gpt","name":"ChatGPT"}]}}
+{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentInfo":{"name":"@agentclientprotocol/codex-acp","title":"Codex","version":"2.6.0"},"agentCapabilities":{"auth":{"logout":{}},"providers":{},"loadSession":true,"promptCapabilities":{"embeddedContext":true,"image":true},"sessionCapabilities":{"resume":{},"list":{},"close":{},"delete":{},"fork":{},"title":{},"additionalDirectories":{},"systemPrompt":{}},"mcpCapabilities":{"acp":false,"http":true,"sse":false}},"authMethods":[{"id":"api-key","name":"API Key"},{"id":"chat-gpt","name":"ChatGPT"}]}}
 ```
+
+上面是 Codex `initialize` 的主要字段（2026-11-17 实测，省略 `_meta`）；`sessionCapabilities` 没有 `subagents`。客户端类型里历史误加的 `SessionCapabilities.Subagents` 不是 ACP 字段，已记录在 [acp-conformance.md](acp-conformance.md)；子代理只通过 **client → agent** 的 `ClientCapabilities.subagents` 协商。
 
 `command-code` 会把 `[acp] initialize: ...` 写到 stderr。stdout 必须只有协议 JSON；探测时 stderr 单独收集，不能当作响应。Codex 会先启动 `codex app-server`，响应前可能推送 `_auth/status_update` 通知。Command Code 的完整实测流程见 [command-code.md](command-code.md)，Codex 的 bundle、`CODEX_PATH` 和登录说明见 [codex.md](codex.md)。
 

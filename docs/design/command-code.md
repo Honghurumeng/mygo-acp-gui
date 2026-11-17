@@ -48,12 +48,12 @@ Command Code 是用户自备的 CLI，应用只定位已有安装，不安装、
 
 一轮 prompt 中实际观察到的 update：
 
-- `available_commands_update`：很大，可能每轮开始都发；应用当前安静忽略
+- `available_commands_update`：很大，可能每轮开始都发；应用解析为输入框的 `/` 命令面板
 - `agent_thought_chunk`：思考流
 - `agent_message_chunk`：正文流
 - `tool_call` / `tool_call_update`：`pending → in_progress → completed/failed`；工具内容在 `content` 数组里
 - `usage_update`：上下文 used/size 与费用；`internal/session` 解析为 `UpdateUsage`，UI 显示在所属标签的会话栏
-- prompt 结果除 `stopReason` 外还带 `usage` / `_meta`；`usage` 解析为 `acp.PromptUsage` 并显示为 `turn … in · … out`，`_meta` 保留不展示
+- prompt 结果除 `stopReason` 外还带 `usage` / `_meta`；`usage`（ACP v1 draft 字段，见 [acp-conformance.md](acp-conformance.md)）解析为 `acp.PromptUsage` 并显示为 `turn … in · … out`，`_meta` 保留不展示
 
 `session/cancel` 是 notification；取消后 prompt 以 `stopReason: "cancelled"` 结束，同一会话可以继续发下一轮。用户拒绝权限时 agent 会发 `tool_call_update` 并把回合正常结束。
 
