@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/egoist/mygo"
 	mui "github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/editor"
 	"github.com/egoist/mygo/ui/markdown"
 	"github.com/reed/acp-gui/internal/acp"
 	"github.com/reed/acp-gui/internal/agent"
@@ -112,8 +114,31 @@ type Message struct {
 	Status      string
 	ToolCallID  string
 	Detail      string
-	NoticeKind  string
-	NoticeLevel string
+	// ToolKind is the ACP kind of a tool call (read, edit, search, execute,
+	// think, fetch, switch_mode, other). ToolPaths, ToolDiffs and ToolExit
+	// keep what the card renders per kind; Detail stays the flat text
+	// fallback for calls the parser does not understand.
+	ToolKind    string
+	ToolPaths   []string
+	ToolDiffs   []ToolDiff
+	ToolExit    *int
+	ToolCwd     string
+	ToolOffset  int
+	ToolLimit   int
+	ToolPattern string
+	ToolURL     string
+	// ToolStart and ToolEnd bracket a call's runtime for its header.
+	ToolStart time.Time
+	ToolEnd   time.Time
+	// Diff viewer state is rebuilt when the diffs or the font change, so a
+	// streaming call does not rebuild its diff on every frame. toolOutputOpen
+	// expands a command's trimmed output to its full text.
+	toolDiffState  []*editor.DiffState
+	toolDiffSource []ToolDiff
+	toolDiffFont   float32
+	toolOutputOpen bool
+	NoticeKind     string
+	NoticeLevel    string
 	// SubagentID and SubagentName identify child-session output. They stay
 	// empty for the root conversation.
 	SubagentID   string
@@ -1351,66 +1376,6 @@ func (a *App) subagentLabel(c *mui.Context, m *Message) {
 	mutedText(c, label, a.chatFont(10)).SingleLine()
 }
 
-// toolMessage draws one tool call as a card that starts collapsed: its header
-// keeps the command to one line, and the output is hidden. A click on the
-// header opens the full command and the output below it; another click closes
-// them again.
-func (a *App) toolMessage(c *mui.Context, m *Message) {
-	t := c.Theme()
-	status := toolStatusLabel(m.Status)
-	statusColor := t.TextMuted
-	switch m.Status {
-	case "completed":
-		statusColor = t.Success
-	case "failed":
-		statusColor = t.Danger
-	case "in_progress", "pending":
-		statusColor = t.Warning
-	}
-	if strings.TrimSpace(m.Detail) == "" {
-		// Orchestration calls such as wait_agent and close_agent have no
-		// user-facing payload. Draw them as a compact event instead of an
-		// expandable card whose panel would otherwise be empty.
-		surfaceCard(c, mui.Row(c).Gap(6).MaxWidth(chatMaxWidth).Padding(8, 10).AlignItems(mui.Center)).Children(func() {
-			a.subagentLabel(c, m)
-			mutedText(c, "•", a.chatFont(12)).Width(8).Shrink(0)
-			mui.Text(c, m.Title).Bold().FontSize(a.chatFont(12)).Grow(1).MinWidth(0).SingleLine()
-			if status != "" {
-				mui.Text(c, status).FontSize(a.chatFont(11)).TextColor(statusColor).Shrink(0)
-			}
-		})
-		return
-	}
-	surfaceCard(c, mui.Column(c).Gap(3).MaxWidth(chatMaxWidth).Padding(8, 10)).Children(func() {
-		a.subagentLabel(c, m)
-		// Created inside the card: nodes join their parent as they are built,
-		// so a trigger built before it would sit outside the card's surface.
-		parts := mui.CollapsibleBase(c, &m.DetailOpen)
-		parts.Trigger.Grow(1).Gap(6).AlignItems(mui.Center).
-			Label(Tf("Toggle tool output: %s", m.Title)).Children(func() {
-			mark := "▸"
-			if m.DetailOpen {
-				mark = "▾"
-			}
-			// A fixed arrow width keeps the panel aligned with the command.
-			mutedText(c, mark, a.chatFont(10)).Width(10)
-			title := mui.Text(c, m.Title).Bold().FontSize(a.chatFont(12)).Grow(1)
-			if !m.DetailOpen {
-				// Long commands stay one line until the card is opened.
-				title.SingleLine()
-			}
-			if status != "" {
-				mui.Text(c, status).FontSize(a.chatFont(11)).TextColor(statusColor).Shrink(0)
-			}
-		})
-		parts.Panel(func() {
-			if m.Detail != "" {
-				mutedText(c, m.Detail, a.chatFont(11)).Selectable()
-			}
-		}).PaddingStart(16)
-	})
-}
-
 func toolStatusLabel(status string) string {
 	normalized := strings.TrimSpace(status)
 	switch strings.ToLower(normalized) {
@@ -1496,19 +1461,6 @@ func compactJSON(raw json.RawMessage) string {
 	return text
 }
 
-func toolDetail(call session.ToolCall) string {
-	if _, ok := subagentControlLabel(call); ok {
-		return ""
-	}
-	if text := rawText(call.Content); text != "" {
-		return truncate(text, 2000)
-	}
-	if text := rawText(call.RawOutput); text != "" {
-		return truncate(text, 2000)
-	}
-	return compactJSON(call.RawInput)
-}
-
 // applyToolPresentation preserves partial tool updates while keeping an
 // orchestration event readable once it has been recognized. Later updates may
 // omit the payload that identified the call, so they must not reintroduce its
@@ -1520,6 +1472,9 @@ func applyToolPresentation(message *Message, call session.ToolCall) {
 	if label, ok := subagentControlLabel(call); ok {
 		message.Title = label
 		message.Detail = ""
+		message.ToolKind = ""
+		message.ToolDiffs = nil
+		message.ToolExit = nil
 		return
 	}
 	if _, established := subagentControlLabel(session.ToolCall{Title: message.Title}); established {
@@ -1528,8 +1483,46 @@ func applyToolPresentation(message *Message, call session.ToolCall) {
 	if call.Title != "" {
 		message.Title = call.Title
 	}
-	if detail := toolDetail(call); detail != "" {
-		message.Detail = detail
+	view := parseToolCall(call)
+	if view.Kind != "" {
+		message.ToolKind = view.Kind
+	}
+	if len(view.Paths) > 0 {
+		message.ToolPaths = view.Paths
+	}
+	if view.Exit != nil {
+		message.ToolExit = view.Exit
+	}
+	if view.Cwd != "" {
+		message.ToolCwd = view.Cwd
+	}
+	if view.Offset > 0 {
+		message.ToolOffset = view.Offset
+	}
+	if view.Limit > 0 {
+		message.ToolLimit = view.Limit
+	}
+	if view.Pattern != "" {
+		message.ToolPattern = view.Pattern
+	}
+	if view.URL != "" {
+		message.ToolURL = view.URL
+	}
+	if len(view.Diffs) > 0 && !slices.Equal(message.ToolDiffs, view.Diffs) {
+		message.ToolDiffs = view.Diffs
+	}
+	switch {
+	case view.Detail != "":
+		message.Detail = view.Detail
+	case len(view.Diffs) > 0:
+		// The diff replaces the rawInput JSON the first update showed.
+		message.Detail = ""
+	}
+	if message.ToolStart.IsZero() {
+		message.ToolStart = time.Now()
+	}
+	if message.ToolEnd.IsZero() && toolStatusTerminal(call.Status) {
+		message.ToolEnd = time.Now()
 	}
 }
 

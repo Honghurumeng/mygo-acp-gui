@@ -167,7 +167,7 @@ ClientCapabilities{
 
 - 消息流：`markdown.Stream` 显示进行中的回复，结束后切换 `markdown.View`（同一位置）。
 - 聊天列表：`ui.List`，`FollowEnd` + `FollowAnimation = &ui.Smooth`；用户上滑后停止跟随。
-- 思考/工具：`ui.Collapsible`；工具卡片用 `ui.CollapsibleBase` 做成整卡可点击：默认折叠，标题（指令）单行省略，展开后显示完整指令与入参/输出，再次点击重新折叠。
+- 思考/工具：`ui.Collapsible`；工具卡片用 `ui.CollapsibleBase` 做成整卡可点击，默认折叠，再次点击重新折叠。卡片按 ACP `kind` 分类型渲染：edit/write/delete/move 内联 `editor.DiffView`（`+N −M`、hunk 隐藏行号、面板内 Copy/`Open file`），execute 等宽命令 + exit 徽章 + 输出块，read 高亮代码（offset 起行号），search 命中统计与 pattern 高亮，think 无卡片表面，fetch 主机与链接，其余按高亮 JSON 或文本。解析、兜底与各 kind 形态见 [toolcards.md](toolcards.md)。
 - 子代理（ACP v1 draft）：`Chat.Subagents` 按 child `sessionId` 保存独立状态卡、流式行和工具 map；父 envelope 上的 `subagent_update` 建立映射，子 envelope 的 update 仍落到父聊天。子权限沿用父 Chat 队列并标注 `Subagent`，退出/重放结束时统一关闭未完成的 child 流。
 - 权限：`session/request_permission` 回调阻塞；弹窗用 MyGo `ui.DialogBase` + 本地 `arrive`/`shade` 做遮罩与入场，展示工具名、入参和 agent 给出的 `options`；`rawInput.description` 存在时作为主标题，工具 `title` 降为次行；只有弹窗按钮会作答（选项回 `optionId`，`Cancel` 回 `cancelled`），点遮罩或按 Esc 被吞掉，避免误拒绝。
 - 通用外观（按钮、弹窗、空状态、代码块、图标）都在 `internal/ui` 的 `widgets.go` 与 `components.go`，不依赖第三方 UI 库；见 [components.md](components.md)。

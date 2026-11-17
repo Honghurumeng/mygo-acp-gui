@@ -18,6 +18,7 @@
 - `docs/design/codex.md`：codex-acp 本地补丁 bundle、系统 Codex CLI/`CODEX_PATH`、认证、更新与测试。
 - `docs/design/codex-provider.md`：设置里的 Codex 自定义供应商、自定义模型、标题模型、安全与测试。
 - `docs/design/features.md`：多会话、发现探测、配置/模式、历史、图片、MCP、命令面板、消息跳转、计划/用量。
+- `docs/design/toolcards.md`：对话流工具卡片：`parseToolCall` 解析管道、按 ACP kind 的形态（edit 内联 diff、execute 输出/exit、read/search 代码块、think/fetch/MCP）、截断与 i18n。
 - `docs/design/viewer.md`：Git / Tasks / Files 共用的浮动查看卡片：Diff/View/Edit、Markdown、保存、可调宽度。
 - `docs/design/multi-session.md`：pi / Command Code 单进程多会话能力调查与结论。
 - `docs/design/git.md`：右侧 Git 面板、仓库探测、状态/图表、提交与 fetch/pull/push、异步与安全。

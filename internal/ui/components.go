@@ -151,12 +151,21 @@ func copyButton(c *mui.Context, code string) mui.Element {
 // lines wrapped. The tokenizer carries its state from line to line, so a
 // string or comment spanning lines keeps its color.
 func codeLines(c *mui.Context, lang, code string) {
+	codeLinesFrom(c, lang, code, 1)
+}
+
+// codeLinesFrom numbers lines from start, for a file read that began at an
+// offset rather than at its first line.
+func codeLinesFrom(c *mui.Context, lang, code string, start int) {
 	t := c.Theme()
 	lines := strings.Split(code, "\n")
 	if n := len(lines); n > 1 && lines[n-1] == "" {
 		lines = lines[:n-1]
 	}
-	digits := float32(len(strconv.Itoa(len(lines))))
+	if start < 1 {
+		start = 1
+	}
+	digits := float32(len(strconv.Itoa(start + len(lines) - 1)))
 	theme := editor.DefaultTheme(t)
 	var tok editor.Tokenizer
 	if l := editor.LanguageNamed(lang); l != nil {
@@ -169,7 +178,7 @@ func codeLines(c *mui.Context, lang, code string) {
 			var spans []mui.Span
 			spans, state = codeSpans(tok, theme, state, line)
 			mui.Row(c).FillWidth().Gap(t.Space(3)).Padding(0, t.Space(3)).Children(func() {
-				mui.Text(c, strconv.Itoa(i+1)).Font("monospace").FontSize(t.Rem(0.8)).
+				mui.Text(c, strconv.Itoa(start+i)).Font("monospace").FontSize(t.Rem(0.8)).
 					TextColor(t.TextMuted.Alpha(0.7)).Width(t.Space(2 * digits)).Shrink(0).
 					TextAlign(mui.End).LineHeight(1.6)
 				mui.RichText(c, spans...).Font("monospace").FontSize(t.Rem(0.8)).
