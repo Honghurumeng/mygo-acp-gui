@@ -211,7 +211,7 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 
 - `plan` → composer 上方的可折叠计划列表，显示状态。
 - `session_info_update.title` → 标题显示在顶部会话栏和侧栏会话项。收到后立即写 `sessions.json`；pi-acp fork 在首次 prompt 用用户正文合成一条兜底标题，command-code 在首轮后生成标题，用户手动 rename 写入 `showName` 并始终优先。
-- `usage_update` → composer 中的环形进度 + 百分比（有用量但四舍五入为 0 时显示 `<1%`）；hover 显示 used/size、百分比和费用。每次报告同步写入 `sessions.json`，重启或 `session/load` 后先恢复上次的值。agent 不发时没有上下文数字；ACP 没有主动查询的方法。
+- `usage_update` → composer 中的环形进度 + 百分比（有用量但四舍五入为 0 时显示 `<1%`）；hover 显示 used/size、百分比和费用。pi-acp 在每个 `turn_end`、prompt 结束或压缩后发报告，每次报告同步写入 `sessions.json`；重启或 `session/load` 后先恢复上次的值。agent 不发时没有上下文数字；ACP 没有主动查询的方法。
 - prompt 结果里的 `usage` 解析为 `acp.PromptUsage`，显示为 `turn 1.2k in · 100 out · 40 thought`（只在 agent 返回时出现），与 `context` 分开；`_meta` 保留在 `acp.PromptResult`，不展示明细。
 - 当前 command-code 和 vendored pi-acp fork（0.4.0 + usage 补丁）都会发 `usage_update` 并返回 prompt `usage`；上游 npm `@geohar/pi-acp@0.4.0` 没有这两处映射（见 [pi.md](pi.md#用量)）。
 

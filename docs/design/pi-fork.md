@@ -4,7 +4,7 @@
 
 状态：已实施。本地源码在仓库根目录的 `pi-acp-main/`（被 `.gitignore` 忽略，不随主仓库提交），产物已重新打包到 `resources/agents/pi-acp/`。
 
-- bundle sha256：`34302d3b79903cca3ae2cfa42e732d6e561ad49e599b34cfea14f251c7b18058`
+- bundle sha256：`ebd6688170471382e456257a239093d4a90f4ef124f79b1afca748c1e962b239`
 - 体积：462 KiB
 - 上游基线：`@geohar/pi-acp@0.4.0`
 
@@ -57,10 +57,13 @@ fork 改动（`src/acp/translate/pi-tools.ts`、`src/acp/session.ts`）：
 `src/acp/session.ts`（`PiAcpSession`）：
 
 - 新增 `toAcpUsage()`：把 pi 的 `input` / `output` / `cacheRead` / `cacheWrite` / `reasoning` / `totalTokens` 映射成 ACP `Usage`。
-- 新增 `emitContextUsage()`：调 pi RPC `get_session_stats`，把 `contextUsage.tokens/contextWindow` 发成 `usage_update`；`stats.cost > 0` 时附带 `{ amount, currency: 'USD' }`。`tokens` 为 `null`、字段缺失或查询失败时静默跳过。
-- `handlePiEvent` 的 `message_update` 读取顶层 `ev.usage`，保存当前 turn 的最新非空 usage。
+- 新增 `emitContextUsage()`：调 pi RPC `get_session_stats`，把 `contextUsage.tokens/contextWindow` 发成 `usage_update`；`stats.cost > 0` 时附带 `{ amount, currency: 'USD' }`。`tokens` 为 `null`、字段缺失或查询失败时静默跳过。相同报告只发一次；查询串行化，突发调用合并成一次尾随查询，避免旧响应覆盖新值。
+- `handlePiEvent` 的 `message_update` 读取顶层 `ev.usage`，只保存当前 turn 的最新非空 usage，不在这里发上下文用量。
+- `turn_end` 时立即触发一次权威 `emitContextUsage()`。pi 的 `turn_end` 是「一个 assistant 响应 + 它的工具结果」的边界，所以工具循环里每一步都会刷新环，而不是等整个 prompt 结束。
+- `auto_compaction_end` 也立即刷新；手动 `/compact` 仍由 `agent.ts` 在命令结束后调用。
 - `startTurn()` 清空当前 usage；turn 结算时把 usage 快照推进 `settledTurnUsage` 队列。
 - 新增 `consumeTurnUsage()`，按 prompt 结算顺序取出一份 usage。用队列而不是单个字段，避免排队 prompt 在下一轮 `startTurn()` 清空后丢上一轮结果。
+- 测试：`test/component/session-context-usage.test.ts`（`turn_end` / 压缩刷新、重复报告去重、查询串行化）。
 
 `src/acp/agent.ts`（`prompt()` 普通路径）：
 
@@ -73,7 +76,7 @@ const stopReason: StopReason = /* error -> cancelled/end_turn */
 return { stopReason, ...(usage ? { usage } : {}) }
 ```
 
-每个 turn 结束发一次上下文用量；不要在每次 `message_update` 都查 stats。`/compact` 结束后也调用一次 `emitContextUsage()`，压缩后立即刷新环。
+每个 `turn_end` 和 prompt 结束都会发权威上下文用量（重复报告去重）；`message_update` 期间不查 stats，也不发近似上下文值，避免把 RPC 和频繁写入拖进 token 流。`/compact` 结束后也调用一次 `emitContextUsage()`，压缩后立即刷新环。
 
 ### 单轮 usage
 

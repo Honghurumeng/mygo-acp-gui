@@ -27,7 +27,7 @@ resources/agents/pi-acp/
 | esbuild（仅构建期） | `0.28.2` | — |
 
 `pi-acp.bundle.mjs` 的 sha256：
-`34302d3b79903cca3ae2cfa42e732d6e561ad49e599b34cfea14f251c7b18058`
+`ebd6688170471382e456257a239093d4a90f4ef124f79b1afca748c1e962b239`
 
 当前 bundle 来自本地 fork（`pi-acp-main`，上游 0.4.0 + usage/推理强度/thinking/图片/失败轮次与消息时间回放/会话标题/工具标题补丁），不是 npm 上的原版 0.4.0；差异和重打步骤见 [pi-fork.md](pi-fork.md)。
 
@@ -136,12 +136,14 @@ GUI 以 `thought_level` config option 为唯一 thinking 来源：`session/set_c
 
 ## 用量
 
-vendored pi-acp fork 在每轮 `session/prompt` 结束后做两件事：
+vendored pi-acp fork 在 prompt 运行期间持续刷新上下文用量：
 
-- 调 pi RPC `get_session_stats`，把 `contextUsage.tokens/contextWindow` 发成 ACP `usage_update`（有 `cost` 时按 USD 附带累计费用），UI 显示 composer 右侧的上下文环和 used/size。
+- 每个 pi `turn_end`（一个 assistant 响应 + 工具结果）调 `get_session_stats`，把 `contextUsage.tokens/contextWindow` 发成权威 ACP `usage_update`（有 `cost` 时按 USD 附带累计费用）。工具循环因此每步更新 composer 右侧的上下文环，而不是等整个 prompt 结束。
+- `message_update` 只用于本轮的 prompt `usage`，不额外发上下文近似值。
+- prompt 结束和 `auto_compaction_end` / 手动 `/compact` 后仍会立即发一次权威报告。相同 used/size/cost 去重，查询串行化；`contextUsage.tokens` 为 `null`、字段缺失或查询失败时跳过，不影响对话。
 - 从 pi `message_update.usage` 读取本轮 input/output/cache/reasoning/totalTokens，映射为 `PromptResponse.usage`（ACP v1 draft 字段，见 [acp-conformance.md](acp-conformance.md)），UI 显示 `turn 1.2k in · 100 out · 40 thought`。
 
-`/compact` 结束后也会立即刷新一次 `usage_update`；`contextUsage.tokens` 为 `null`（刚压缩完）或查询失败时跳过，不影响对话。上游 npm `@geohar/pi-acp@0.4.0` 没有这两处映射，因此必须使用本仓库 fork 打出的 bundle；客户端不需要改。
+上游 npm `@geohar/pi-acp@0.4.0` 没有这些映射，因此必须使用本仓库 fork 打出的 bundle；客户端不需要改。
 
 ## 认证
 
