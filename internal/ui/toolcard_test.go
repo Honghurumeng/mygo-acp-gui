@@ -72,6 +72,50 @@ func TestToolCardStartsCollapsedAndToggles(t *testing.T) {
 	}
 }
 
+// A long body is capped at toolCardMaxHeight and scrolls inside the card; the
+// next message stays one card away instead of a whole log below it.
+func TestToolCardBodyStopsAtMaxHeight(t *testing.T) {
+	app := New(Options{
+		Version:   "test",
+		Workspace: t.TempDir(),
+		Agents:    []agent.LaunchSpec{{ID: "fake", Name: "fake-agent"}},
+	})
+	t.Cleanup(func() {
+		app.Shutdown()
+		app.Flush()
+	})
+
+	chat := app.activeChat()
+	app.addMessage(chat, &Message{
+		ID: app.nextID(), Role: RoleTool, Done: true, DetailOpen: true,
+		Title: "go test ./...", ToolKind: "execute", Status: "completed",
+		Detail: strings.Repeat("a build log line\n", 600),
+	})
+	app.addMessage(chat, &Message{ID: app.nextID(), Role: RoleAssistant, Done: true, Text: "after the tool card"})
+	tt := mui.NewTester(app.View, 1060, 760)
+	tt.Frame()
+
+	header, ok := tt.Find("Toggle tool output: go test ./...")
+	if !ok {
+		t.Fatalf("tool card header missing; texts: %q", tt.Texts())
+	}
+	following, ok := tt.Find("after the tool card")
+	if !ok {
+		t.Fatalf("following row missing; texts: %q", tt.Texts())
+	}
+	// The body scrolls inside the card: a wheel over it moves the log, not the
+	// conversation. Without the cap the whole list would scroll instead.
+	tt.Scroll(600, header.Y+40, 0, -240)
+	tt.Frame()
+	after, ok := tt.Find("after the tool card")
+	if !ok {
+		t.Fatalf("following row lost; texts: %q", tt.Texts())
+	}
+	if after.Y != following.Y {
+		t.Errorf("scrolling the card body moved the following row from %v to %v", following.Y, after.Y)
+	}
+}
+
 // Tool cards, errors, notices and turn summaries keep the reply measure: on a
 // wide window they stop at chatMaxWidth instead of stretching across the list.
 func TestConversationRowsShareMaxWidth(t *testing.T) {

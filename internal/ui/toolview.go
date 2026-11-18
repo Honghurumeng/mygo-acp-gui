@@ -404,6 +404,13 @@ func inferToolKind(kind string, call session.ToolCall, diffs []ToolDiff) string 
 	if kind != "" {
 		return kind
 	}
+	// A status-and-result update names neither the tool nor its arguments. It
+	// is how pi-acp closes a live call and how it replays every historic one,
+	// so it carries no evidence: report no kind instead of "other", which
+	// would overwrite the kind the opening tool_call declared.
+	if strings.TrimSpace(call.Title) == "" && len(call.RawInput) == 0 {
+		return ""
+	}
 	return "other"
 }
 

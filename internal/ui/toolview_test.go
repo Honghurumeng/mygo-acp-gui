@@ -180,10 +180,44 @@ func TestApplyToolPresentationMovesDiffIntoCard(t *testing.T) {
 	if message.ToolStart.IsZero() || message.ToolEnd.IsZero() {
 		t.Errorf("runtime not bracketed: start=%v end=%v", message.ToolStart, message.ToolEnd)
 	}
-	// codex sends a status-only update after the diff.
-	applyToolPresentation(message, session.ToolCall{Title: "edit a.go", Status: "completed"})
-	if len(message.ToolDiffs) != 1 || message.Detail != "" {
+	// codex sends a status-only update after the diff: no title, no kind.
+	applyToolPresentation(message, session.ToolCall{Status: "completed"})
+	if len(message.ToolDiffs) != 1 || message.Detail != "" || message.ToolKind != "edit" {
 		t.Errorf("status update regressed presentation: %+v", message)
+	}
+}
+
+// session/load replays a call as one tool_call that names the kind and its
+// arguments, then a tool_call_update that carries only the result. The second
+// update must keep the card, instead of turning it into the generic one.
+func TestReplayToolCallsKeepTheirKind(t *testing.T) {
+	read := &Message{Role: RoleTool, ToolCallID: "t1"}
+	applyToolPresentation(read, session.ToolCall{
+		ToolCallID: "t1", Title: "read a.go", Kind: "read", Status: "completed",
+		RawInput: json.RawMessage(`{"path":"a.go","offset":1,"limit":5}`),
+	})
+	applyToolPresentation(read, session.ToolCall{
+		ToolCallID: "t1", Status: "completed",
+		Content: json.RawMessage(`[{"type":"content","content":{"type":"text","text":"package a\n"}}]`),
+	})
+	if read.ToolKind != "read" {
+		t.Errorf("read kind = %q, want read", read.ToolKind)
+	}
+	if read.Detail != "package a" || read.ToolOffset != 1 || read.ToolLimit != 5 {
+		t.Errorf("read presentation = %+v", read)
+	}
+
+	edit := &Message{Role: RoleTool, ToolCallID: "t2"}
+	applyToolPresentation(edit, session.ToolCall{
+		ToolCallID: "t2", Title: "edit a.go", Kind: "edit", Status: "completed",
+		RawInput: json.RawMessage(`{"path":"a.go","edits":[{"oldText":"x","newText":"y"}]}`),
+	})
+	applyToolPresentation(edit, session.ToolCall{
+		ToolCallID: "t2", Status: "completed",
+		Content: json.RawMessage(`[{"type":"content","content":{"type":"text","text":"edited a.go"}}]`),
+	})
+	if edit.ToolKind != "edit" || len(edit.ToolDiffs) != 1 {
+		t.Errorf("edit presentation = %+v", edit)
 	}
 }
 

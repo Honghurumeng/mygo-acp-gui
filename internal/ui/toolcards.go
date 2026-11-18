@@ -18,6 +18,18 @@ import (
 // diff scrolls inside a fixed-height viewer instead of growing the card.
 const toolDiffInlineMaxLines = 400
 
+// toolCardMaxHeight is the tallest body a tool card shows before the rest
+// scrolls inside it. Output, file text and reasoning arrive in unbounded
+// amounts, and a card taller than the window would push the conversation away.
+const toolCardMaxHeight float32 = 320
+
+// toolCardScroll builds a card's body as a scroller that stops growing at
+// toolCardMaxHeight. The header and the body's own buttons stay outside it, so
+// the toggle and the actions never scroll out of reach.
+func toolCardScroll(c *mui.Context, fn func()) {
+	mui.Scroll(c).MaxHeight(toolCardMaxHeight).Children(fn)
+}
+
 // toolMessage draws one tool call as a card that starts collapsed: its header
 // keeps the target and the result on one line, and the body stays hidden. A
 // click on the header opens the body; another click closes it again.
@@ -116,24 +128,28 @@ func (a *App) diffToolCard(c *mui.Context, m *Message, status string, statusColo
 		})
 		parts.Panel(func() {
 			mui.Column(c).Gap(6).Children(func() {
-				states := m.toolDiffStates(font)
-				for i, diff := range m.ToolDiffs {
-					c.Key(i)
-					if len(m.ToolDiffs) > 1 {
-						mui.Row(c).Gap(5).AlignItems(mui.Center).Children(func() {
-							mui.Icon(c, codeIcon).Size(12, 12).Shrink(0).TextColor(t.TextMuted)
-							mui.Text(c, toolDiffDisplayPath(a.activeFileWorkspace(), diff.Path)).
-								FontSize(a.chatFont(10)).Bold().SingleLine().MinWidth(0)
-						})
-					}
-					view := editor.DiffView(c, states[i]).FillWidth()
-					if !states[i].FitContent {
-						view.Height(280)
-					}
-				}
-				if m.Detail != "" {
-					mutedText(c, m.Detail, a.chatFont(11)).Selectable()
-				}
+				toolCardScroll(c, func() {
+					mui.Column(c).Gap(6).Children(func() {
+						states := m.toolDiffStates(font)
+						for i, diff := range m.ToolDiffs {
+							c.Key(i)
+							if len(m.ToolDiffs) > 1 {
+								mui.Row(c).Gap(5).AlignItems(mui.Center).Children(func() {
+									mui.Icon(c, codeIcon).Size(12, 12).Shrink(0).TextColor(t.TextMuted)
+									mui.Text(c, toolDiffDisplayPath(a.activeFileWorkspace(), diff.Path)).
+										FontSize(a.chatFont(10)).Bold().SingleLine().MinWidth(0)
+								})
+							}
+							view := editor.DiffView(c, states[i]).FillWidth()
+							if !states[i].FitContent {
+								view.Height(280)
+							}
+						}
+						if m.Detail != "" {
+							mutedText(c, m.Detail, a.chatFont(11)).Selectable()
+						}
+					})
+				})
 				a.toolCardActions(c, m)
 			})
 		}).PaddingStart(16)
@@ -172,10 +188,14 @@ func (a *App) textToolCard(c *mui.Context, m *Message, status string, statusColo
 			switch {
 			case text == "":
 			case looksLikeJSON(m.Detail):
-				a.toolCodeBlock(c, "json", text, 1)
+				toolCardScroll(c, func() {
+					a.toolCodeBlock(c, "json", text, 1)
+				})
 				copyButton(c, m.Detail)
 			default:
-				mutedText(c, text, a.chatFont(11)).Selectable()
+				toolCardScroll(c, func() {
+					mutedText(c, text, a.chatFont(11)).Selectable()
+				})
 			}
 			a.toolLongTextToggle(c, m)
 		}).PaddingStart(16)
@@ -241,7 +261,9 @@ func (a *App) thinkToolCard(c *mui.Context, m *Message, status string, statusCol
 			}
 		})
 		parts.Panel(func() {
-			mutedText(c, m.Detail, a.chatFont(11)).Selectable()
+			toolCardScroll(c, func() {
+				mutedText(c, m.Detail, a.chatFont(11)).Selectable()
+			})
 		}).PaddingStart(16)
 	})
 }
@@ -257,7 +279,7 @@ func (a *App) fetchToolCard(c *mui.Context, m *Message, status string, statusCol
 		a.subagentLabel(c, m)
 		parts := mui.CollapsibleBase(c, &m.DetailOpen)
 		parts.Trigger.Grow(1).Gap(6).AlignItems(mui.Center).
-			Label(Tf("Toggle tool output: %s", m.Title)).Tooltip(target).Children(func() {
+			Label(Tf("Toggle tool output: %s", m.Title)).Children(func() {
 			mark := "▸"
 			if m.DetailOpen {
 				mark = "▾"
@@ -273,13 +295,15 @@ func (a *App) fetchToolCard(c *mui.Context, m *Message, status string, statusCol
 			}
 		})
 		parts.Panel(func() {
-			mui.Column(c).Gap(4).Children(func() {
-				if m.ToolURL != "" {
-					mui.Link(c, m.ToolURL, m.ToolURL).FontSize(a.chatFont(10)).Wrap()
-				}
-				if m.Detail != "" {
-					mutedText(c, m.Detail, a.chatFont(11)).Selectable()
-				}
+			toolCardScroll(c, func() {
+				mui.Column(c).Gap(4).Children(func() {
+					if m.ToolURL != "" {
+						mui.Link(c, m.ToolURL, m.ToolURL).FontSize(a.chatFont(10)).Wrap()
+					}
+					if m.Detail != "" {
+						mutedText(c, m.Detail, a.chatFont(11)).Selectable()
+					}
+				})
 			})
 		}).PaddingStart(16)
 	})
@@ -356,7 +380,9 @@ func (a *App) readToolCard(c *mui.Context, m *Message, status string, statusColo
 				tail = m.Detail
 				displayStart = start
 			}
-			a.toolCodeBlock(c, toolLanguageName(path), tail, displayStart)
+			toolCardScroll(c, func() {
+				a.toolCodeBlock(c, toolLanguageName(path), tail, displayStart)
+			})
 			a.toolCardActions(c, m)
 		}).PaddingStart(16)
 	})
@@ -398,7 +424,9 @@ func (a *App) searchToolCard(c *mui.Context, m *Message, status string, statusCo
 			if m.toolOutputOpen {
 				tail = m.Detail
 			}
-			a.toolSearchBlock(c, tail, m.ToolPattern)
+			toolCardScroll(c, func() {
+				a.toolSearchBlock(c, tail, m.ToolPattern)
+			})
 		}).PaddingStart(16)
 	})
 }
@@ -559,15 +587,11 @@ func toolSearchSpans(line, pattern string, t *mui.Theme) []mui.Span {
 func (a *App) executeToolCard(c *mui.Context, m *Message, status string, statusColor mui.Color) {
 	t := c.Theme()
 	command := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(m.Title), "$ "))
-	tooltip := command
-	if m.ToolCwd != "" {
-		tooltip += "\n" + m.ToolCwd
-	}
 	surfaceCard(c, mui.Column(c).Gap(3).MaxWidth(chatMaxWidth).Padding(8, 10)).Children(func() {
 		a.subagentLabel(c, m)
 		parts := mui.CollapsibleBase(c, &m.DetailOpen)
 		parts.Trigger.Grow(1).Gap(6).AlignItems(mui.Center).
-			Label(Tf("Toggle tool output: %s", m.Title)).Tooltip(tooltip).Children(func() {
+			Label(Tf("Toggle tool output: %s", m.Title)).Children(func() {
 			mark := "▸"
 			if m.DetailOpen {
 				mark = "▾"
@@ -602,8 +626,13 @@ func (a *App) executeToolCard(c *mui.Context, m *Message, status string, statusC
 			if m.toolOutputOpen {
 				tail = m.Detail
 			}
-			a.toolOutputBlock(c, tail)
+			toolCardScroll(c, func() {
+				a.toolOutputBlock(c, tail)
+			})
 			mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
+				if cwd := strings.TrimSpace(m.ToolCwd); cwd != "" {
+					mutedText(c, cwd, a.chatFont(9)).Grow(1).MinWidth(0).SingleLine()
+				}
 				copyButton(c, command)
 			})
 		}).PaddingStart(16)

@@ -36,7 +36,7 @@ type Message struct {
 	ToolPaths   []string   // locations 里的路径
 	ToolDiffs   []ToolDiff // edit/write/delete/move
 	ToolExit    *int       // execute 的退出码
-	ToolCwd     string     // execute 的 cwd（tooltip）
+	ToolCwd     string     // execute 的 cwd（展开态底部）
 	ToolOffset  int        // read 的起始行
 	ToolLimit   int        // read 的行数
 	ToolPattern string     // search 的高亮子串
@@ -89,6 +89,11 @@ type ToolDiff struct {
   `Warning`；`execute` 有 exit code 时用 `exit N` 徽章代替状态词，非 0 一律 Danger。
 - 动作放在展开后的面板里，不放 header：Copy（diff patch / 命令 / JSON）与 `Open file`。header 整行是
   折叠开关，嵌套可点击元素会让一次点击同时触发两个动作。
+- 不用 tooltip：header 一行已说清目标，被截断的命令/路径用展开态看全文。
+- 展开态正文统一套 `toolCardScroll`（`mui.Scroll().MaxHeight(toolCardMaxHeight)`，320 DIP）：输出、
+  文件文本、reasoning 都可能是无界长度，超出一张卡片的高度就在卡片内滚动，header 与 Copy /
+  `Open file` / `Show …` 按钮留在滚动区外。“`Show N earlier lines`” 是行预算，最大高度是像素预算，
+  两者独立：先截行，再按高度滚动。
 - 可展开判定是「有 diff 或文本」：两者都没有时画一行紧凑事件（编排调用 `wait_agent` 等），
   exit code 仍显示在这一行的状态位。
 - 子代理工具用同一渲染器，`SubagentID` 标注与 `SubagentName` 前缀不变。
@@ -114,7 +119,8 @@ type ToolDiff struct {
   （viewer.go:292）一致：`Wrap: true`、`LineHeight: 1.4`、`Font: {Size: chatFont(11)}`、
   `editor.LanguageFor(path)`。
 - 整文件块：`ContextLines: 3`、显示行号；hunk 块：`ContextLines: -1`、`NoLineNumbers: true`。
-- 高度：总行数 ≤ 400 时 `FitContent`；更大的 diff 固定 280 DIP 高、在卡片内滚动。
+- 高度：总行数 ≤ 400 时 `FitContent`；更大的 diff 固定 280 DIP 高、在卡片内滚动；多文件叠加时再受
+  展开态 320 DIP 的正文上限约束。
 - 多文件 patch 每个文件先画一行文件头（图标 + 路径），再画自己的 diff；`Open file` 暂时只开第一个文件。
 - 移动显示 `旧路径 → 新路径`（`Operation = move`），两侧语言按新路径；删除的 new 为空。
 - Copy 生成 `--- path` / `+++ path` 加 `-old` / `+new` 的简单 patch（按 hunk 边界分段）。
@@ -122,7 +128,7 @@ type ToolDiff struct {
 ### execute
 
 - 命令来自 `title`（pi-acp 直接发命令，codex 发 `stripShellPrefix(command)`），等宽、单行省略；
-  tooltip 给完整命令，`rawInput.cwd` 存在时第二行显示。
+  `rawInput.cwd` 存在时在展开态底部一行 muted 显示（原先放在 tooltip 里，已去掉）。
 - 输出先剥 ANSI 与控制字符；等宽、换行、可选中，画在窗口背景的圆角块里。
 - 长输出默认显示尾部 200 行（终端最有用的一段），上方 `Show N earlier lines` 展开全文、
   `Show less` 收起；展开后保留全文（≤256 KiB）。
@@ -193,7 +199,8 @@ go test ./internal/i18n
   ANSI/控制字符、read 范围、search 统计、fetch URL、未知 kind、`Detail` 兜底。
 - UI（`mui.Tester`）：edit 折叠不出现 diff 正文与 JSON、展开后可展开；execute 显示命令、exit 徽章与输出；
   read 显示 `Read`/路径/行范围；search 显示命中统计；think 只有一行；fetch 显示主机与链接；结构化 JSON
-  展开后可读；`Open file` 切到 Files 并打开查看器；超长平铺文本可 `Show all`；稀疏/异常载荷不 panic。
+  展开后可读；`Open file` 切到 Files 并打开查看器；超长平铺文本可 `Show all`；展开态正文超出
+  320 DIP 时只在卡片内滚动（`TestToolCardBodyStopsAtMaxHeight`）；稀疏/异常载荷不 panic。
   回归覆盖折叠开关、`chatMaxWidth`、编排调用不暴露传输 JSON。
 
 ## 已知取舍与后续
