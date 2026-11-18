@@ -416,6 +416,126 @@ func TestResolveEnvironmentLoginShell(t *testing.T) {
 	}
 }
 
+// TestResolveEnvironmentProbesVersionsConcurrently uses a barrier instead of
+// a stopwatch: every fake CLI waits until all four markers exist before it
+// answers. Only concurrent probes can satisfy that; serial probing would let
+// the first CLI run into its own timeout, which is exactly the starvation the
+// shared discovery deadline used to cause.
+func TestResolveEnvironmentProbesVersionsConcurrently(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake executables use a shebang")
+	}
+	bin := t.TempDir()
+	barrier := t.TempDir()
+	versions := map[string]string{
+		"node":         "v22.20.0",
+		"pi":           "9.9.9",
+		"command-code": "1.88.5",
+		"codex":        "codex-cli 0.169.1",
+	}
+	for name, version := range versions {
+		script := "#!/bin/sh\n" +
+			": > \"$ACP_GUI_TEST_BARRIER/" + name + "\"\n" +
+			"i=0\n" +
+			"while [ \"$i\" -lt 200 ]; do\n" +
+			"  ready=1\n" +
+			"  for t in node pi command-code codex; do\n" +
+			"    [ -f \"$ACP_GUI_TEST_BARRIER/$t\" ] || ready=0\n" +
+			"  done\n" +
+			"  if [ \"$ready\" = 1 ]; then\n" +
+			"    echo '" + version + "'\n" +
+			"    exit 0\n" +
+			"  fi\n" +
+			"  i=$((i + 1))\n" +
+			"  sleep 0.02\n" +
+			"done\n" +
+			"exit 1\n"
+		if err := os.WriteFile(filepath.Join(bin, name), []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	shell := filepath.Join(t.TempDir(), "fake-shell")
+	if err := os.WriteFile(shell, []byte("#!/bin/sh\nexec /bin/sh -c \"$2\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	env := ResolveEnvironment(ctx, ResolveOptions{
+		Shell: shell,
+		Env: []string{
+			"PATH=" + bin + ":/usr/bin:/bin",
+			"HOME=" + t.TempDir(),
+			"ACP_GUI_TEST_BARRIER=" + barrier,
+		},
+		Timeout: 2 * time.Second,
+	})
+
+	if len(env.Warnings) != 0 {
+		t.Errorf("warnings = %v, want every version resolved together", env.Warnings)
+	}
+	if env.NodeVersion != "v22.20.0" || env.NodeMajor != 22 {
+		t.Errorf("node version = %q (major %d)", env.NodeVersion, env.NodeMajor)
+	}
+	if env.PiVersion != "9.9.9" {
+		t.Errorf("pi version = %q", env.PiVersion)
+	}
+	if env.CommandCodeVersion != "1.88.5" {
+		t.Errorf("command-code version = %q", env.CommandCodeVersion)
+	}
+	if env.CodexVersion != "0.169.1" {
+		t.Errorf("codex version = %q, want the CLI version without the prefix", env.CodexVersion)
+	}
+}
+
+// TestResolveEnvironmentVersionWarningsKeepTableOrder keeps the banner text
+// stable: warnings are collected after all probes finish, in builtin order,
+// even when a later probe fails first.
+func TestResolveEnvironmentVersionWarningsKeepTableOrder(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake executables use a shebang")
+	}
+	bin := t.TempDir()
+	scripts := map[string]string{
+		// node fails slowly, pi fails at once: pi finishes first.
+		"node":         "#!/bin/sh\nsleep 0.3\nexit 1\n",
+		"pi":           "#!/bin/sh\nexit 1\n",
+		"command-code": "#!/bin/sh\necho '1.88.5'\n",
+		"codex":        "#!/bin/sh\necho 'codex-cli 0.169.1'\n",
+	}
+	for name, script := range scripts {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	shell := filepath.Join(t.TempDir(), "fake-shell")
+	if err := os.WriteFile(shell, []byte("#!/bin/sh\nexec /bin/sh -c \"$2\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	env := ResolveEnvironment(ctx, ResolveOptions{
+		Shell:   shell,
+		Env:     []string{"PATH=" + bin + ":/usr/bin:/bin", "HOME=" + t.TempDir()},
+		Timeout: 2 * time.Second,
+	})
+
+	if len(env.Warnings) != 2 {
+		t.Fatalf("warnings = %v, want one per failing tool", env.Warnings)
+	}
+	if !strings.HasPrefix(env.Warnings[0], "node --version: ") {
+		t.Errorf("first warning = %q, want node", env.Warnings[0])
+	}
+	if !strings.HasPrefix(env.Warnings[1], "pi --version: ") {
+		t.Errorf("second warning = %q, want pi", env.Warnings[1])
+	}
+	if env.CommandCodeVersion != "1.88.5" || env.CodexVersion != "0.169.1" {
+		t.Errorf("codex/command-code lost their version by a failing peer: %q %q",
+			env.CommandCodeVersion, env.CodexVersion)
+	}
+}
+
 func fakeExecutable(t *testing.T, dir, name string) string {
 	t.Helper()
 	path := filepath.Join(dir, name)

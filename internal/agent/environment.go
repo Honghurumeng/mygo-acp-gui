@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -228,38 +229,55 @@ func ResolveEnvironment(ctx context.Context, opts ResolveOptions) Environment {
 	env.Env = ensurePath(env.Env, dirsOf(env.NodePath, env.PiPath, env.CommandCodePath, env.CodexPath)...)
 	env.Path = envValue(env.Env, "PATH")
 
+	// The version probes are independent, so they run together: discovery
+	// waits for the slowest CLI instead of the sum, and a CLI that answers
+	// last can no longer lose its version because the earlier ones used up
+	// the shared discovery deadline. Results and warnings are applied after
+	// every probe finished, in table order, so the UI text stays stable.
+	type versionProbe struct {
+		label string
+		path  string
+		apply func(string)
+	}
+	probes := make([]versionProbe, 0, 4)
 	if env.NodePath != "" {
-		version, err := toolVersion(ctx, env.NodePath, env.Env)
-		if err != nil {
-			env.Warnings = append(env.Warnings, "node --version: "+err.Error())
-		} else {
+		probes = append(probes, versionProbe{"node", env.NodePath, func(version string) {
 			env.NodeVersion = version
 			env.NodeMajor = majorVersion(version)
-		}
+		}})
 	}
 	if env.PiPath != "" {
-		version, err := toolVersion(ctx, env.PiPath, env.Env)
-		if err != nil {
-			env.Warnings = append(env.Warnings, "pi --version: "+err.Error())
-		} else {
+		probes = append(probes, versionProbe{"pi", env.PiPath, func(version string) {
 			env.PiVersion = version
-		}
+		}})
 	}
 	if env.CommandCodePath != "" {
-		version, err := toolVersion(ctx, env.CommandCodePath, env.Env)
-		if err != nil {
-			env.Warnings = append(env.Warnings, "command-code --version: "+err.Error())
-		} else {
+		probes = append(probes, versionProbe{"command-code", env.CommandCodePath, func(version string) {
 			env.CommandCodeVersion = version
-		}
+		}})
 	}
 	if env.CodexPath != "" {
-		version, err := toolVersion(ctx, env.CodexPath, env.Env)
-		if err != nil {
-			env.Warnings = append(env.Warnings, "codex --version: "+err.Error())
-		} else {
+		probes = append(probes, versionProbe{"codex", env.CodexPath, func(version string) {
 			env.CodexVersion = codexVersion(version)
+		}})
+	}
+	versions := make([]string, len(probes))
+	failures := make([]error, len(probes))
+	var wg sync.WaitGroup
+	for i := range probes {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			versions[i], failures[i] = toolVersion(ctx, probes[i].path, env.Env)
+		}(i)
+	}
+	wg.Wait()
+	for i, probe := range probes {
+		if failures[i] != nil {
+			env.Warnings = append(env.Warnings, probe.label+" --version: "+failures[i].Error())
+			continue
 		}
+		probe.apply(versions[i])
 	}
 	return env
 }

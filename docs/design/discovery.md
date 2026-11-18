@@ -46,7 +46,7 @@ pi / codex 是特例：命令由解析后的 `node` + 各自的 vendored bundle 
 对内置表逐条执行：
 
 1. 解析绝对路径：继承登录 shell 环境；pi 需要 node、bundle 和 `pi`，command-code 用 `command -v command-code`，codex 需要 node、bundle 和 `codex`。
-2. 版本：跑 `versionArgs`，5 秒超时；失败只影响版本显示。
+2. 版本：node / pi / command-code / codex 的 `--version` **并发**执行，每个 3 秒上限；失败只影响版本显示。并发让这段耗时约等于最慢的一个而不是相加，排在最后探测的 codex 也不会因为前面几步慢就丢掉版本号（四个探测共用启动探测的 20 秒预算）。warning 在所有探测结束后按表内顺序追加，文本顺序稳定。
 3. `initialize` 探测（5 秒），确认它真的是 ACP agent。
 4. 结果写入内存状态；启动异步执行，不阻塞窗口。
 5. “重新检测”重跑以上流程。
