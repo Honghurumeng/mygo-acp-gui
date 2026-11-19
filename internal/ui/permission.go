@@ -200,6 +200,10 @@ func (a *App) permissionDialog(c *mui.Context) {
 	}
 	p := a.Permission
 	req := p.Request
+	if _, ok := parseAskQuestion(req); ok {
+		// ask_user_question has its own inline panel above the composer.
+		return
+	}
 
 	permissionModal(c, T("Permission required"), func() {
 		if p.Chat != nil {

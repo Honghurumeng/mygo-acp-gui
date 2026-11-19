@@ -25,6 +25,7 @@ func (a *App) composer(c *mui.Context) {
 	t := c.Theme()
 	c.Key("composer")
 	mui.Column(c).Padding(0, 16, 12, 16).Children(func() {
+		a.questionPanel(c, chat)
 		a.planPanel(c, chat)
 		a.mentionPalette(c, chat)
 		a.attachmentPicker(c, chat)

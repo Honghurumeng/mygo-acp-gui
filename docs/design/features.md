@@ -42,6 +42,8 @@ ACP v1 draft（unstable）子代理通过 `initialize.clientCapabilities.subagen
 
 权限弹窗只显示当前会话的请求：后台会话请求权限时只排队并点亮侧栏 `!`，不会切换会话或弹窗；用户主动打开该会话后才显示，切走时弹窗隐藏并保留请求。回答按 `Chat` 路由。弹窗只能通过自身按钮作答，点遮罩或按 Esc 不会关闭，也不会回 `cancelled`。
 
+Command Code 的 `ask_user_question` 被适配器桥接成权限请求，但使用 composer 上方的独立面板而不是权限弹窗：面板与输入框同宽、问题与选项自动换行，只列 agent 给出的选项和 `Skip`（回 `cancelled`），不展示传输 JSON；当前 ACP 桥没有自由文本答案通道，组件细节见 [components.md](components.md)。
+
 ## ACP 状态提示
 
 pi-acp 的启动信息（pi 版本、Extensions、Skills 等）、重试、自动压缩和排队状态不是模型回答。fork 给这些 `agent_message_chunk` 打 `_meta.piAcp.startupInfo` 或 `_meta.piAcp.notice`；GUI 丢弃启动信息，把 notice 画成居中的系统行，同一次重试/压缩/排队的开始和结束更新同一行。扩展 `ctx.ui.notify` 也按系统提示显示。状态行会结束当前 assistant 行，状态之后的文本另起一行，不会把“Retrying…”和回答粘在一起。这些 `_meta.piAcp.*` 是 pi-acp fork 的私有扩展，不是 ACP 标准，其他 agent 不保证；完整清单见 [acp-conformance.md](acp-conformance.md)。

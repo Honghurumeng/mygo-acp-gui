@@ -102,12 +102,30 @@
   和 Markdown 视图；详见 [viewer.md](viewer.md)。
 - 所有组件从 `c.Theme()` 取色，不硬编码颜色，也不判断深浅色。唯一例外是阴影的黑色 alpha；主题目录和外观切换见 [themes.md](themes.md)。
 
+## 提问面板（ask_user_question）
+
+Command Code 的 `ask_user_question` 没有独立的 ACP 方法，适配器把它桥接成 `session/request_permission`，通用权限弹窗会把传输结构原样展示（`other · pending`、`Input` JSON、长选项挤在按钮行）。`question.go` 为它提供 composer 上方的独立面板。
+
+传输形状（Command Code `requestQuestion`）：
+
+- `toolCall.kind = "other"`，`status = "pending"`；title 有 header 时为 `header: question`，否则就是 question；
+- `toolCall.rawInput = {"question": "...", "options": ["label 1", ...]}`，只有标签，不含 description；
+- `options[]` 每项为 `{optionId: "option_<i>", name: "label: description"（无 description 时就是 label）, kind: "allow_once"}`；
+- 多题时适配器逐题串行发请求；`selected` + `optionId` 映射回第 i 个标签，`cancelled` 映射为工具拒绝回答。
+
+`parseAskQuestion` 只在以下条件全部成立时接管请求，否则退回通用权限弹窗：`kind == "other"`；`rawInput` 能解析出非空 `question` 和非空 `options`；每个 permission option 的 id 都是 `option_<i>` 且 `i < len(options)`。标题的 `header: ` 前缀和选项 `name` 的 `label: description` 后缀会被拆开展示，`rawInput` 里的标签是权威标签。
+
+面板不套 `DialogBase`：在 `composer()` 内、`planPanel` 之前，与输入卡片同宽；问题、选项标签和 description 都用默认换行的 `Text`，选项为纵向全宽 `ButtonBase` 行，页脚是提示 + `Skip`。点击选项走 `finishPermission(..., SelectedPermission(optionID))`，`Skip` 回 `cancelled`，队列与后台会话标记沿用权限请求的现有逻辑。**自定义答案当前不支持**：ACP 结果只有 `selected(optionId)` / `cancelled`，适配器也只认预置的 `option_<i>`，CLI 的 “Type something” 不经过 ACP；以后适配器若增加可携带文本的选项，再在面板补输入框。
+
+`scripts/fake-agent.mjs` 的 `/question` 复刻该形状；`internal/ui/question_test.go` 覆盖解析、点击选项、`Skip`、面板位于输入框上方以及长 description 自动换行且不超出 composer 宽度。
+
 ## 使用位置
 
 - 空状态与连接/探测中：`app.go`，`busyLine` + `emptyState`。
 - 共享查看卡片：`gitpanel.go` 的 Git diff / 文件、`tasks.go` 的任务总结、`filepanel.go` 的文件行，
   加载中 `busyLine`、错误 `dangerAlert`、Diff 两边相同与空 Markdown `emptyState`。
 - 权限弹窗：`permission.go`，`codeBlock` + `arrive`/`shade` 的遮罩与面板。
+- 提问面板：`question.go`，composer 上方的全宽卡片；问题与选项都用默认换行的 `Text`，选项为纵向 `ButtonBase` 行，不套 `DialogBase`。
 
 ## 不替换
 

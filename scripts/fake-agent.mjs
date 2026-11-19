@@ -5,6 +5,7 @@
  * 支持的测试指令（写在 prompt 文本里）：
  *   /slow         每块间隔更久，便于测试 Stop / session/cancel
  *   /permission   先发一个 tool_call，再请求权限
+ *   /question     以 Command Code 的 ask_user_question 形状请求选择
  *   /thought      先流一段 agent_thought_chunk
  *   /mcp          回复最近一次 session/new 收到的 MCP server 数
  *   /image        回复收到的图片内容块数量
@@ -396,6 +397,71 @@ function requestPermission(turn) {
   });
 }
 
+function requestQuestion(turn) {
+  const permissionId = nextPermissionId++;
+  const toolCallId = `question-${permissionId}`;
+  const options = [
+    {
+      label: 'Retry with the local patch',
+      description:
+        'Patch the globally installed CLI and restart the app to verify the change, then keep the patch in sync with every Command Code upgrade.',
+    },
+    {
+      label: 'Update the design doc only',
+      description: 'Write the decision down and leave the code untouched.',
+    },
+    {
+      label: 'Leave it as it is',
+      description: 'Keep the current behavior and revisit this later.',
+    },
+  ];
+  const toolCall = {
+    toolCallId,
+    title: 'Approach: Patch the CLI now?',
+    kind: 'other',
+    status: 'pending',
+    rawInput: { question: 'Patch the CLI now?', options: options.map((option) => option.label) },
+  };
+  sendUpdate({
+    sessionId: turn.sessionId,
+    update: { sessionUpdate: 'tool_call', ...toolCall },
+  });
+  pendingPermissions.set(permissionId, (result) => {
+    const outcome = result?.outcome ?? {};
+    const selected = outcome.outcome === 'selected' ? outcome.optionId : 'cancelled';
+    const index = Number(/^option_(\d+)$/.exec(selected)?.[1]);
+    const label = options[index]?.label;
+    sendUpdate({
+      sessionId: turn.sessionId,
+      update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId,
+        status: label ? 'completed' : 'failed',
+      },
+    });
+    if (label) {
+      sendChunk(turn, `answer: ${label}`);
+    } else {
+      sendChunk(turn, 'Question skipped');
+    }
+    finishTurn(turn, 'end_turn');
+  });
+  send({
+    jsonrpc: '2.0',
+    id: permissionId,
+    method: 'session/request_permission',
+    params: {
+      sessionId: turn.sessionId,
+      toolCall,
+      options: options.map((option, index) => ({
+        optionId: `option_${index}`,
+        name: `${option.label}: ${option.description}`,
+        kind: 'allow_once',
+      })),
+    },
+  });
+}
+
 function startTurn(turn, text, images = 0, mcpCount = 0, files = 0, embedded = 0) {
   const slow = text.includes('/slow');
   const taskCheck = text.includes('TASK_COMPLETION_CHECK');
@@ -476,6 +542,11 @@ function startTurn(turn, text, images = 0, mcpCount = 0, files = 0, embedded = 0
 
   if (permission) {
     requestPermission(turn);
+    return;
+  }
+
+  if (text.includes('/question')) {
+    requestQuestion(turn);
     return;
   }
 
