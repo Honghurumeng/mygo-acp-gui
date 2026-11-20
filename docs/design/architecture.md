@@ -50,7 +50,7 @@ MyGo 原生窗口 (Go + ui)
   internal/updatecheck/   只查内置 CLI 在 npm 上的 latest 版本，供“有新版本”提示（不安装）
   internal/i18n/           应用文案词典（英文原文为 key，zh-Hans.json 内置）、语言解析与 Set/T/Tf（见 i18n.md）
   internal/git/            Git 探测、status 解析、提交、本地分支创建/切换、远端操作、任务失败回滚快照（不经过 shell）
-  internal/ui/             多会话侧栏、聊天、流式 Markdown、权限队列、系统通知、Dock 角标、Git / Files 面板、主题系统、窗口更新（已实现）
+  internal/ui/             多会话侧栏、聊天、流式 Markdown（含 Mermaid 图表）、权限队列、系统通知、Dock 角标、Git / Files 面板、主题系统、窗口更新（已实现）
   internal/ui/icons/       pi / Command Code / Codex 图标（SVG，侧栏 + 标题栏）
   resources/
     agents/pi-acp/
@@ -66,6 +66,7 @@ MyGo 原生窗口 (Go + ui)
 ## 工程与构建
 
 - `go.mod`：module `github.com/reed/acp-gui`，Go 1.27.3（`GOTOOLCHAIN=auto` 会自动拉取）。
+- 直接依赖：MyGo（UI/编辑器/Markdown）和 `github.com/zkrebbekx/go-mermaid`（纯 Go Mermaid→SVG，见 [mermaid.md](mermaid.md)）；其余是间接依赖。
 - MyGo CLI 通过 `tool github.com/egoist/mygo/cmd/mygo` 固定在 `go.mod`，统一用 `go tool mygo`。
 - 无前端构建：原生 UI，入口 `main.go`，配置在 `mygo.json`。
 - App：name `ACP GUI`、slug `acp-gui`、identifier `dev.reed.acp-gui`、version `0.6.0`。

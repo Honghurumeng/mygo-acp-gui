@@ -173,6 +173,7 @@ scripts/vendor-codex-acp.sh          # 官方 codex-acp，不含补丁
 - [ ] MCP servers 配置 UI（JSON 编辑 + 校验 + 持久化；当前协议层只发送空 `mcpServers` 数组）
 - [ ] ACP 合规收口（详见 [acp-conformance.md](acp-conformance.md)）：明确 `subagents` 默认策略（严格稳定 v1 关闭 / 完整 v1 draft 支持），删除不存在的 `SessionCapabilities.Subagents`
 - [x] 工具卡片按 ACP `kind` 分类型渲染（edit/write 内联 diff、execute 等宽输出 + exit、read/search 代码块），见 [toolcards.md](toolcards.md)
+- [x] Markdown 里的 Mermaid 图表：对话与查看卡片静态 SVG、主题配色、缓存与失败回退，见 [mermaid.md](mermaid.md)
 - [ ] 补齐 draft 子代理语义：`session_message_chunk`、`session_message` upsert、`subagent_update` 的 `null` 清除、idle 可复用
 - [ ] 给 `session/load` / `session/list` / `session/close` 加 capability 预检，不支持时静默降级
 - [ ] 用稳定 `ContentChunk.messageId` 做 replay 行身份；`_meta.piAcp.replay` 仅作 fallback

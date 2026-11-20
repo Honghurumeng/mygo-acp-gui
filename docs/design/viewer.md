@@ -27,6 +27,9 @@
 | View | Markdown 文件用 `markdown.View` 渲染；其他文件用只读 `editor.View` | 全部 |
 | Edit | 同一个 `editor.State` 切到可编辑，标题栏出现 `Save` | 有可写文件的入口 |
 
+Markdown 里的 ` ```mermaid ` 代码块在 View 模式画成图（静态 SVG，见 [mermaid.md](mermaid.md)）；流式写入未闭尾、
+未知类型或解析失败时仍显示源码。
+
 - 当前模式按钮用 Accent 浅底 + Accent 文字；点击其他模式切换，状态由调用方持有。
 - Git 的 View/Edit 标题为 `File · <path>` / `Edit · <path>`；Staged 的 diff 仍为 `Staged diff · <path>`，
   提交预览仍为 `Commit <7 位 hash> · <path>`。
@@ -71,4 +74,5 @@ go test ./internal/ui -run 'TestFileViewer|TestGitPanelEditsWorkingTreeFile|Test
 ```
 
 覆盖：文本读写/权限保留/临时文件清理、二进制/超大/目录/越界/符号链接拒绝、Files 打开与 Markdown 渲染、
-任务总结编辑保存、Git 未暂存编辑保存、暂存与历史只读、⌘S/Ctrl+S 保存、宽度响应式与拖动 clamp、settings 持久化。
+Mermaid 画图与失败回退、任务总结编辑保存、Git 未暂存编辑保存、暂存与历史只读、⌘S/Ctrl+S 保存、宽度响应式与拖动 clamp、
+settings 持久化。

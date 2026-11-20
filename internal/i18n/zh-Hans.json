@@ -231,6 +231,7 @@
  "Local changes or untracked files would be overwritten, so nothing was switched.": "本地改动或未跟踪的文件会被覆盖，因此未执行切换。",
  "Mention %s": "提及 %s",
  "Merge conflict": "合并冲突",
+ "Mermaid diagram": "Mermaid 图表",
  "Message": "消息",
  "Messages, tool calls and Markdown in the chat.": "聊天中的消息、工具调用和 Markdown。",
  "Model": "模型",

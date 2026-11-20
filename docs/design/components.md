@@ -7,7 +7,7 @@
 - `widgets.go`：无状态样式函数，只抽颜色、尺寸、圆角等重复写法。
 - `components.go`：带跨帧状态或动画的组件，才用 `mui.Local`、`mui.Key`、`mui.Keyframes`。
 
-`go.mod` 只有 MyGo 一个直接依赖；图标是 `internal/ui/icons/` 里的 SVG 子集，没有图标库。
+`go.mod` 直接依赖 MyGo 和 go-mermaid（纯 Go Mermaid→SVG，见 [mermaid.md](mermaid.md)）；图标是 `internal/ui/icons/` 里的 SVG 子集，没有图标库。
 
 ## 图标
 

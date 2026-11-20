@@ -20,6 +20,7 @@
 - `docs/design/features.md`：多会话、发现探测、配置/模式、历史、图片、MCP、命令面板、消息跳转、计划/用量。
 - `docs/design/toolcards.md`：对话流工具卡片：`parseToolCall` 解析管道、按 ACP kind 的形态（edit 内联 diff、execute 输出/exit、read/search 代码块、think/fetch/MCP）、截断与 i18n。
 - `docs/design/viewer.md`：Git / Tasks / Files 共用的浮动查看卡片：Diff/View/Edit、Markdown、保存、可调宽度。
+- `docs/design/mermaid.md`：Markdown 里的 Mermaid 图表：go-mermaid SVG、主题调色板、尺寸、缓存、回退。
 - `docs/design/multi-session.md`：pi / Command Code 单进程多会话能力调查与结论。
 - `docs/design/git.md`：右侧 Git 面板、仓库探测、状态/图表、提交与 fetch/pull/push、异步与安全。
 - `docs/design/files.md`：右侧 Files 文件树、懒加载、Git 状态、右键操作、拖动移动与异步/安全。

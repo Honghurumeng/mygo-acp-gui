@@ -412,6 +412,9 @@ type App struct {
 	// a separate Options value because markdown.Options contains a sync.Map
 	// and must not be copied.
 	TaskMD markdown.Options
+	// mermaidCache keeps parsed Mermaid diagrams for redraws. The hooks in
+	// mermaid.go fill both Options' Code maps before a frame.
+	mermaidCache mermaidCache
 
 	chatsMu  sync.Mutex
 	nextChat int
@@ -842,6 +845,7 @@ func (a *App) nextChatID() int {
 // of tab icons at the window's right edge.
 func (a *App) View(c *mui.Context) {
 	a.applyTheme(c)
+	a.installMermaidHooks()
 	// Markdown headings and code are sized in ems of this body size, so one
 	// value scales the whole message while keeping its hierarchy.
 	a.MD.Theme = &markdown.Theme{FontSize: a.chatBodyFont(c)}
