@@ -66,7 +66,7 @@ MyGo 原生窗口 (Go + ui)
 ## 工程与构建
 
 - `go.mod`：module `github.com/reed/acp-gui`，Go 1.27.3（`GOTOOLCHAIN=auto` 会自动拉取）。
-- 直接依赖：MyGo（UI/编辑器/Markdown）和 `github.com/zkrebbekx/go-mermaid`（纯 Go Mermaid→SVG，见 [mermaid.md](mermaid.md)）；其余是间接依赖。
+- 直接依赖：MyGo（UI/编辑器/Markdown）、`github.com/momaek/streameraid`（flowchart/sequenceDiagram 纯 Go 布局与 SVG）和 `github.com/zkrebbekx/go-mermaid`（其他 Mermaid 类型），见 [mermaid.md](mermaid.md)；其余是间接依赖。
 - MyGo CLI 通过 `tool github.com/egoist/mygo/cmd/mygo` 固定在 `go.mod`，统一用 `go tool mygo`。
 - 无前端构建：原生 UI，入口 `main.go`，配置在 `mygo.json`。
 - App：name `ACP GUI`、slug `acp-gui`、identifier `dev.reed.acp-gui`、version `0.6.0`。

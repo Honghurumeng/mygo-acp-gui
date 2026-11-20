@@ -9,9 +9,12 @@
 
 ## 依赖
 
-- `github.com/zkrebbekx/go-mermaid v0.1.6`：纯 Go 解析、布局并输出 SVG；MIT。
-- 只引入核心包：不 import 它的 `raster`，所以二进制不会编入 `oksvg`/`rasterx` 等 PNG 光栅化依赖。
-- MyGo 的 SVG 查看器完整支持它的输出（`Unsupported()` 为空），包括 `text`/`tspan`、`marker`、`path`。
+- `github.com/momaek/streameraid`：flowchart / sequenceDiagram 的解析、布局和 SVG；对 subgraph、指向 subgraph
+  的边和 `A -- 更新/写入 --> B` 这类旧式边标签支持更好。未打 tag，`go.mod` 固定 pseudo-version。
+- `github.com/zkrebbekx/go-mermaid v0.1.6`：其他图表类型的解析、布局和 SVG。
+- 两者都是纯 Go；只 import 核心/ SVG 包，不引入 go-mermaid 的 `raster`，二进制不会编入
+  `oksvg`/`rasterx` 等 PNG 光栅化依赖。
+- MyGo 的 SVG 查看器支持两者的输出（`Unsupported()` 为空），包括 `text`/`tspan`、`marker`、`path`。
 
 ## 接入点
 
@@ -30,12 +33,13 @@
 
 ## 图表类型
 
-go-mermaid 支持：flowchart / graph、sequenceDiagram、classDiagram、stateDiagram-v2、erDiagram、pie、
-journey、quadrantChart、gitGraph、timeline、mindmap、gantt、C4Context / C4Container、requirementDiagram、
-sankey-beta、xychart-beta、block-beta、kanban、packet-beta、radar-beta。
+| 渲染器 | 类型 |
+|---|---|
+| streameraid | `flowchart` / `graph`（TD、TB、BT、LR、RL，含 subgraph、`classDef`、`style`）、`sequenceDiagram` |
+| go-mermaid | classDiagram、stateDiagram-v2、erDiagram、pie、journey、quadrantChart、gitGraph、timeline、mindmap、gantt、C4Context / C4Container、requirementDiagram、sankey-beta、xychart-beta、block-beta、kanban、packet-beta、radar-beta |
 
-仍未识别或解析失败的语法显示源码；渲染器自身对个别语法（如 sequence 的 `loop` 标签排版）不完美，
-属于上游限制，不在本仓库 fork。
+flowchart / sequence 先走 streameraid；它解析失败时还会再试 go-mermaid。仍未识别或解析失败的语法显示源码；
+渲染器自身对个别语法（如 sequence 的 `loop` 标签排版）不完美，属于上游限制，不在本仓库 fork。
 
 ## 尺寸
 
@@ -45,7 +49,7 @@ sankey-beta、xychart-beta、block-beta、kanban、packet-beta、radar-beta。
 
 ## 主题
 
-`mermaidPalette(t)` 从当前 `mui.Theme` 取五个颜色，交给 go-mermaid 的 `WithCustomTheme`：
+两个渲染器各自接收一套从当前 `mui.Theme` 派生的颜色，取值一致：
 
 | 字段 | 取值 |
 |---|---|
@@ -54,22 +58,25 @@ sankey-beta、xychart-beta、block-beta、kanban、packet-beta、radar-beta。
 | `NodeStroke` | 背景与 `t.Accent` 62% 混合 |
 | `Text` | `t.Text` |
 | `Edge` | 背景与 `t.Text` 62% 混合 |
+| `ClusterFill` / `ClusterStroke` / `ClusterText` | streameraid 的 subgraph 颜色，按文字色与 `TextMuted` 派生 |
+| `EdgeLabelBg` | 背景色，盖住穿过的边 |
 
 - go-mermaid 的调色板存在包级 map 里，`Register` 和 `Render` 由 `mermaidRenderMu` 串行化，避免多个
   App/测试同时渲染时换错颜色。
+- streameraid 的 `Theme` 是每次渲染传入的值，不共享全局状态。
 - 主题、深浅色或字号变化都会改变缓存 key，下一帧自然重画；图内文字颜色跟随主题，不会出现浅色图配深色底。
 
 ## 缓存
 
-- 每次渲染 Markdown 都会重建视图，所以按「源码 + 字号 + 五个颜色」的 SHA-256 缓存解析后的 `*mui.SVG`。
+- 每次渲染 Markdown 都会重建视图，所以按「渲染器 + 源码 + 字号 + 颜色」的 SHA-256 缓存解析后的 `*mui.SVG`。
 - 上限 32 份，FIFO 淘汰；只缓存在 `App.mermaidCache`，不落盘，退出即释放。
-- 首次出现某张图时同步解析；go-mermaid 解析几十个节点的图很快，只有缓存未命中才付出一次成本。
+- 首次出现某张图时同步解析；两个渲染器解析几十个节点的图都很快，只有缓存未命中才付出一次成本。
 
 ## 非目标与后续
 
 - 图内文字不可选中、不能缩放/导出 SVG；需要源码或复制时使用回退的代码块。
 - 不实现 mermaid.js 的交互、`click` 动作或 `%%{init}%%` 的全部配置。
-- 若以后要流式逐节点绘制，可换成原生 MyGo 绘制库；当前静态 SVG 方案优先覆盖图表类型。
+- 若以后要流式逐节点绘制，可换成原生 MyGo 绘制库；当前静态 SVG 方案优先覆盖图表类型和布局正确性。
 
 ## 测试
 
@@ -78,4 +85,5 @@ go test ./internal/ui -run 'TestFileViewerRendersMermaid|TestFileViewerFallsBack
 go test ./internal/i18n -v
 ```
 
-覆盖：查看卡片中 Mermaid 画成图而不是源码、未知类型回退源码、i18n 词典完整性。
+覆盖：查看卡片中 Mermaid 画成图而不是源码、带 `/` 的旧式边标签、classDiagram 走 go-mermaid、未知类型回退源码、
+i18n 词典完整性。

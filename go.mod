@@ -6,6 +6,7 @@ tool github.com/egoist/mygo/cmd/mygo
 
 require (
 	github.com/egoist/mygo v0.10.0
+	github.com/momaek/streameraid v0.0.0-20261114061636-42fb793a1a72
 	github.com/zkrebbekx/go-mermaid v0.1.6
 )
 

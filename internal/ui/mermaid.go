@@ -8,13 +8,16 @@ import (
 
 	mui "github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
+	streameraid "github.com/momaek/streameraid"
+	streamsvg "github.com/momaek/streameraid/render/svg"
 	mermaid "github.com/zkrebbekx/go-mermaid"
 )
 
 const (
 	// mermaidCacheLimit bounds the parsed diagrams kept for redraws. A frame
 	// rebuilds every visible Markdown view, so a diagram is parsed and drawn
-	// once per source, font size and theme rather than once per frame.
+	// once per source, font size, renderer and theme rather than once per
+	// frame.
 	mermaidCacheLimit = 32
 	// mermaidThemeName names the palette handed to go-mermaid for this
 	// window's theme. go-mermaid keeps palettes in a package map; a mutex
@@ -35,8 +38,8 @@ type mermaidDiagram struct {
 }
 
 // mermaidCache keeps the last diagrams as parsed SVGs. It is keyed by the
-// source, label size and colors, so changing theme or font does not redraw
-// stale ones.
+// source, label size, renderer and colors, so changing theme or font does not
+// redraw stale ones.
 type mermaidCache struct {
 	mu      sync.Mutex
 	entries map[string]mermaidDiagram
@@ -103,10 +106,14 @@ func (a *App) viewerMermaidBlock(c *mui.Context, b *markdown.CodeBlockView) {
 	a.mermaidBlock(c, b, a.gitFont(c.Theme().FontSize))
 }
 
-// mermaidBlock draws a closed mermaid fence as a diagram and leaves code for
-// a block still streaming in, an empty block, an unsupported kind or a
-// source the renderer cannot parse. The source stays one click away through
-// the normal code block in those cases.
+// mermaidBlock draws a Mermaid fence as an SVG image, and leaves code for a
+// block still streaming in, an empty block, an unsupported kind or a source
+// the renderer cannot parse. The source stays one click away through the
+// normal code block in those cases.
+//
+// Flowcharts and sequence diagrams go through streameraid, whose layout
+// understands subgraphs, edges to subgraphs and legacy edge labels such as
+// `A -- 更新/写入 --> B`. Other kinds go through go-mermaid.
 func (a *App) mermaidBlock(c *mui.Context, b *markdown.CodeBlockView, fontSize float32) {
 	if b.Open {
 		markdown.DefaultCodeBlock(c, b)
@@ -117,22 +124,62 @@ func (a *App) mermaidBlock(c *mui.Context, b *markdown.CodeBlockView, fontSize f
 		markdown.DefaultCodeBlock(c, b)
 		return
 	}
-	d, ok := a.mermaid(src, fontSize, c.Theme())
-	if !ok {
-		markdown.DefaultCodeBlock(c, b)
+	if streamKind(streameraid.Detect(src)) {
+		if d, ok := a.streamMermaid(src, fontSize, c.Theme()); ok {
+			a.mermaidImage(c, d)
+			return
+		}
+	}
+	if d, ok := a.svgMermaid(src, fontSize, c.Theme()); ok {
+		a.mermaidImage(c, d)
 		return
 	}
+	markdown.DefaultCodeBlock(c, b)
+}
+
+// streamKind reports whether streameraid draws this kind of diagram.
+func streamKind(k streameraid.Kind) bool {
+	return k == streameraid.Flowchart || k == streameraid.Sequence
+}
+
+// mermaidImage shows a diagram at its natural size, shrunk to the Markdown
+// column when it is wider. A column would otherwise stretch the image to its
+// width, making small diagrams huge.
+func (a *App) mermaidImage(c *mui.Context, d mermaidDiagram) {
 	img := mui.Image(c, d.svg).Label(T("Mermaid diagram"))
 	if d.width > 0 && d.height > 0 {
-		// A column would stretch the image to its width. Give the diagram
-		// its natural size, and let the max width shrink a wide one to the
-		// Markdown column.
 		img.Width(d.width).MaxWidthPercent(100).AspectRatio(d.width / d.height)
 	}
 }
 
-// mermaid returns a parsed diagram from the cache, drawing it on first use.
-func (a *App) mermaid(src string, fontSize float32, t *mui.Theme) (mermaidDiagram, bool) {
+// streamMermaid returns a flowchart or sequence diagram drawn by
+// streameraid, from the cache or rendered on first use.
+func (a *App) streamMermaid(src string, fontSize float32, t *mui.Theme) (mermaidDiagram, bool) {
+	if fontSize <= 0 {
+		fontSize = 12
+	}
+	th := streamMermaidTheme(t)
+	key := streamMermaidKey(src, fontSize, th)
+	if d, ok := a.mermaidCache.get(key); ok {
+		return d, true
+	}
+	out, err := renderStreamMermaid(src, fontSize, th)
+	if err != nil {
+		return mermaidDiagram{}, false
+	}
+	svg, err := mui.ParseSVG(out)
+	if err != nil {
+		return mermaidDiagram{}, false
+	}
+	w, h := svg.Size()
+	d := mermaidDiagram{svg: svg, width: w, height: h}
+	a.mermaidCache.put(key, d)
+	return d, true
+}
+
+// svgMermaid returns a diagram of another kind drawn by go-mermaid, from the
+// cache or rendered on first use.
+func (a *App) svgMermaid(src string, fontSize float32, t *mui.Theme) (mermaidDiagram, bool) {
 	if fontSize <= 0 {
 		fontSize = 12
 	}
@@ -155,9 +202,27 @@ func (a *App) mermaid(src string, fontSize float32, t *mui.Theme) (mermaidDiagra
 	return d, true
 }
 
-// renderMermaid draws with go-mermaid's built-in SVG output. The palette
-// follows the window theme, so diagrams read as part of the app rather than
-// as pasted pictures.
+// renderStreamMermaid draws flowcharts and sequence diagrams. A panic in the
+// parser must fall back to code, not take the window down.
+func renderStreamMermaid(src string, fontSize float32, th streamsvg.Theme) (out []byte, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			out, err = nil, fmt.Errorf("mermaid: %v", r)
+		}
+	}()
+	res, err := streameraid.Render(src, streameraid.Options{
+		FontSize: float64(fontSize),
+		Theme:    &th,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return []byte(res.SVG), nil
+}
+
+// renderMermaid draws the other kinds with go-mermaid's built-in SVG output.
+// The palette follows the window theme, so diagrams read as part of the app
+// rather than as pasted pictures.
 func renderMermaid(src string, fontSize float32, pal mermaid.Palette) ([]byte, error) {
 	mermaidRenderMu.Lock()
 	defer mermaidRenderMu.Unlock()
@@ -168,20 +233,33 @@ func renderMermaid(src string, fontSize float32, pal mermaid.Palette) ([]byte, e
 	)
 }
 
-// mermaidPalette derives a diagram palette from the window theme: nodes in a
-// wash of the accent, edges in a muted text color, on the window background.
+// streamMermaidTheme derives streameraid's colors from the window theme:
+// nodes in a wash of the accent, edges in a muted text color, on the window
+// background. Notes keep streameraid's light or dark yellow.
+func streamMermaidTheme(t *mui.Theme) streamsvg.Theme {
+	th := streamsvg.Light()
+	if t.Dark {
+		th = streamsvg.Dark()
+	}
+	bg := diagramBackground(t)
+	accent := diagramAccent(t)
+	th.Background = colorHex(bg)
+	th.NodeFill = colorHex(mixColor(bg, accent, 0.10))
+	th.NodeStroke = colorHex(mixColor(bg, accent, 0.62))
+	th.Text = colorHex(t.Text)
+	th.Edge = colorHex(mixColor(bg, t.Text, 0.62))
+	th.EdgeLabelBg = colorHex(bg)
+	th.ClusterFill = colorHex(mixColor(bg, t.Text, 0.035))
+	th.ClusterStroke = colorHex(mixColor(bg, t.Text, 0.20))
+	th.ClusterText = colorHex(t.TextMuted)
+	th.FontFamily = "sans-serif"
+	return th
+}
+
+// mermaidPalette derives go-mermaid's palette from the window theme.
 func mermaidPalette(t *mui.Theme) mermaid.Palette {
-	bg := t.Background
-	if bg.A == 0 {
-		bg = mui.RGB(0xff, 0xff, 0xff)
-		if t.Dark {
-			bg = mui.RGB(0x1b, 0x1f, 0x24)
-		}
-	}
-	accent := t.Accent
-	if accent.A == 0 {
-		accent = mui.RGB(0x63, 0x66, 0xf1)
-	}
+	bg := diagramBackground(t)
+	accent := diagramAccent(t)
 	return mermaid.Palette{
 		Background: colorHex(bg),
 		NodeFill:   colorHex(mixColor(bg, accent, 0.10)),
@@ -191,10 +269,36 @@ func mermaidPalette(t *mui.Theme) mermaid.Palette {
 	}
 }
 
-// mermaidKey is a digest of everything that changes the drawing: the source,
-// label size and the six palette entries.
+func diagramBackground(t *mui.Theme) mui.Color {
+	if t.Background.A != 0 {
+		return t.Background
+	}
+	if t.Dark {
+		return mui.RGB(0x1b, 0x1f, 0x24)
+	}
+	return mui.RGB(0xff, 0xff, 0xff)
+}
+
+func diagramAccent(t *mui.Theme) mui.Color {
+	if t.Accent.A != 0 {
+		return t.Accent
+	}
+	return mui.RGB(0x63, 0x66, 0xf1)
+}
+
+// streamMermaidKey is a digest of everything that changes streameraid's
+// drawing: its renderer, source, label size and palette.
+func streamMermaidKey(src string, fontSize float32, th streamsvg.Theme) string {
+	sum := sha256.Sum256([]byte(fmt.Sprintf("stream\x00%s\x00%.2f\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s",
+		src, fontSize, th.Background, th.NodeFill, th.NodeStroke, th.Text, th.Edge,
+		th.EdgeLabelBg, th.ClusterFill, th.ClusterStroke, th.ClusterText)))
+	return string(sum[:])
+}
+
+// mermaidKey is a digest of everything that changes go-mermaid's drawing: its
+// renderer, source, label size and palette.
 func mermaidKey(src string, fontSize float32, pal mermaid.Palette) string {
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%.2f\x00%s\x00%s\x00%s\x00%s\x00%s",
+	sum := sha256.Sum256([]byte(fmt.Sprintf("svg\x00%s\x00%.2f\x00%s\x00%s\x00%s\x00%s\x00%s",
 		src, fontSize, pal.Background, pal.NodeFill, pal.NodeStroke, pal.Text, pal.Edge)))
 	return string(sum[:])
 }
