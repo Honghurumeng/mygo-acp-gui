@@ -27,8 +27,8 @@
 | View | Markdown 文件用 `markdown.View` 渲染；其他文件用只读 `editor.View` | 全部 |
 | Edit | 同一个 `editor.State` 切到可编辑，标题栏出现 `Save` | 有可写文件的入口 |
 
-Markdown 里的 ` ```mermaid ` 代码块在 View 模式画成图（静态 SVG，见 [mermaid.md](mermaid.md)）；流式写入未闭尾、
-未知类型或解析失败时仍显示源码。
+Markdown 里的 ` ```mermaid ` 代码块在 View 模式画成图（静态 SVG，见 [mermaid.md](mermaid.md)，点击可在图片预览里放大、
+拖动和下载；预览期间卡片本身隐藏，不接收预览的点击，关闭后回来）；流式写入未闭尾、未知类型或解析失败时仍显示源码。
 
 - 当前模式按钮用 Accent 浅底 + Accent 文字；点击其他模式切换，状态由调用方持有。
 - Git 的 View/Edit 标题为 `File · <path>` / `Edit · <path>`；Staged 的 diff 仍为 `Staged diff · <path>`，

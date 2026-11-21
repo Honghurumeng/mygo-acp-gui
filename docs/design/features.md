@@ -127,6 +127,7 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 - 文件对话框选择 png/jpg/jpeg/gif/webp/bmp，最多 4 张、每张 15 MB。
 - 读取后转 base64，`ContentBlock{type:"image", mimeType, data}` 与 text 一起发 `session/prompt`。
 - 预览由 `ui.DecodeBitmap` 生成；composer 附件行和用户消息只显示缩略图，不显示文件名或 MIME 类型。点击缩略图打开图片预览 modal（`Close`、点击外部或 Esc 关闭），按窗口可用空间和图片原始尺寸缩放，不放大超过原图。
+- 预览里滚轮以指针为锚点缩放（0.25×–6×，一格约 10%），触控板捏合走 `InputZoom`，拖动画布平移；缩放只按步进重画 SVG，停下后按精确比例重画（见 [mermaid.md](mermaid.md)）。工具栏是 `−`、当前百分比（点击重置）、`+`、`Download`、`Close`。`Download` 用 `mygo.Dialog.Save` 选路径，写出的字节就是附件原始数据（`Attachment.Data`），结果（`Saved to …` / `Could not save: …`）显示在工具栏下方。Mermaid 图用的是同一个 modal，见 [mermaid.md](mermaid.md)。
 - composer 左侧 `＋` 打开图片选择；已连接且 `promptCapabilities.image` 为 false 时禁用，草稿阶段允许先选图。
 - 输入框支持直接粘贴剪贴板图片：`OnPaste` 只在剪贴板文本为空时读取 `mygo.Clipboard.ReadImage()`，把 PNG 字节转 base64 后作为 image 块；不写临时文件、不把路径塞进文本。文本剪贴板仍走编辑器原生的文本粘贴，不会同时生成附件。
 - 图片粘贴与 `＋` 共用数量、大小和 `promptCapabilities.image` 校验；剪贴板图片在后台解码，UI 线程只追加附件。

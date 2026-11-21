@@ -644,7 +644,9 @@ func (a *App) closeTaskSummary() {
 // taskSummaryPopover floats the saved Markdown beside the task panel, using
 // the same anchored card and responsive width as the Git diff viewer.
 func (a *App) taskSummaryPopover(c *mui.Context, anchor mui.Element) {
-	if !a.TaskSummaryOpen {
+	if !a.TaskSummaryOpen || a.ImageOpen {
+		// The picture preview hides the card while its modal shows, as the
+		// file viewer's popover does.
 		return
 	}
 	task := a.taskByID(a.TaskSummaryTaskID)

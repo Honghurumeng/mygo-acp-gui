@@ -738,7 +738,10 @@ func (a *App) closeFileViewer() {
 // fileViewerPopover anchors the shared viewer to the Files panel and closes
 // it when the workspace changes or the panel is hidden.
 func (a *App) fileViewerPopover(c *mui.Context, anchor mui.Element) {
-	if !a.Files.ViewerOpen {
+	if !a.Files.ViewerOpen || a.ImageOpen {
+		// The picture preview hides the card while its modal shows: the
+		// popover would take the preview's presses as presses outside,
+		// close, and let them through to what is under the pointer.
 		return
 	}
 	if a.Files.Workspace != a.activeFileWorkspace() || a.Files.ViewerPath == "" {

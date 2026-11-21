@@ -93,12 +93,13 @@ func verbs(message string) []string {
 }
 
 // sameInChinese are the messages Chinese keeps as they are: the ACP term for
-// an agent, and the names of the viewer's diff.
+// an agent, the names of the viewer's diff, and a percentage.
 var sameInChinese = map[string]bool{
 	"Agent":     true,
 	"Agent %s":  true,
 	"Diff":      true,
 	"Diff · %s": true,
+	"%d%%":      true,
 }
 
 // TestCatalog checks that the Chinese catalog only translates messages the

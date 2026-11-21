@@ -1314,7 +1314,9 @@ func (a *App) gitPreviewTitle(mode viewerMode) string {
 // right edge sits on the panel's left edge, as the commit details card does
 // beside a graph row, but larger. Pressing outside or Escape closes it.
 func (a *App) gitDiffPopover(c *mui.Context, anchor mui.Element) {
-	if !a.Git.PreviewOpen {
+	if !a.Git.PreviewOpen || a.ImageOpen {
+		// The picture preview hides the card while its modal shows, as the
+		// file viewer's popover does.
 		return
 	}
 	if a.Git.Workspace != a.activeGitWorkspace() {

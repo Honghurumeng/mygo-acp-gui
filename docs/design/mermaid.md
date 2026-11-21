@@ -47,6 +47,27 @@ flowchart / sequence 先走 streameraid；它解析失败时还会再试 go-merm
 - `Width(w).MaxWidthPercent(100).AspectRatio(w/h)`：宽图等比缩到列宽，高度随比例变化，外层滚动条负责纵向。
 - 字号只影响布局和标签大小；同一份源码换字号会重新布局，不共用旧缓存。
 
+## 放大预览与下载
+
+对话流和查看卡片里的图本身仍是静态 SVG，不带控件；点击图（`CursorPointer` + `Click to view larger`）打开与附件共用的
+图片预览 modal（`internal/ui/preview.go`），由 `previewSource` 决定显示附件位图还是图的 SVG。
+
+- 打开时按窗口可用空间、图的固有尺寸等比缩放，上限 100%（小图不放大）；`Image preview` 标签在固定大小的视口盒子上。
+- 滚轮以指针为锚点缩放：0.25×–6×，一格（约 40 DIP）约 10%，触控板捏合走 `InputZoom`，`Momentum` 事件只吞掉不缩放。
+- 缩放不逐帧重画 SVG：`ImageView.Sharp` 按 1.25 的步进取值，并且不超过 MyGo 的 4096 设备像素上限（按 2× 屏折算成 2048 DIP），
+  画面用 `Scale(Zoom/Sharp)` 显示到目标比例；连续滚轮只在跨过步进时重画，而不是每一帧，停下 180ms 后 `c.After` 排一帧
+  按精确比例重画，既流畅又清晰。
+  图放进固定大小、`Clip` 的盒子里，超出部分裁掉，`ImageView.X/Y` 负责摆放。
+- 指针拖动画布平移（`Box.Dragged`，光标 `CursorGrab`/`CursorGrabbing`），拖到边缘停住；图小于盒子时保持居中。
+- 从浮动查看卡片打开预览时，卡片在预览期间不构建（`ImageOpen` 时跳过 `fileViewerPopover` / `taskSummaryPopover` /
+  `gitDiffPopover`）：popover 会把预览里的第一次按下当成「点击外部」关掉自己，并把点击透传到下面的卡片；关闭预览后卡片原样回来。
+- 工具栏：`−`、当前百分比（点击重置为 100%）、`+`、`Download`、`Close`；状态存在 `App.ImageView`，关闭预览时和
+  `DiagramPreview` 一起清空。
+- `Download` 用 `mygo.Dialog.Save` 让用户选路径，写出的就是渲染器的原始 SVG（`mermaidDiagram.source`，随缓存的 `*mui.SVG`
+  一起存），默认文件名 `diagram.svg`；保存结果（`Saved to …` / `Could not save: …`）显示在工具栏下方。
+- 预览 modal 用 `mui.DialogBase` 加固定 `Key`：位置化的 overlay id 会被其他 overlay 的出现/消失带偏，
+  键化 backdrop 后预览里的点击始终落在自己的按钮上。
+
 ## 主题
 
 两个渲染器各自接收一套从当前 `mui.Theme` 派生的颜色，取值一致：
@@ -74,16 +95,17 @@ flowchart / sequence 先走 streameraid；它解析失败时还会再试 go-merm
 
 ## 非目标与后续
 
-- 图内文字不可选中、不能缩放/导出 SVG；需要源码或复制时使用回退的代码块。
+- 图内文字不可选中；缩放、下载只在图片预览 modal 里，对话流里没有悬浮按钮，也没有拖拽平移（缩放锚在指针上）。
 - 不实现 mermaid.js 的交互、`click` 动作或 `%%{init}%%` 的全部配置。
 - 若以后要流式逐节点绘制，可换成原生 MyGo 绘制库；当前静态 SVG 方案优先覆盖图表类型和布局正确性。
 
 ## 测试
 
 ```bash
-go test ./internal/ui -run 'TestFileViewerRendersMermaid|TestFileViewerFallsBackToMermaidSource' -v -count=1
+go test ./internal/ui -run 'TestFileViewerRendersMermaid|TestFileViewerFallsBackToMermaidSource|TestMermaidDiagramOpensThePreview|TestPreviewSourceDownloadsAnAttachment' -v -count=1
 go test ./internal/i18n -v
 ```
 
 覆盖：查看卡片中 Mermaid 画成图而不是源码、带 `/` 的旧式边标签、classDiagram 走 go-mermaid、未知类型回退源码、
-i18n 词典完整性。
+点击打开预览（滚轮缩放按步进重画、停下后变清晰、拖动平移、百分比重置、Escape 关闭、SVG 可下载）、
+预览不把点击透传给下面的查看卡片、附件预览的下载字节、i18n 词典完整性。

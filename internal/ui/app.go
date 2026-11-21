@@ -399,9 +399,17 @@ type App struct {
 
 	SettingsWarning string
 
-	// ImagePreview is the attachment shown enlarged by imagePreviewDialog.
-	ImagePreview *Attachment
-	ImageOpen    bool
+	// ImagePreview is the attachment shown enlarged by imagePreviewDialog,
+	// and DiagramPreview the Mermaid diagram a click on its picture opened.
+	ImagePreview   *Attachment
+	DiagramPreview *mermaidDiagram
+	ImageOpen      bool
+	// ImageView is the preview's zoom and placement, kept while it is open.
+	ImageView imageView
+	// ImageNotice is the preview's last download result, ImageNoticeErr
+	// coloring it as an error.
+	ImageNotice    string
+	ImageNoticeErr bool
 
 	Permission      *permissionPrompt
 	PermissionOpen  bool

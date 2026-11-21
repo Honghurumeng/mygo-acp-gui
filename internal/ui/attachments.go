@@ -298,44 +298,10 @@ func (a *App) clickableImage(c *mui.Context, attachment Attachment, w, h float32
 		Tooltip(T("Click to view larger"))
 	if image.Clicked() {
 		a.ImagePreview = &attachment
-		a.ImageOpen = true
+		a.DiagramPreview = nil
+		a.openImagePreview()
 	}
 	return image
-}
-
-// imagePreviewDialog shows the selected attachment enlarged in a modal. The
-// picture is capped at its own size so a small image is not turned into a
-// blurry wall, and at the window's room so it always fits.
-func (a *App) imagePreviewDialog(c *mui.Context) {
-	if !a.ImageOpen || a.ImagePreview == nil || a.ImagePreview.Bitmap == nil {
-		return
-	}
-	bmp := a.ImagePreview.Bitmap
-	windowW, windowH := c.Size()
-	imageW, imageH := mui.ImageSize(bmp)
-	if imageW <= 0 || imageH <= 0 {
-		return
-	}
-	maxW := max(float32(120), windowW-120)
-	maxH := max(float32(120), windowH-220)
-	scale := min(maxW/imageW, maxH/imageH)
-	if scale > 1 {
-		scale = 1
-	}
-	w, h := imageW*scale, imageH*scale
-	mui.Modal(c, &a.ImageOpen, func() {
-		mui.Column(c).Gap(8).Children(func() {
-			mui.Image(c, bmp).Size(w, h).Fit(mui.Contain).Radius(6)
-			mui.Row(c).Gap(8).Justify(mui.End).Children(func() {
-				if quietButton(c, T("Close")).Clicked() {
-					a.ImageOpen = false
-				}
-			})
-		})
-	})
-	if !a.ImageOpen {
-		a.ImagePreview = nil
-	}
 }
 
 type attachmentError string

@@ -31,9 +31,11 @@ const (
 
 var mermaidRenderMu sync.Mutex
 
-// mermaidDiagram is a parsed diagram and its intrinsic size in DIPs.
+// mermaidDiagram is a parsed diagram and its intrinsic size in DIPs, with the
+// SVG text a download writes.
 type mermaidDiagram struct {
 	svg           *mui.SVG
+	source        []byte
 	width, height float32
 }
 
@@ -144,11 +146,18 @@ func streamKind(k streameraid.Kind) bool {
 
 // mermaidImage shows a diagram at its natural size, shrunk to the Markdown
 // column when it is wider. A column would otherwise stretch the image to its
-// width, making small diagrams huge.
+// width, making small diagrams huge. Clicking it opens the picture enlarged,
+// as a click on an attachment does, with the wheel's zoom and a download.
 func (a *App) mermaidImage(c *mui.Context, d mermaidDiagram) {
 	img := mui.Image(c, d.svg).Label(T("Mermaid diagram"))
 	if d.width > 0 && d.height > 0 {
 		img.Width(d.width).MaxWidthPercent(100).AspectRatio(d.width / d.height)
+	}
+	img = img.Cursor(mui.CursorPointer).Tooltip(T("Click to view larger"))
+	if img.Clicked() {
+		a.ImagePreview = nil
+		a.DiagramPreview = &d
+		a.openImagePreview()
 	}
 }
 
@@ -172,7 +181,7 @@ func (a *App) streamMermaid(src string, fontSize float32, t *mui.Theme) (mermaid
 		return mermaidDiagram{}, false
 	}
 	w, h := svg.Size()
-	d := mermaidDiagram{svg: svg, width: w, height: h}
+	d := mermaidDiagram{svg: svg, source: out, width: w, height: h}
 	a.mermaidCache.put(key, d)
 	return d, true
 }
@@ -197,7 +206,7 @@ func (a *App) svgMermaid(src string, fontSize float32, t *mui.Theme) (mermaidDia
 		return mermaidDiagram{}, false
 	}
 	w, h := svg.Size()
-	d := mermaidDiagram{svg: svg, width: w, height: h}
+	d := mermaidDiagram{svg: svg, source: out, width: w, height: h}
 	a.mermaidCache.put(key, d)
 	return d, true
 }
