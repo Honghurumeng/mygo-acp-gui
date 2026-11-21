@@ -21,6 +21,7 @@ import (
 	"github.com/egoist/mygo/ui/markdown"
 	"github.com/reed/acp-gui/internal/acp"
 	"github.com/reed/acp-gui/internal/agent"
+	"github.com/reed/acp-gui/internal/agentupdate"
 	"github.com/reed/acp-gui/internal/archive"
 	"github.com/reed/acp-gui/internal/codexprovider"
 	"github.com/reed/acp-gui/internal/i18n"
@@ -80,6 +81,10 @@ type Options struct {
 	// uses updatecheck.Check against the npm registry; tests inject a fixed
 	// answer so discovery never reaches the network.
 	CheckUpdates func(context.Context, []updatecheck.Target) map[string]updatecheck.Result
+	// RunAgentUpdate installs the latest version of one builtin CLI with the
+	// package manager that owns it. Nil uses agentupdate.Runner; tests inject
+	// a fake so no package manager runs.
+	RunAgentUpdate func(context.Context, []string, agentupdate.Target) (agentupdate.Result, error)
 }
 
 // MessageRole is how a chat row is drawn.
@@ -178,6 +183,15 @@ type AgentStatus struct {
 	// Empty means the installed CLI is current, the check failed or the
 	// check was not possible; it never changes Status.
 	LatestVersion string
+	// Updating is true while the package manager runs for this agent. Only
+	// one agent updates at a time.
+	Updating bool
+	// UpdateError is why the last update attempt failed. The notice stays,
+	// so the same Update button is a retry.
+	UpdateError string
+	// UpdateDone is the version installed by the last successful update,
+	// shown until the next discovery or update.
+	UpdateDone string
 }
 
 // AgentModeState is the session mode list cached from a config probe.
@@ -457,6 +471,7 @@ type App struct {
 	probeConfig        func(context.Context, agent.LaunchSpec) (session.Info, error)
 	probeModels        func(context.Context, agent.LaunchSpec, session.ModelProbe) (session.Info, error)
 	checkUpdates       func(context.Context, []updatecheck.Target) map[string]updatecheck.Result
+	runAgentUpdate     func(context.Context, []string, agentupdate.Target) (agentupdate.Result, error)
 	readClipboardImage func() []byte
 	openImages         func() ([]string, error)
 	fileIndexer        func(string) ([]string, error)
@@ -535,6 +550,7 @@ func New(opts Options) *App {
 		onLanguage:         opts.OnLanguage,
 		probeAgent:         opts.ProbeAgent,
 		checkUpdates:       updatecheck.Check,
+		runAgentUpdate:     agentupdate.Runner{}.Update,
 		injectedAgents:     opts.Agents != nil,
 		probeConfig:        session.ProbeConfig,
 		probeModels:        session.ProbeConfigModels,
@@ -584,6 +600,9 @@ func New(opts Options) *App {
 	}
 	if opts.CheckUpdates != nil {
 		a.checkUpdates = opts.CheckUpdates
+	}
+	if opts.RunAgentUpdate != nil {
+		a.runAgentUpdate = opts.RunAgentUpdate
 	}
 	a.readClipboardImage = opts.ReadClipboardImage
 	if a.readClipboardImage == nil {

@@ -186,7 +186,7 @@ scripts/vendor-codex-acp.sh          # 官方 codex-acp，不含补丁
 - 不实现 ACP agent 端（pi-acp / codex-acp 已经做了）
 - 不重写 pi（pi 仍然是 Node 程序）
 - 不做 Mac App Store 沙箱版本
-- MVP 不自动安装任意 agent
+- MVP 不自动安装或更新任意 agent；更新只在用户点击 Update 后运行该 CLI 自己的 update 子命令
 - 不做 registry 全量发现/在线目录；只支持内置表（当前 pi、command-code、codex）
 - 不声明 `fs` / `terminal` 能力
 - 不捆绑、不安装、不升级 Node；默认用户电脑上已有 Node 22+

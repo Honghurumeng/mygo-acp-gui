@@ -14,6 +14,7 @@ import (
 
 	mui "github.com/egoist/mygo/ui"
 	"github.com/reed/acp-gui/internal/agent"
+	"github.com/reed/acp-gui/internal/agentupdate"
 	"github.com/reed/acp-gui/internal/updatecheck"
 )
 
@@ -320,5 +321,123 @@ func TestDiscoveryRestoresPreferredAgentAndRefreshes(t *testing.T) {
 	}
 	if app.AgentIndex != 2 || app.Agents[app.AgentIndex].ID != agent.CodexID {
 		t.Errorf("selection lost after refresh: %d %+v", app.AgentIndex, app.Agents)
+	}
+}
+
+func TestDiscoveryUpdateButtonUpdatesThenRefreshesOneAgent(t *testing.T) {
+	resources, resolve, bin := fakeDiscoveryEnvironment(t)
+	app := newDiscoveryApp(t, resources, resolve, func(context.Context, agent.LaunchSpec) error {
+		return nil
+	})
+	var checks atomic.Int32
+	app.checkUpdates = func(_ context.Context, targets []updatecheck.Target) map[string]updatecheck.Result {
+		if checks.Add(1) > 1 {
+			// The fake CLI keeps reporting 1.5.2 after the fake update, so
+			// stop answering with a newer version to keep the notice gone.
+			return nil
+		}
+		found := map[string]updatecheck.Result{}
+		for _, target := range targets {
+			if target.ID == agent.PiID {
+				found[target.ID] = updatecheck.Result{Current: target.Current, Latest: "1.6.0"}
+			}
+		}
+		return found
+	}
+	var (
+		mu  sync.Mutex
+		got agentupdate.Target
+	)
+	app.runAgentUpdate = func(_ context.Context, _ []string, target agentupdate.Target) (agentupdate.Result, error) {
+		mu.Lock()
+		got = target
+		mu.Unlock()
+		return agentupdate.Result{Plan: agentupdate.Plan{Executable: bin + "/pi", Args: []string{"update"}}}, nil
+	}
+
+	app.discover(context.Background())
+	app.Flush()
+
+	tt := mui.NewTester(app.View, 1200, 760)
+	tt.Frame()
+	if !tt.HasText("Update available: v1.6.0") {
+		t.Fatalf("update notice missing; texts: %q", tt.Texts())
+	}
+	if err := tt.Click("Update"); err != nil {
+		t.Fatalf("click Update: %v", err)
+	}
+	waitFor(t, app, tt, func() bool { return !app.anyAgentUpdating() && !app.Resolving })
+
+	mu.Lock()
+	target := got
+	mu.Unlock()
+	if target.ID != agent.PiID || target.Name != "pi" {
+		t.Fatalf("update target = %+v", target)
+	}
+	if want := filepath.Join(bin, "pi"); target.Command != want {
+		t.Errorf("update command = %q, want %q", target.Command, want)
+	}
+	idx := app.statusIndex(agent.PiID)
+	if idx < 0 {
+		t.Fatal("pi status disappeared")
+	}
+	status := app.AgentStatuses[idx]
+	if status.Updating {
+		t.Error("status still updating")
+	}
+	if status.UpdateDone != "1.5.2" || status.LatestVersion != "" {
+		t.Errorf("status after update = %+v, want done 1.5.2 and no notice", status)
+	}
+	tt.Frame()
+	if !tt.HasText("Updated to v1.5.2") {
+		t.Errorf("updated line missing; texts: %q", tt.Texts())
+	}
+}
+
+func TestDiscoveryUpdateFailureKeepsTheNoticeForRetry(t *testing.T) {
+	resources, resolve, _ := fakeDiscoveryEnvironment(t)
+	app := newDiscoveryApp(t, resources, resolve, func(context.Context, agent.LaunchSpec) error {
+		return nil
+	})
+	app.checkUpdates = func(_ context.Context, targets []updatecheck.Target) map[string]updatecheck.Result {
+		for _, target := range targets {
+			if target.ID == agent.PiID {
+				return map[string]updatecheck.Result{
+					target.ID: {Current: target.Current, Latest: "1.6.0"},
+				}
+			}
+		}
+		return nil
+	}
+	app.runAgentUpdate = func(context.Context, []string, agentupdate.Target) (agentupdate.Result, error) {
+		return agentupdate.Result{Plan: agentupdate.Plan{
+			Executable: "/usr/local/bin/pi",
+			Args:       []string{"update"},
+		}}, errors.New("exit status 243")
+	}
+
+	app.discover(context.Background())
+	app.Flush()
+	tt := mui.NewTester(app.View, 1200, 760)
+	tt.Frame()
+	if err := tt.Click("Update"); err != nil {
+		t.Fatalf("click Update: %v", err)
+	}
+	waitFor(t, app, tt, func() bool { return !app.anyAgentUpdating() })
+
+	idx := app.statusIndex(agent.PiID)
+	if idx < 0 {
+		t.Fatal("pi status disappeared")
+	}
+	status := app.AgentStatuses[idx]
+	if !strings.Contains(status.UpdateError, "exit status 243") {
+		t.Errorf("update error = %q", status.UpdateError)
+	}
+	if status.LatestVersion != "1.6.0" {
+		t.Errorf("latest = %q, want the notice kept for a retry", status.LatestVersion)
+	}
+	tt.Frame()
+	if !tt.HasText("Update failed:") || !tt.HasText("Update available: v1.6.0") {
+		t.Errorf("failure text missing; texts: %q", tt.Texts())
 	}
 }

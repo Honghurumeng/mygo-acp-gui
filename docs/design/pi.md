@@ -166,7 +166,7 @@ node <resources>/agents/pi-acp/pi-acp.bundle.mjs --terminal-login
 ## 更新
 
 - 应用内的 `pi-acp` bundle 版本固定，不自动跟随 npm；更新只走 `scripts/vendor-pi-acp-local.sh`（本地 fork）或 `scripts/vendor-pi-acp.sh`（上游），不要手改 `pi-acp.bundle.mjs`。
-- 启动发现后只查询 npm 包 `@earendil-works/pi-coding-agent` 的 `latest`，与本机 `pi --version` 比较；有新版本时在侧栏提示，不下载、不安装、不代跑更新。提示来源见 [discovery.md](discovery.md#更新检测只提示)。
+- 启动发现后只查询 npm 包 `@earendil-works/pi-coding-agent` 的 `latest`，与本机 `pi --version` 比较；有新版本时在侧栏提示，点 Update 运行 `pi update`，但 vendored `pi-acp` bundle 不随之更新。提示来源见 [discovery.md](discovery.md#更新检测与更新)。
 - 更新后先跑 `node scripts/pi-acp-smoke.mjs`，再跑真实 pi 冒烟，最后跑 UI 测试。
 
 ## 常见错误

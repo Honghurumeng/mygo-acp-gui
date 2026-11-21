@@ -61,29 +61,10 @@ func (a *App) discover(ctx context.Context) {
 			InstallHint: result.InstallHint,
 			Status:      AgentProbing,
 		}
-		if result.Err != nil {
-			statuses[i].Status = AgentMissing
-			statuses[i].Detail = result.Err.Error()
-			continue
-		}
 		wg.Add(1)
 		go func(i int, result agent.LaunchResult) {
 			defer wg.Done()
-			probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			defer cancel()
-			err := a.probeAgent(probeCtx, result.Spec)
-			switch {
-			case err == nil:
-				statuses[i].Status = AgentReady
-			case errors.Is(err, context.DeadlineExceeded):
-				statuses[i].Status = AgentError
-				statuses[i].Detail = T("initialize probe timed out after 5s")
-				a.appendAgentLog(result.ID, []byte("[probe] timeout after 5s\n"))
-			default:
-				statuses[i].Status = AgentNotACP
-				statuses[i].Detail = truncate(err.Error(), 600)
-				a.appendAgentLog(result.ID, []byte("[probe] "+err.Error()+"\n"))
-			}
+			statuses[i] = a.probeResult(ctx, result)
 		}(i, result)
 	}
 	wg.Wait()
@@ -145,6 +126,39 @@ func (a *App) discover(ctx context.Context) {
 	// The update check is advisory and runs after the statuses are published,
 	// so an offline or slow registry never delays startup or changes a status.
 	a.checkAgentUpdates(ctx, results)
+}
+
+// probeResult resolves one launch result into its status row. Discovery and
+// the post-update refresh share it, so both classify a failure the same way.
+func (a *App) probeResult(ctx context.Context, result agent.LaunchResult) AgentStatus {
+	status := AgentStatus{
+		ID:          result.ID,
+		Name:        result.Name,
+		Version:     result.Spec.Version,
+		InstallHint: result.InstallHint,
+		Status:      AgentProbing,
+	}
+	if result.Err != nil {
+		status.Status = AgentMissing
+		status.Detail = result.Err.Error()
+		return status
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	err := a.probeAgent(probeCtx, result.Spec)
+	switch {
+	case err == nil:
+		status.Status = AgentReady
+	case errors.Is(err, context.DeadlineExceeded):
+		status.Status = AgentError
+		status.Detail = T("initialize probe timed out after 5s")
+		a.appendAgentLog(result.ID, []byte("[probe] timeout after 5s\n"))
+	default:
+		status.Status = AgentNotACP
+		status.Detail = truncate(err.Error(), 600)
+		a.appendAgentLog(result.ID, []byte("[probe] "+err.Error()+"\n"))
+	}
+	return status
 }
 
 // updateCheckTimeout bounds the whole npm lookup. Individual HTTP requests

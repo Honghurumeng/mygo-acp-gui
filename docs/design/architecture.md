@@ -47,7 +47,8 @@ MyGo 原生窗口 (Go + ui)
   internal/files/          workspace 文件树、文本读取/保存与新建/重命名/移动/删除（不经过 shell）
   internal/tasks/          tasks.json 任务索引 + workspace/tasks/*.md 总结读写
   internal/logs/           每个 agent 的滚动日志文件（已实现）
-  internal/updatecheck/   只查内置 CLI 在 npm 上的 latest 版本，供“有新版本”提示（不安装）
+  internal/updatecheck/   只查内置 CLI 在 npm 上的 latest 版本，供“有新版本”提示
+  internal/agentupdate/   用户点 Update 后运行该 CLI 自己的 update 子命令
   internal/i18n/           应用文案词典（英文原文为 key，zh-Hans.json 内置）、语言解析与 Set/T/Tf（见 i18n.md）
   internal/git/            Git 探测、status 解析、提交、本地分支创建/切换、远端操作、任务失败回滚快照（不经过 shell）
   internal/ui/             多会话侧栏、聊天、流式 Markdown（含 Mermaid 图表）、权限队列、系统通知、Dock 角标、Git / Files 面板、主题系统、窗口更新（已实现）
@@ -86,7 +87,7 @@ MyGo 原生窗口 (Go + ui)
       codex: vendored bundle + CODEX_PATH=<绝对路径>/codex + Node 22+
              可选自定义供应商：CODEX_CONFIG/MODEL_PROVIDER + CODEX_CONFIG.model_catalog_json（<data>/codex-models.json） + CODEX_ACP_MODELS/CODEX_ACP_REASONING_EFFORTS/CODEX_ACP_TITLE_MODEL（见 codex-provider.md）
   → internal/session.Probe（initialize，5 秒，逐 agent 并行）
-  → internal/updatecheck（状态发布后并行查 npm latest；仅侧栏提示，不自动更新）
+  → internal/updatecheck（状态发布后并行查 npm latest；侧栏提示，用户点 Update 才更新）
   → 侧栏工作区/会话 + 工作区 ＋：每个会话各自 internal/session.Start
       session/new | session/load（DeferUpdates 缓冲历史）
   → session/prompt（文本 + 图片；@ 文件以路径文本出现）
@@ -105,7 +106,7 @@ MyGo 原生窗口 (Go + ui)
   → 退出（⌘Q / Quit）→ 关闭所有会话的进程组
 ```
 
-- 解析并探测 pi、command-code、codex；单个 agent 缺失不会隐藏另一个，侧栏状态展示 `ready` / `not-installed` / `installed-not-acp` / `needs-auth` / `error`。内置 agent 表固定为 pi、command-code、codex，不做 registry 发现。发现完成后只对已定位的 CLI 查 npm `latest` 并在侧栏提示新版本，不下载、不安装、不改变状态（见 [discovery.md](discovery.md#更新检测只提示)）。
+- 解析并探测 pi、command-code、codex；单个 agent 缺失不会隐藏另一个，侧栏状态展示 `ready` / `not-installed` / `installed-not-acp` / `needs-auth` / `error`。内置 agent 表固定为 pi、command-code、codex，不做 registry 发现。发现完成后只对已定位的 CLI 查 npm `latest` 并在侧栏提示新版本；只有用户点 Update 时，才运行该 CLI 自己的 update 子命令，并只刷新该 agent 的状态（见 [discovery.md](discovery.md#更新检测与更新)）。
 - 路径解析优先使用 `ACP_GUI_NODE` / `ACP_GUI_PI` / `ACP_GUI_COMMAND_CODE` / `ACP_GUI_CODEX` 的绝对路径覆盖，其次是 `settings.json` 的 `paths`，否则用登录 shell 的 `PATH`。只定位已有安装，不安装、不捆绑 Node。
 - UI 状态只在主线程修改。session 回调通过 `Window.Update`（测试中通过队列）提交，不直接改状态。
 - 每个会话是一个 `ui.Chat`，保存自己的 Session、Info、消息、输入草稿、配置、附件和连接代数；App 持有 `Chats`、`Active`、工作区列表和侧栏折叠状态。回调捕获 chat 指针，因此后台会话仍能流式更新。
@@ -227,7 +228,7 @@ logs/                每个 agent 的 stderr / 协议日志（1 MiB 滚动，保
 
 - 只探测内置表里的 pi / command-code / codex，不遍历可执行文件，也不接受表外 agent。
 - 探测超时 5 秒；每次探测都要能杀掉进程组，不能残留。
-- 不静默安装任何 agent；未安装时只展示安装提示/命令。
+- 不静默安装或更新任何 agent；未安装时只展示安装提示/命令，更新只在用户点击 Update 后运行该 CLI 自己的 update 子命令。
 - agent 继承用户环境；不在日志里主动打印 API key。stderr 可能含敏感信息：主界面不展开，日志文件 0600。
 - 不声明 `fs/*`、`terminal/*` 能力；未知 agent→client 请求一律拒绝。
 - 本地存档含 cwd 和 session id，只写用户数据目录（0600），不上传、不跨设备同步。
@@ -235,7 +236,7 @@ logs/                每个 agent 的 stderr / 协议日志（1 MiB 滚动，保
 - 不管理 Node 运行时（不捆绑、不安装、不升级），只定位用户已有的 Node。
 - 任务 runner 成功时只执行 `git add -A` + commit，不 push、不 force；失败时用任务开始前的 work tree 快照回滚本次改动（不 reset 到 HEAD），不 commit。任务提交会把当时工作区的全部改动一起提交。
 - Git 面板只调用用户已有的 git，不经过 shell、不代登录、不弹出凭据提示；不执行 force push / hard reset / clean。
-- vendored pi-acp / codex-acp 固定版本并附 LICENSE；更新走显式脚本，不自动跟随 npm。系统 CLI（pi / command-code / codex）的 npm 新版本只在侧栏提示；不下载、不安装、不执行更新。
+- vendored pi-acp / codex-acp 固定版本并附 LICENSE；更新走显式脚本，不自动跟随 npm。系统 CLI（pi / command-code / codex）的 npm 新版本在侧栏提示，点 Update 才运行该 CLI 自己的 update 子命令，vendored bundle 不随之更新。
 
 ## 相关文档
 

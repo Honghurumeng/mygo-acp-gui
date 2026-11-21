@@ -43,12 +43,19 @@ var Builtins = []BuiltinAgent{
 
 // IsBuiltinID reports whether id belongs to the hand-maintained table.
 func IsBuiltinID(id string) bool {
+	_, ok := BuiltinByID(id)
+	return ok
+}
+
+// BuiltinByID returns the hand-maintained entry for id. The update action
+// reads Package from it; an unknown id is a caller bug.
+func BuiltinByID(id string) (BuiltinAgent, bool) {
 	for _, builtin := range Builtins {
 		if builtin.ID == id {
-			return true
+			return builtin, true
 		}
 	}
-	return false
+	return BuiltinAgent{}, false
 }
 
 // LaunchResult is one builtin agent's resolved launch spec or the reason it
