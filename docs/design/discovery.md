@@ -10,9 +10,9 @@
 | `command-code` | Command Code | `command-code acp` |
 | `codex` | Codex | vendored `codex-acp` bundle + `CODEX_PATH` 指向系统 `codex`；需要 Node 22+（见 [codex.md](codex.md)） |
 
-- 不联网拉取/刷新 agent 目录，不内置 `registry.json`；只为内置表里已定位到的 CLI 查询 npm 最新版本，结果用于侧栏“有新版本”提示；用户点 Update 后运行该 CLI 自己的 update 子命令（见下文“更新检测与更新”）。
+- 不联网拉取/刷新 agent 目录，不内置 `registry.json`；只为内置表里已定位到的 CLI 查询 npm 最新版本，结果仅用于“有新版本”提示（见下文“更新检测”）。
 - 不扫描 npm / pnpm / bun / uv 全局包，不导入 Zed `agent_servers`。
-- 不自动安装或更新 agent；未安装时只显示安装提示，更新只在用户点击 Update 后执行。
+- 不自动安装 agent；未安装时只显示安装提示。
 - 新增 agent = 修改内置表 + 测试 + 发版；运行时不会发现表外的 agent。
 
 `command-code` 和 `codex` 是本机已验证的另外两个 agent；其余 agent 不进入默认实现范围。
@@ -63,7 +63,7 @@ ACP 没有独立的 provider 可用性查询；`session/new` 返回的 model `co
 
 路径覆盖：`ACP_GUI_NODE`、`ACP_GUI_PI`、`ACP_GUI_COMMAND_CODE`、`ACP_GUI_CODEX` 必须是绝对路径；`ACP_GUI_SHELL` 可换登录 shell。优先级为环境变量 > `settings.json` 的 `paths` > 登录 shell 解析；无效覆盖保留 shell 结果并警告。
 
-## 更新检测与更新
+## 更新检测（只提示）
 
 发现流程发布状态后，对每个已解析出启动 spec 且有 CLI 版本的内置 agent 并行查一次 npm registry 的 `dist-tag latest`：
 
@@ -74,27 +74,11 @@ ACP 没有独立的 provider 可用性查询；`session/new` 返回的 model `co
 | `codex` | `@openai/codex` |
 
 - 请求 `GET https://registry.npmjs.org/<url.PathEscape(package)>/latest`，单个请求 5 秒、整轮 8 秒；并发执行，且位于状态发布之后，不阻塞窗口打开。
-- 用本地 `--version` 与 `latest` 做 semver 比较；只有 npm 上的版本更新时，才在侧栏状态行下显示 `Update available: vX` 和 `Update` 按钮。
+- 用本地 `--version` 与 `latest` 做 semver 比较；只有 npm 上的版本更新时，才在侧栏状态行下显示 `Update available: vX`，tooltip 提醒由用户自行更新。
 - 离线、超时、非 JSON、包不存在或版本不可解析都静默忽略：不改变 `AgentStatus.Status`，不写日志，也不把 agent 标成不可用。
-- 检测本身只读 npm 元数据：不下载包、不安装、不执行更新命令，也不读写本地安装。`Refresh agents` 会随重新发现再查一轮。
+- 只读 npm 元数据：不下载包、不安装、不执行更新命令，也不读写本地安装。`Refresh agents` 会随重新发现再查一轮。
 - 只检查内置表里 `Package` 非空且已定位到的 CLI；不搜索 registry、不发现表外 agent。vendored `pi-acp` / `codex-acp` bundle 的版本不在此列，它们只跟随应用发版。
 - `dist-tags.latest` 只是提示来源；本地 fork 或比 npm 新的版本不会出现提示。
-
-点击 `Update` 才更新，且只运行该 agent 自己的 update 子命令：
-
-| id | 命令 |
-| --- | --- |
-| `pi` | `pi update` |
-| `command-code` | `command-code update` |
-| `codex` | `codex update` |
-
-- 每个 CLI 自己知道它是 npm、pnpm、bun、volta、Homebrew 还是独立安装；应用不猜包管理器、不拼 npm 命令，因此该 CLI 支持的任何安装方式都能升级。
-- 命令用解析出的 CLI 绝对路径执行（`<cli> update`），不经过 shell；参数固定为 `update`。
-- 用发现时的登录 shell 环境执行，不弹 sudo、不开终端；CLI 需要提权或需要用户确认时按失败展示输出末尾。
-- 整个更新 3 分钟超时，进程放在独立进程组，超时或取消时杀整组；同一时间只允许一个 agent 更新。
-- 成功：只重新解析并 initialize 探测这一个 agent（未 ready 时 3 秒后再试一次），更新它的版本/状态和可连接列表，再单独查一次它的 npm `latest` 并清掉提示；其他 agent、已连接会话和 config 缓存不动。
-- 失败：保留 `Update available` 和按钮作为重试，行下显示 `Update failed: …`，tooltip 保留完整错误和输出末尾（最多 600 字符）。
-- 更新的是用户安装的 CLI；vendored `pi-acp` / `codex-acp` bundle 不因点击 Update 改变，只随应用发版。adapter 与新 CLI 不兼容时，刷新后的探测会把该 agent 标成 `error` / `installed-not-acp`。
 
 ## 探测（probe）
 
@@ -131,9 +115,9 @@ ACP 没有独立的 provider 可用性查询；`session/new` 返回的 model `co
 | `not-installed` | 内置表有，但本机没找到 | 显示安装提示 |
 | `error` | 超时/崩溃/协议错误 | 重试、查看日志 |
 
-实现：`ready` 通过 initialize 探测；路径解析失败为 `not-installed`；握手失败/非 JSON 为 `installed-not-acp`；超时/崩溃为 `error`；`needs-auth` 在用户点 Connect 后由 `session/new` 触发，并更新该 agent 状态。只有 `ready` 的 agent 进入可连接下拉框。`AgentStatus.LatestVersion` / `Updating` / `UpdateError` / `UpdateDone` 只是侧栏的更新提示与进度，不属于状态机，不改变 `AgentStatus.Status`（更新后的重新探测才会改状态和可连接列表）。
+实现：`ready` 通过 initialize 探测；路径解析失败为 `not-installed`；握手失败/非 JSON 为 `installed-not-acp`；超时/崩溃为 `error`；`needs-auth` 在用户点 Connect 后由 `session/new` 触发，并更新该 agent 状态。只有 `ready` 的 agent 进入可连接下拉框。`AgentStatus.LatestVersion` 只是侧栏的更新提示，不属于状态机，不影响可连接列表和 `AgentStatus.Status`。
 
-自动测试：`internal/ui/discovery_test.go` 用注入的 probe、update checker 和 update runner 断言每个状态、缺 agent 不阻塞、draft 补选、保存 agent 回退、Refresh agents、更新提示和点击 Update 的成功/失败；`internal/agentupdate` 用假 CLI 覆盖 `<cli> update` 参数、登录 shell 环境、输出截断、失败传播和超时杀进程组；`internal/updatecheck` 用 httptest 覆盖并发查询、semver 比较、HTTP 错误和 context 取消；`internal/session/probe_errors_test.go` 用 POSIX shell 覆盖非 JSON stdout、立即退出、stderr tail、上下文超时；`TestStartReportsAuthRequired` + fake agent `FAKE_AGENT_NO_SESSION` 覆盖 `-32000`/`authMethods`；UI 连接失败路径断言状态变为 `needs-auth`。
+自动测试：`internal/ui/discovery_test.go` 用注入的 probe 和 update checker 断言每个状态、缺 agent 不阻塞、draft 补选、保存 agent 回退、Refresh agents 和更新提示；`internal/updatecheck` 用 httptest 覆盖并发查询、semver 比较、HTTP 错误和 context 取消；`internal/session/probe_errors_test.go` 用 POSIX shell 覆盖非 JSON stdout、立即退出、stderr tail、上下文超时；`TestStartReportsAuthRequired` + fake agent `FAKE_AGENT_NO_SESSION` 覆盖 `-32000`/`authMethods`；UI 连接失败路径断言状态变为 `needs-auth`。
 
 ## 手动命令行测试
 
@@ -186,8 +170,7 @@ Codex 的响应（`codex-acp@2.6.0` + `codex-cli 0.169.0`，可能先多一行 `
 ## 安全
 
 - 只探测内置表里的三个 agent，不遍历全盘，不接受运行时的表外 agent。
-- 更新检测只 GET npm registry 上三个已知包的 `/latest`，只发送 User-Agent，不发送本地路径、版本列表或凭据；不下载包内容。
-- 更新只在用户点击 Update 后执行：命令只来自内置表（`<cli> update`），使用登录 shell 环境，不经过 shell 拼接、不弹 sudo，也不接受表外命令。
+- 更新检测只 GET npm registry 上三个已知包的 `/latest`，只发送 User-Agent，不发送本地路径、版本列表或凭据；不下载包内容，也不安装/执行更新。
 - 每次探测都必须能杀掉进程组。
-- 不自动安装或更新 agent；未安装时只展示安装提示/命令。
+- 不自动安装 agent；MVP 只展示安装提示/命令。
 - 不把 API key 写入应用配置或日志。

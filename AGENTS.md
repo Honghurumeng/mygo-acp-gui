@@ -36,7 +36,7 @@
 - 客户端能力保持 `fs: false`、`terminal: false`；只做展示和权限审批。`subagents` 属于 ACP v1 draft，文档不得写成稳定标准（见 `docs/design/acp-conformance.md`）。
 - 不代登录、不内嵌终端、不捆绑 Node；Node 与模型凭据由用户自备，登录只展示 agent 的 `authMethods`/命令。
 - 退出清理 agent 进程组；initialize 探测 5 秒超时，配置探测异步执行，失败不阻塞启动。
-- 不做 registry 全量发现/在线目录/静默安装；只支持内置表，新 agent 走代码 + 发版；agent 更新只在用户点 Update 后执行该 CLI 自己的 update 子命令（pi / command-code / codex update）。
+- 不做 registry 全量发现/在线目录/自动安装；只支持内置表，新 agent 走代码 + 发版。
 - pi / codex 不走 npx；直接用 `resources/agents/{pi-acp,codex-acp}/*.bundle.mjs`，不在启动时打包；pi 重打走 `scripts/vendor-pi-acp-local.sh` 或 `scripts/vendor-pi-acp.sh`，codex 重打走 `scripts/vendor-codex-acp-local.sh`（本地补丁源码，`CODEX_PATH` 指向系统 codex）。
 - 每次打包发版前先升级 `mygo.json` 的 `version`（semver，当前从 0.4.0 起），并同步 `docs/design/architecture.md` 的版本号，再执行 `go tool mygo build`。
 - 对页面UI进行修改时，需要同步修改i18n。

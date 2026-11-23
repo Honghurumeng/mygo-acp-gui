@@ -401,34 +401,11 @@ func (a *App) sidebarStatus(c *mui.Context) {
 					if detail != "" {
 						row.Tooltip(status.Name + ": " + detail)
 					}
-					latest := strings.TrimSpace(status.LatestVersion)
-					switch {
-					case status.Updating:
-						mui.Row(c).Gap(5).AlignItems(mui.Center).Children(func() {
-							mui.Spinner(c)
-							mutedText(c, T("Updating…"), a.workspaceFont(9)).TextColor(t.Warning).SingleLine()
-						})
-					case latest != "":
-						mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
-							mutedText(c, Tf("Update available: %s", agentVersionLabel(latest)), a.workspaceFont(9)).
-								TextColor(t.Warning).SingleLine().Grow(1).
-								Tooltip(Tf("%s %s is installed; the latest version is %s. Update runs the CLI's own update command.",
-									status.Name, agentVersionLabel(status.Version), agentVersionLabel(latest)))
-							update := quietButton(c, T("Update")).FontSize(a.workspaceFont(9)).Padding(2, 6).Shrink(0)
-							update.Disabled(a.Resolving || a.anyAgentUpdating())
-							update.Tooltip(Tf("Update %s to %s by running the CLI's own update command.",
-								status.Name, agentVersionLabel(latest)))
-							if update.Clicked() {
-								a.updateAgent(status.ID)
-							}
-						})
-					case strings.TrimSpace(status.UpdateDone) != "":
-						mutedText(c, Tf("Updated to %s", agentVersionLabel(status.UpdateDone)), a.workspaceFont(9)).
-							TextColor(t.Success).SingleLine()
-					}
-					if status.UpdateError != "" && !status.Updating {
-						mutedText(c, Tf("Update failed: %s", truncate(strings.ReplaceAll(status.UpdateError, "\n", " · "), 120)), a.workspaceFont(9)).
-							TextColor(t.Danger).SingleLine().Tooltip(status.UpdateError)
+					if latest := strings.TrimSpace(status.LatestVersion); latest != "" {
+						mutedText(c, Tf("Update available: %s", agentVersionLabel(latest)), a.workspaceFont(9)).
+							TextColor(t.Warning).SingleLine().
+							Tooltip(Tf("%s %s is installed; the latest version is %s. Update it yourself; ACP GUI does not update agents.",
+								status.Name, agentVersionLabel(status.Version), agentVersionLabel(latest)))
 					}
 				}
 				if !a.Resolving && !a.anyLiveChat() && !a.injectedAgents {
