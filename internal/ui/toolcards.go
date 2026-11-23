@@ -59,7 +59,7 @@ func (a *App) toolMessage(c *mui.Context, m *Message) {
 		a.executeToolCard(c, m, status, statusColor)
 		return
 	}
-	if m.ToolKind == "read" && strings.TrimSpace(m.Detail) != "" {
+	if m.ToolKind == "read" && (strings.TrimSpace(m.Detail) != "" || len(m.ToolImages) > 0) {
 		a.readToolCard(c, m, status, statusColor)
 		return
 	}
@@ -185,6 +185,11 @@ func (a *App) textToolCard(c *mui.Context, m *Message, status string, statusColo
 		})
 		parts.Panel(func() {
 			text := toolCardText(m)
+			if len(m.ToolImages) > 0 {
+				toolCardScroll(c, func() {
+					a.toolImagePanel(c, m)
+				})
+			}
 			switch {
 			case text == "":
 			case looksLikeJSON(m.Detail):
@@ -381,6 +386,9 @@ func (a *App) readToolCard(c *mui.Context, m *Message, status string, statusColo
 				displayStart = start
 			}
 			toolCardScroll(c, func() {
+				if len(m.ToolImages) > 0 {
+					a.toolImagePanel(c, m)
+				}
 				a.toolCodeBlock(c, toolLanguageName(path), tail, displayStart)
 			})
 			a.toolCardActions(c, m)

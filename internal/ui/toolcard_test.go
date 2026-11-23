@@ -545,3 +545,115 @@ func TestToolCardLongTextShowsAll(t *testing.T) {
 		t.Fatal("Show all did not expand the body")
 	}
 }
+
+// A tool call that only names an image file becomes an expandable card with
+// the picture in it, and a click opens the enlarged preview. This is what
+// codex's view_image and pi's image read send: locations and no text.
+func TestToolCardShowsViewedImage(t *testing.T) {
+	workspace := t.TempDir()
+	// codex reports the path it viewed, which may be a temp file outside the
+	// workspace; the card still reads that one file by its absolute path.
+	pngPath := filepath.Join(t.TempDir(), "shot.png")
+	if err := os.WriteFile(pngPath, testPNG(t), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	locations, err := json.Marshal([]map[string]string{{"path": pngPath}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := New(Options{
+		Version:   "test",
+		Workspace: workspace,
+		Agents:    []agent.LaunchSpec{{ID: "fake", Name: "fake-agent"}},
+	})
+	tt := mui.NewTester(app.View, 1060, 760)
+	t.Cleanup(func() {
+		app.Shutdown()
+		app.Flush()
+	})
+
+	message := &Message{ID: app.nextID(), Role: RoleTool, Done: true}
+	applyToolPresentation(message, session.ToolCall{
+		ToolCallID: "view-image", Title: "View Image " + pngPath, Kind: "read",
+		Status: "completed", Locations: locations,
+	})
+	app.activeChat().Messages = append(app.activeChat().Messages, message)
+	tt.Frame()
+
+	if !toolHasBody(message) {
+		t.Fatal("an image-only tool call has no body")
+	}
+	if !tt.HasText("Read") || !tt.HasText("shot.png") {
+		t.Fatalf("read header missing; texts: %q", tt.Texts())
+	}
+	if err := tt.Click("Toggle tool output: " + message.Title); err != nil {
+		t.Fatal(err)
+	}
+	tt.Advance(250 * time.Millisecond)
+	tt.Frame()
+	waitFor(t, app, tt, func() bool {
+		cache := message.toolImageCache
+		return cache != nil && !cache.busy && len(cache.items) > 0
+	})
+	if item := message.toolImageCache.items[0]; item.src == nil {
+		t.Fatalf("image did not decode: %s", item.err)
+	}
+	if err := tt.Click("View image in tool call"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if !app.ImageOpen || app.ImagePreview == nil {
+		t.Fatal("clicking the tool image did not open the preview")
+	}
+	if app.ImagePreview.Name != "shot.png" {
+		t.Errorf("preview name = %q", app.ImagePreview.Name)
+	}
+}
+
+// An image block returned inside a tool call is decoded from the agent's
+// bytes, so image generation shows its picture without a path on disk.
+func TestToolCardShowsEmbeddedImage(t *testing.T) {
+	app := New(Options{
+		Version:   "test",
+		Workspace: t.TempDir(),
+		Agents:    []agent.LaunchSpec{{ID: "fake", Name: "fake-agent"}},
+	})
+	tt := mui.NewTester(app.View, 1060, 760)
+	t.Cleanup(func() {
+		app.Shutdown()
+		app.Flush()
+	})
+
+	message := &Message{ID: app.nextID(), Role: RoleTool, Done: true}
+	applyToolPresentation(message, session.ToolCall{
+		ToolCallID: "generate-image", Title: "Image generation", Kind: "other",
+		Status: "completed",
+		Content: json.RawMessage(`[
+			{"type":"content","content":{"type":"text","text":"Revised prompt: a dot"}},
+			{"type":"content","content":{"type":"image","data":"` + testPNGBase64 + `","mimeType":"image/png"}}]`),
+	})
+	app.activeChat().Messages = append(app.activeChat().Messages, message)
+	tt.Frame()
+	if err := tt.Click("Toggle tool output: Image generation"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Advance(250 * time.Millisecond)
+	tt.Frame()
+	waitFor(t, app, tt, func() bool {
+		cache := message.toolImageCache
+		return cache != nil && !cache.busy && len(cache.items) > 0
+	})
+	if item := message.toolImageCache.items[0]; item.src == nil {
+		t.Fatalf("embedded image did not decode: %s", item.err)
+	}
+	if !tt.HasText("Revised prompt: a dot") {
+		t.Errorf("text beside the image missing; texts: %q", tt.Texts())
+	}
+	if err := tt.Click("View image in tool call"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if !app.ImageOpen || app.ImagePreview == nil {
+		t.Fatal("clicking the embedded image did not open the preview")
+	}
+}

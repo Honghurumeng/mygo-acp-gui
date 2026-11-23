@@ -2,8 +2,9 @@
 
 本文记录对话流里一次工具调用（ACP `tool_call` / `tool_call_update`）的展示：解析管道、按 `kind`
 分派的卡片形态、折叠与展开约定、截断与安全、i18n 与测试。实现见 `internal/ui/toolview.go`（解析）、
-`internal/ui/toolcards.go`（渲染）、`internal/ui/session.go`（建立工具消息）、
-`internal/ui/components.go`（`codeBlock` / `codeLines`）和 `internal/ui/text.go`（ANSI 与控制字符）。
+`internal/ui/toolimages.go`（图片解析、异步解码与缩略图）、`internal/ui/toolcards.go`（渲染）、
+`internal/ui/session.go`（建立工具消息）、`internal/ui/components.go`（`codeBlock` / `codeLines`）和
+`internal/ui/text.go`（ANSI 与控制字符）。
 
 ## 目标
 
@@ -35,6 +36,7 @@ type Message struct {
 	ToolKind    string     // ACP kind；空表示老 agent
 	ToolPaths   []string   // locations 里的路径
 	ToolDiffs   []ToolDiff // edit/write/delete/move
+	ToolImages  []ToolImage // 工具返回或查看的图片
 	ToolExit    *int       // execute 的退出码
 	ToolCwd     string     // execute 的 cwd（展开态底部）
 	ToolOffset  int        // read 的起始行
@@ -51,6 +53,12 @@ type ToolDiff struct {
 	Operation     string // add / update / delete / move
 	Partial       bool   // 只覆盖文件的一段，行号不可信
 }
+
+type ToolImage struct {
+	Path, Name    string // 图片文件；Data 为空时从这里读
+	MimeType      string
+	Data          string // ACP image block 的 base64
+}
 ```
 
 - `parseToolCall(call)` 是纯函数：解析成功返回 `toolCallView`，失败保留 `Detail`，绝不丢内容。
@@ -63,6 +71,14 @@ type ToolDiff struct {
   单块按整文件渲染并显示行号；同一文件多块、或 `_meta.kind = update` 的块按 hunk 处理
   （`Partial`、隐藏行号、`ContextLines: -1`），不伪造跨块行号。
 - `_meta.kind` 是 codex 私有字段，只用于增强，缺失按 `update` 处理。
+- 图片解析顺序：`content[]` 的 `image`（含 `content` 包一层，codex 的 image generation）→
+  `resource_link` 的 `uri`（codex `view_image`）→ `locations` / `rawInput.path` 里扩展名是图片的路径
+  （pi 的图片 read）→ `rawOutput` 里的 `image` / `resource_link`。最多 4 张，单张解码上限 15 MB。
+- 同一张图被多个字段重复报告时只画一次：按 base64（`Data`）或路径去重，保留第一次出现的那条。
+  pi 的 read 结果会把图片同时放进 `rawOutput.content` 和 `rawOutput.structuredContent`，而收尾的
+  `tool_call_update` 不带 `locations` / `rawInput`，只靠 `rawOutput` 取图，去重前同一张图会画两遍。
+- pi-acp 在结果没有文本时会把整个 result 序列化成文本块；若这段 JSON 的 `content` 是 image 数组，
+  就从中取图并丢掉这段 JSON，卡片只显示图片，不显示 base64。
 - 文档文本统一 `stripANSI` + 控制字符清理（保留 `\n` / `\t`），文本上限 256 KiB（截断并加省略号）；
   diff 两侧不截断，交给渲染层控制高度。
 - 退出码：优先 `rawOutput.exit_code` / `exitCode`（codex），其次正文尾部的 `exit code: N`（pi-acp
@@ -105,12 +121,12 @@ type ToolDiff struct {
 | `edit` / `delete` / `move` | 图标 + verb + 路径 + `+N −M` | `editor.DiffView` + `FitContent`：unified、`DiffInlineWordAlt`、只读、按路径上语言 |
 | write（新增） | `filePlusIcon` + 路径 + `+N` | old 空侧的全绿 diff（识别靠 `oldText: null` / `_meta.kind: add`） |
 | `execute` | `$ 命令`（等宽）+ exit 徽章 | 等宽输出块（尾部 200 行），Copy 命令 |
-| `read` | 类型图标 + `Read` + 路径 + 行范围 | `codeLines` 高亮 + 行号（从 offset 起），尾部 300 行，`Open file` |
+| `read` | 类型图标 + `Read` + 路径 + 行范围 | 图片：缩略图（点击看大图）；文本：`codeLines` 高亮 + 行号（从 offset 起），尾部 300 行，`Open file` |
 | `search` | `Search` + 标题 + 命中统计 | 等宽结果，pattern 高亮，尾部 200 行 |
 | `think` | `sparklesIcon` + 标题（muted，无卡片表面） | 完整文本 |
 | `fetch` | `Fetch` + 主机名 | 完整 URL（`mui.Link`）+ 摘要文本 |
 | `switch_mode` | 一行事件 | 无 |
-| `other`（含 MCP） | 标题 | JSON 高亮（`codeLines`）或 muted 文本，带 Copy |
+| `other`（含 MCP） | 标题 | 图片（若有，点击看大图）；JSON 高亮（`codeLines`）或 muted 文本，带 Copy |
 
 ### edit / write / delete / move
 
@@ -139,7 +155,11 @@ type ToolDiff struct {
 - 路径取 `locations[0].path`，缺失时从标题取；行范围来自 `rawInput.offset/limit`，无参数时不显示。
 - 展开用 `codeLinesFrom`（components.go）：行号从 offset 起，语法高亮、换行；默认只渲染尾部 300 行，
   用同一组展开/收起按钮。
-- codex 的 read 只有标题没有正文：卡片退化成一行紧凑事件，不产生空折叠面板。
+- 图片文件（PNG/JPEG/GIF/WebP/BMP/SVG）即使没有正文也可以展开：展开后显示缩略图，点击用已有的
+  图片预览弹窗查看大图并下载。缩略图按卡片宽度收缩，不放大到模糊。
+- 图片读取异步进行：展开时先显示 `Loading image…`，完成后替换为图片；失败时显示原因（过大、符号
+  链接、无法解码等），不影响卡片其他内容。
+- codex 的 read 只有标题没有正文，且路径不是图片时：卡片退化成一行紧凑事件，不产生空折叠面板。
 
 ### search
 
@@ -163,6 +183,8 @@ type ToolDiff struct {
 
 - MCP 标题形如 `MCP <tool> on <server>`，暂时原样显示，未拆 chip。
 - 正文是 JSON 时用 `codeLines` 高亮 + Copy（全文，不做 `compactJSON` 的 240 字符截断）；否则 muted 文本。
+- codex 的 image generation 是 `kind: "other"`：展开后先画返回的图片（ACP image block 的 base64），
+  再显示 `Revised prompt` 等文本；没有图片时保持原样。
 
 ## 截断与安全
 
@@ -171,6 +193,9 @@ type ToolDiff struct {
   展开后是全文。
 - 所有进入 UI 的文本先剥 ANSI 与控制字符；工具输出按字面显示，不做 Markdown 解释。
 - diff 只来自 ACP `content` / `rawInput`，**不读工作区文件**：`fs: false` 不因渲染改变。
+- 图片只来自 ACP `content` / `rawOutput` 的 image 与 resource_link，或这次调用自己报告过的图片路径；
+  不做目录扫描。路径读取沿用 `files.ReadImage` / `files.ReadImageFile`：拒绝符号链接、上限 15 MB，
+  工作区外只读 agent 明确报告的那一个绝对路径，不扩大成任意浏览。
 - `Open file` 走 Files 面板既有的 `internal/files.ReadText`（512 KiB、越界与符号链接校验），且路径
   必须落在当前 workspace 内；越界时只显示 Copy，不显示按钮。
 
@@ -179,6 +204,9 @@ type ToolDiff struct {
 - 新增动词与文案：`Edited` / `Created` / `Deleted` / `Moved` / `Read` / `Search` / `Fetch` /
   `exit %d` / `Show %d earlier lines` / `Show all` / `Show less` / `Open file` /
   `1 match in 1 file` / `1 match in %d files` / `%d matches in 1 file` / `%d matches in %d files`。
+- 图片相关：`Loading image…` / `View image in tool call` / `Cannot show this image: %s` /
+  `The image data is not valid base64.` / `The image is empty.` / `The image is too large to show.` 等，
+  全部走 `T` / `Tf` 并进入 `zh-Hans.json`。
 - 走 `T` / `Tf`，`go test ./internal/i18n` 校验字面量与动词顺序；`Copy` 复用既有 key 与 `copyButton`。
 - 状态文案（`Pending` / `In progress` / `Completed` / `Failed` / `Cancelled`）不变，测试与无障碍名稳定。
 
@@ -192,6 +220,8 @@ type ToolDiff struct {
 
 ```bash
 go test ./internal/ui -run 'TestParseToolCall|TestApplyToolPresentation|TestToolCard|TestEditToolCard|TestExecuteToolCard|TestReadAndSearch|TestThinkFetch' -v
+go test ./internal/ui -run 'TestParseToolCallReadsImages|TestParseToolCallDropsImageResultJSON|TestToolCardShowsViewedImage|TestToolCardShowsEmbeddedImage' -v
+go test ./internal/files
 go test ./internal/i18n
 ```
 

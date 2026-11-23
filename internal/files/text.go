@@ -72,6 +72,18 @@ func ReadImage(root, rel string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	return ReadImageFile(path)
+}
+
+// ReadImageFile reads a picture at an absolute path. The tool card uses it for
+// a picture an agent reported viewing outside the workspace; the same size and
+// symbolic-link checks as ReadImage apply, so a link cannot turn a reported
+// path into another file.
+func ReadImageFile(path string) ([]byte, error) {
+	path = filepath.Clean(strings.TrimSpace(path))
+	if path == "" || !filepath.IsAbs(path) {
+		return nil, errors.New("image path must be absolute")
+	}
 	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, err
@@ -80,7 +92,7 @@ func ReadImage(root, rel string) ([]byte, error) {
 		return nil, ErrSymlink
 	}
 	if info.IsDir() {
-		return nil, fmt.Errorf("%q is a folder", rel)
+		return nil, fmt.Errorf("%q is a folder", path)
 	}
 	if info.Size() > MaxImageSize {
 		return nil, ErrImageTooLarge

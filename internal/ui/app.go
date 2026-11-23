@@ -115,12 +115,13 @@ type Message struct {
 	ToolCallID  string
 	Detail      string
 	// ToolKind is the ACP kind of a tool call (read, edit, search, execute,
-	// think, fetch, switch_mode, other). ToolPaths, ToolDiffs and ToolExit
-	// keep what the card renders per kind; Detail stays the flat text
+	// think, fetch, switch_mode, other). ToolPaths, ToolDiffs, ToolImages and
+	// ToolExit keep what the card renders per kind; Detail stays the flat text
 	// fallback for calls the parser does not understand.
 	ToolKind    string
 	ToolPaths   []string
 	ToolDiffs   []ToolDiff
+	ToolImages  []ToolImage
 	ToolExit    *int
 	ToolCwd     string
 	ToolOffset  int
@@ -137,6 +138,9 @@ type Message struct {
 	toolDiffSource []ToolDiff
 	toolDiffFont   float32
 	toolOutputOpen bool
+	// toolImageCache holds the decoded pictures of ToolImages while the card
+	// is open. It is dropped when the call reports a different set.
+	toolImageCache *toolImageCache
 	NoticeKind     string
 	NoticeLevel    string
 	// SubagentID and SubagentName identify child-session output. They stay
@@ -1522,6 +1526,10 @@ func applyToolPresentation(message *Message, call session.ToolCall) {
 	}
 	if len(view.Diffs) > 0 && !slices.Equal(message.ToolDiffs, view.Diffs) {
 		message.ToolDiffs = view.Diffs
+	}
+	if len(view.Images) > 0 && !slices.Equal(message.ToolImages, view.Images) {
+		message.ToolImages = view.Images
+		message.toolImageCache = nil
 	}
 	switch {
 	case view.Detail != "":

@@ -52,3 +52,24 @@ func TestReadImageAcceptsBinaryAndRejectsEscapes(t *testing.T) {
 		t.Errorf("escape image error = %v", err)
 	}
 }
+
+// A tool card can show a picture the agent reported outside the workspace by
+// its absolute path. Relative names are still refused.
+func TestReadImageFileReadsAnAbsolutePath(t *testing.T) {
+	root := t.TempDir()
+	picture := []byte("\x89PNG\r\n\x1a\n\x00\x00absolute")
+	path := filepath.Join(root, "shot.png")
+	if err := os.WriteFile(path, picture, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	data, err := ReadImageFile(path)
+	if err != nil {
+		t.Fatalf("ReadImageFile: %v", err)
+	}
+	if !bytes.Equal(data, picture) {
+		t.Fatalf("image bytes = %q", data)
+	}
+	if _, err := ReadImageFile("shot.png"); err == nil {
+		t.Error("a relative image path should be refused")
+	}
+}

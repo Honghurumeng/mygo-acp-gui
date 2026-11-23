@@ -347,3 +347,155 @@ func TestInferSearchFromOtherAndPathFromTitle(t *testing.T) {
 		t.Errorf("quoted title path = %q", got)
 	}
 }
+
+// A picture a tool returned or viewed is kept as a ToolImage: embedded base64
+// from an ACP image block, a resource link's path, the read's own path, and a
+// result object's image array all reach the card instead of being dropped.
+func TestParseToolCallReadsImages(t *testing.T) {
+	const png = "iVBORw0KGgo="
+	embedded := parseToolCall(session.ToolCall{
+		Title: "Image generation", Kind: "other", Status: "completed",
+		Content: json.RawMessage(`[
+			{"type":"content","content":{"type":"text","text":"Revised prompt: a dot"}},
+			{"type":"content","content":{"type":"image","data":"` + png + `","mimeType":"image/png","uri":"/w/out.png"}}]`),
+	})
+	if len(embedded.Images) != 1 {
+		t.Fatalf("embedded images = %+v, want one", embedded.Images)
+	}
+	if image := embedded.Images[0]; image.Data != png || image.Path != "/w/out.png" || image.MimeType != "image/png" {
+		t.Errorf("embedded image = %+v", image)
+	}
+	if embedded.Detail != "Revised prompt: a dot" {
+		t.Errorf("detail = %q, want the text beside the image", embedded.Detail)
+	}
+
+	viewed := parseToolCall(session.ToolCall{
+		Title: "View Image /w/shot.png", Kind: "read", Status: "completed",
+		Locations: json.RawMessage(`[{"path":"/w/shot.png"}]`),
+		Content: json.RawMessage(`[
+			{"type":"content","content":{"type":"resource_link","name":"/w/shot.png","uri":"/w/shot.png"}}]`),
+	})
+	if len(viewed.Images) != 1 || viewed.Images[0].Path != "/w/shot.png" {
+		t.Fatalf("viewed images = %+v", viewed.Images)
+	}
+	if viewed.Detail != "" {
+		t.Errorf("detail = %q, want no text for a path-only view", viewed.Detail)
+	}
+
+	fromInput := parseToolCall(session.ToolCall{
+		Title: "read photo.jpg", Kind: "read", Status: "completed",
+		RawInput: json.RawMessage(`{"path":"photo.jpg"}`),
+	})
+	if len(fromInput.Images) != 1 || fromInput.Images[0].Path != "photo.jpg" {
+		t.Fatalf("rawInput images = %+v", fromInput.Images)
+	}
+
+	fromOutput := parseToolCall(session.ToolCall{
+		Title: "MCP picture", Kind: "other", Status: "completed",
+		RawOutput: json.RawMessage(`{"content":[{"type":"image","data":"` + png + `","mimeType":"image/png"}]}`),
+	})
+	if len(fromOutput.Images) != 1 || fromOutput.Images[0].Data != png {
+		t.Fatalf("rawOutput images = %+v", fromOutput.Images)
+	}
+}
+
+// pi-acp serializes an image-only result as a JSON dump of its base64. The
+// picture replaces that dump, so the card does not show a wall of metadata.
+func TestParseToolCallDropsImageResultJSON(t *testing.T) {
+	dump, err := json.Marshal(map[string]any{
+		"content": []any{map[string]any{"type": "image", "data": "iVBORw0KGgo=", "mimeType": "image/png"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := json.Marshal([]any{
+		map[string]any{"type": "content", "content": map[string]any{"type": "text", "text": string(dump)}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	view := parseToolCall(session.ToolCall{
+		Title: "read shot.png", Kind: "read", Status: "completed",
+		Locations: json.RawMessage(`[{"path":"/w/shot.png"}]`),
+		Content:   content,
+	})
+	if len(view.Images) != 1 {
+		t.Fatalf("images = %+v", view.Images)
+	}
+	if view.Detail != "" {
+		t.Errorf("detail = %q, want the image JSON dump gone", view.Detail)
+	}
+
+	// The result-only update of a replay has no locations; the image is read
+	// from the serialized result instead.
+	replayed := parseToolCall(session.ToolCall{
+		Status:  "completed",
+		Content: content,
+	})
+	if len(replayed.Images) != 1 || replayed.Images[0].Data != "iVBORw0KGgo=" {
+		t.Fatalf("replayed images = %+v", replayed.Images)
+	}
+	if replayed.Detail != "" {
+		t.Errorf("replayed detail = %q, want the JSON gone", replayed.Detail)
+	}
+}
+
+func TestParseToolCallDeduplicatesMirroredImages(t *testing.T) {
+	const png = "iVBORw0KGgo="
+	// pi's read result repeats the picture in rawOutput.content and
+	// rawOutput.structuredContent; the closing update has no locations or
+	// rawInput, so the picture is read from rawOutput alone.
+	view := parseToolCall(session.ToolCall{
+		ToolCallID: "read-image", Title: "read resources/icon.png", Kind: "read", Status: "completed",
+		Content: json.RawMessage(`[{"type":"content","content":{"type":"text","text":"Read image file [image/png]"}}]`),
+		RawOutput: json.RawMessage(`{
+			"content":[{"type":"text","text":"Read image file [image/png]"},
+				{"type":"image","data":"` + png + `","mimeType":"image/png"}],
+			"structuredContent":{"type":"image","data":"` + png + `","mimeType":"image/png","note":"Read image file [image/png]"}}`),
+	})
+	if len(view.Images) != 1 {
+		t.Fatalf("images = %+v, want the mirrored picture drawn once", view.Images)
+	}
+	if view.Detail != "Read image file [image/png]" {
+		t.Errorf("detail = %q, want the result text kept", view.Detail)
+	}
+
+	// Distinct pictures stay distinct: dedupe is by identity, not by count.
+	gallery := parseToolCall(session.ToolCall{
+		Title: "Image generation", Kind: "other", Status: "completed",
+		RawOutput: json.RawMessage(`{"content":[
+			{"type":"image","data":"` + png + `","mimeType":"image/png"},
+			{"type":"image","data":"iVBORw0KGgoAAA==","mimeType":"image/png"}]}`),
+	})
+	if len(gallery.Images) != 2 {
+		t.Fatalf("gallery images = %+v, want both pictures kept", gallery.Images)
+	}
+}
+
+// Later updates must not lose the picture a replay's opening call reported,
+// and the serialized result of the closing update must not become its body.
+func TestApplyToolPresentationKeepsImages(t *testing.T) {
+	message := &Message{Role: RoleTool, ToolCallID: "image-1"}
+	applyToolPresentation(message, session.ToolCall{
+		ToolCallID: "image-1", Title: "read shot.png", Kind: "read", Status: "completed",
+		RawInput: json.RawMessage(`{"path":"shot.png"}`),
+	})
+	if len(message.ToolImages) != 1 || message.ToolImages[0].Path != "shot.png" {
+		t.Fatalf("opening images = %+v", message.ToolImages)
+	}
+	applyToolPresentation(message, session.ToolCall{ToolCallID: "image-1", Status: "completed"})
+	if len(message.ToolImages) != 1 {
+		t.Fatalf("status update dropped the image: %+v", message.ToolImages)
+	}
+
+	applyToolPresentation(message, session.ToolCall{
+		ToolCallID: "image-1", Status: "completed",
+		Content: json.RawMessage(`[{"type":"content","content":{"type":"text","text":"{\n  \"content\": [\n    {\n      \"type\": \"image\",\n      \"data\": \"iVBORw0KGgo=\"\n    }\n  ]\n}"}}]`),
+	})
+	if len(message.ToolImages) != 1 || message.ToolImages[0].Data != "iVBORw0KGgo=" {
+		t.Fatalf("closing images = %+v", message.ToolImages)
+	}
+	if message.Detail != "" {
+		t.Errorf("detail = %q, want the result JSON dropped", message.Detail)
+	}
+}

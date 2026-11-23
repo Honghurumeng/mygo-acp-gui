@@ -32,6 +32,7 @@ type toolCallView struct {
 	Kind    string
 	Paths   []string
 	Diffs   []ToolDiff
+	Images  []ToolImage
 	Exit    *int
 	Cwd     string
 	Offset  int
@@ -55,7 +56,7 @@ func parseToolCall(call session.ToolCall) toolCallView {
 		Kind:  normalizeToolKind(call.Kind),
 		Paths: toolCallPaths(call.Locations),
 	}
-	text, diffs := parseToolContent(call.Content)
+	text, diffs, images := parseToolContent(call.Content)
 	if text == "" {
 		text = rawText(call.RawOutput)
 	}
@@ -79,6 +80,31 @@ func parseToolCall(call session.ToolCall) toolCallView {
 		view.Diffs = toolRawInputDiffs(call)
 	}
 	view.Kind = inferToolKind(view.Kind, call, view.Diffs)
+	view.Images = images
+	if len(view.Images) == 0 {
+		view.Images = toolCallPathImages(view.Kind, view.Paths, input)
+	}
+	if len(view.Images) == 0 {
+		view.Images = toolRawOutputImages(call.RawOutput)
+	}
+	imageResultJSON := toolImageResultJSON(text)
+	if len(view.Images) == 0 && imageResultJSON {
+		// Some adapters put the result object's JSON in a text block when they
+		// have no text of their own, which is also where a replayed image-only
+		// read keeps its picture.
+		view.Images = toolRawOutputImages(json.RawMessage(text))
+	}
+	// One picture can arrive through more than one rawOutput field (pi mirrors
+	// an image read into content and structuredContent); draw it once.
+	if len(view.Images) > 1 {
+		view.Images = dedupeToolImages(view.Images)
+	}
+	if len(view.Images) > 0 && imageResultJSON && (view.Kind == "read" || view.Kind == "") {
+		// pi-acp serializes a tool result that has no text of its own, so an
+		// image read arrives as a JSON dump of the image's base64. That is
+		// transport metadata, not something to read under the picture.
+		text = ""
+	}
 	// Agent output is terminal text: strip its escapes before anything draws
 	// it, and keep the newlines and tabs that carry its layout.
 	view.Text = truncate(sanitizeToolText(stripANSI(text)), toolTextLimit)
@@ -117,45 +143,59 @@ func toolStatusTerminal(status string) bool {
 }
 
 // toolHasBody reports whether the card has anything to expand. Orchestration
-// calls such as wait_agent have neither a diff nor text, and are drawn as one
-// compact event row; a command's exit code stays in that row's status.
+// calls such as wait_agent have neither a diff, a picture nor text, and are
+// drawn as one compact event row; a command's exit code stays in that row's
+// status.
 func toolHasBody(m *Message) bool {
 	if m == nil {
 		return false
 	}
-	return len(m.ToolDiffs) > 0 || strings.TrimSpace(m.Detail) != ""
+	return len(m.ToolDiffs) > 0 || len(m.ToolImages) > 0 || strings.TrimSpace(m.Detail) != ""
 }
 
 // toolContentBlock is the subset of an ACP tool call content block the cards
-// read. oldText is a pointer because an added file sends null for it.
+// read. oldText is a pointer because an added file sends null for it. URI,
+// MimeType, Data and Name describe the image and resource blocks a tool can
+// return; an image block carries Data, a resource link only its URI.
 type toolContentBlock struct {
-	Type    string          `json:"type"`
-	Path    string          `json:"path"`
-	OldPath string          `json:"oldPath"`
-	OldText *string         `json:"oldText"`
-	NewText *string         `json:"newText"`
-	Text    string          `json:"text"`
-	Content json.RawMessage `json:"content"`
-	Meta    struct {
+	Type     string          `json:"type"`
+	Path     string          `json:"path"`
+	OldPath  string          `json:"oldPath"`
+	OldText  *string         `json:"oldText"`
+	NewText  *string         `json:"newText"`
+	Text     string          `json:"text"`
+	URI      string          `json:"uri"`
+	Name     string          `json:"name"`
+	MimeType string          `json:"mimeType"`
+	Data     string          `json:"data"`
+	Content  json.RawMessage `json:"content"`
+	Meta     struct {
 		Kind string `json:"kind"`
 	} `json:"_meta"`
 }
 
-// parseToolContent splits a content array into its diffs and its text. Other
-// block types (terminal, resource) are left to the text fallback.
-func parseToolContent(raw json.RawMessage) (string, []ToolDiff) {
+// parseToolContent splits a content array into its text, diffs and pictures.
+// Other block types (terminal, audio) are left to the text fallback.
+func parseToolContent(raw json.RawMessage) (string, []ToolDiff, []ToolImage) {
 	if len(raw) == 0 || string(raw) == "null" {
-		return "", nil
+		return "", nil, nil
 	}
 	var blocks []toolContentBlock
 	if err := json.Unmarshal(raw, &blocks); err != nil {
-		return rawText(raw), nil
+		return rawText(raw), nil, nil
 	}
 	var (
-		text  strings.Builder
-		diffs []ToolDiff
+		text   strings.Builder
+		diffs  []ToolDiff
+		images []ToolImage
 	)
 	for _, block := range blocks {
+		if len(images) < maxToolImages {
+			images = append(images, toolContentImages(block)...)
+			if len(images) > maxToolImages {
+				images = images[:maxToolImages]
+			}
+		}
 		switch block.Type {
 		case "diff":
 			diff := toolContentDiff(block)
@@ -180,7 +220,7 @@ func parseToolContent(raw json.RawMessage) (string, []ToolDiff) {
 			diffs[i].Partial = true
 		}
 	}
-	return text.String(), diffs
+	return text.String(), diffs, images
 }
 
 // toolContentDiff maps one ACP diff block onto ToolDiff. `_meta.kind` is
