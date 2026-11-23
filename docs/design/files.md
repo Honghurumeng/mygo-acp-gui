@@ -8,7 +8,7 @@
 - 文件夹懒加载、可折叠；每个文件右侧显示 Git 状态字母。
 - 右键文件/文件夹：`Reveal in folder`、`Rename`、`Delete`。
 - 拖动文件或文件夹到文件夹行（或根区域）移动位置；不实现同一目录内的排序。
-- 只操作当前 workspace 内的路径；不做跨工作区移动、不内嵌终端、不移动系统回收站。点文件行在共享查看卡片里查看和编辑文本文件。
+- 只操作当前 workspace 内的路径；不做跨工作区移动、不内嵌终端、不移动系统回收站。点文件行在共享查看卡片里查看文本和图片、编辑文本。
 
 ## 右侧栏
 
@@ -52,11 +52,12 @@
 ## 文件查看与编辑
 
 - 点文件行打开共享的浮动查看卡片（`internal/ui/viewer.go`，详见 [viewer.md](viewer.md)）；点目录行仍然只展开/折叠。
-- 默认 View：Markdown（`.md` / `.markdown` / `.mdown` / `.mkd`）用 `markdown.View` 渲染，其他文本用只读
-  `editor.View` 并带语法高亮、行号和 `Wrap`。`Edit` 切到同一个编辑 buffer，标题栏出现 `Save`，也支持
-  `⌘S`（非 macOS 为 Ctrl+S）。
-- 读取和保存都走 `internal/files.ReadText` / `SaveText`：限制 512 KiB，拒绝 NUL 字节（二进制）和符号链接，
-  防止跟随链接走出 workspace；保存保留原权限，在同目录写临时文件后 `rename`，文件已被删除时不重建。
+- 默认 View：Markdown（`.md` / `.markdown` / `.mdown` / `.mkd`）用 `markdown.View` 渲染，图片（`.png`、`.jpg`/`.jpeg`、`.gif`、`.webp`、`.bmp`）显示位图，SVG 显示矢量图；
+  其他文本用只读 `editor.View` 并带语法高亮、行号和 `Wrap`。`Edit` 切到同一个编辑 buffer，标题栏出现 `Save`，也支持
+  `⌘S`（非 macOS 为 Ctrl+S）；位图没有 Edit，SVG 的 Edit 编辑源码，保存后 View 按新源码重画。
+- 读取和保存文本走 `internal/files.ReadText` / `SaveText`：限制 512 KiB，拒绝 NUL 字节（二进制）和符号链接，
+  防止跟随链接走出 workspace；图片走 `ReadImage`，允许二进制、限制 15 MiB，同样拒绝目录、符号链接和越界路径。
+  保存保留原权限，在同目录写临时文件后 `rename`，文件已被删除时不重建。
 - 保存成功后更新卡片正文、显示 `Saved.`，并让 Git 面板重读状态；Files tab 仍显示时重读文件树和状态，
   隐藏时只标记 stale。保存失败在标题栏下方显示错误，原文件不动。
 - 关闭右栏、切到其他 tab 或切换 workspace 会关闭卡片；读取与保存用 generation + workspace + path 守卫，
@@ -118,4 +119,4 @@ go test ./internal/ui -run 'TestFilePanel|TestRightRail' -v -count=1
 
 `internal/files` 覆盖排序、跳过 `.git`、新建/重命名/移动/删除、重名、非法名字、越界路径、根目录保护、
 符号链接在树中按文件显示，但查看/编辑会拒绝（避免跟随链接走出 workspace）。`internal/ui` 覆盖面板 tab、树与 Git 状态、文件夹展开、新建文件/文件夹、右键重命名/删除、
-Reveal 注入、拖进文件夹、跟随 workspace 切换，以及点击文件打开查看/编辑卡片、Markdown 渲染、保存和二进制拒绝。
+Reveal 注入、拖进文件夹、跟随 workspace 切换，以及点击文件打开查看/编辑卡片、Markdown 渲染、图片查看与 SVG 源码编辑、保存和二进制拒绝。

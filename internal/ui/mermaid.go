@@ -32,10 +32,12 @@ const (
 var mermaidRenderMu sync.Mutex
 
 // mermaidDiagram is a parsed diagram and its intrinsic size in DIPs, with the
-// SVG text a download writes.
+// SVG text a download writes. name is the download's file name, empty for a
+// diagram drawn from Markdown, which is saved as diagram.svg.
 type mermaidDiagram struct {
 	svg           *mui.SVG
 	source        []byte
+	name          string
 	width, height float32
 }
 

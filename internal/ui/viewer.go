@@ -56,6 +56,16 @@ type viewerSpec struct {
 	// source text.
 	Markdown bool
 
+	// Image is drawn by View in place of the editor. SVG marks Body as the
+	// document's source, which Edit changes and View draws again before Save.
+	// ImageData is the picture's bytes for the enlarged preview's download.
+	Image     mui.ImageSource
+	ImageData []byte
+	SVG       bool
+	// OnOpenImage receives a click on the picture, with the source drawn and
+	// the bytes to download.
+	OnOpenImage func(mui.ImageSource, []byte)
+
 	// Modes are shown in this order. Edit is hidden when Save is nil.
 	Modes []viewerMode
 	Mode  viewerMode
@@ -90,7 +100,8 @@ type viewerSpec struct {
 
 // viewerCardState is the cross-frame state of one document: the editable
 // buffer, the read-only state that shares it, the diff built from Old and New,
-// and the texts they were built for.
+// and the texts they were built for. svg is the picture parsed from svgSrc,
+// the unsaved source of an SVG being edited, or the error it made.
 type viewerCardState struct {
 	body   string
 	font   float32
@@ -98,6 +109,9 @@ type viewerCardState struct {
 	diff   *editor.DiffState
 	old    string
 	new    string
+	svg    *mui.SVG
+	svgSrc string
+	svgErr string
 }
 
 // viewerCard draws the floating card that the Git, Tasks and Files panels
@@ -258,6 +272,11 @@ func (a *App) viewerBody(c *mui.Context, state *viewerCardState, spec viewerSpec
 	case viewerEdit:
 		a.viewerEditor(c, state, spec)
 	default:
+		dirty := state.editor != nil && state.editor.Buffer.Modified()
+		if spec.Image != nil || (spec.SVG && dirty) {
+			a.viewerImage(c, state, spec)
+			return
+		}
 		if spec.Markdown {
 			body := spec.Body
 			if state.editor != nil && state.editor.Buffer.Modified() {

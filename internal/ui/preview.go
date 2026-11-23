@@ -113,7 +113,11 @@ func (a *App) previewSource() (previewSource, bool) {
 // drawn as, or the bytes the attachment came with, and a name for it.
 func (a *App) previewFile() (name string, data []byte, ok bool) {
 	if d := a.DiagramPreview; d != nil && len(d.source) > 0 {
-		return "diagram.svg", d.source, true
+		name = d.name
+		if name == "" {
+			name = "diagram.svg"
+		}
+		return name, d.source, true
 	}
 	attachment := a.ImagePreview
 	if attachment == nil || attachment.Data == "" {
@@ -128,6 +132,28 @@ func (a *App) previewFile() (name string, data []byte, ok bool) {
 		name = "image.png"
 	}
 	return name, data, true
+}
+
+// openViewerImagePreview shows a picture of the floating file viewer in the
+// enlarged preview. A bitmap becomes an attachment as a pasted image does; an
+// SVG becomes a diagram, keeping its own name for the download instead of a
+// generated diagram's.
+func (a *App) openViewerImagePreview(name string, src mui.ImageSource, data []byte) {
+	switch img := src.(type) {
+	case *mui.Bitmap:
+		a.ImagePreview = &Attachment{Name: name, Data: base64.StdEncoding.EncodeToString(data), Bitmap: img}
+		a.DiagramPreview = nil
+	case *mui.SVG:
+		w, h := img.Size()
+		if w <= 0 || h <= 0 {
+			return
+		}
+		a.DiagramPreview = &mermaidDiagram{svg: img, source: data, name: name, width: w, height: h}
+		a.ImagePreview = nil
+	default:
+		return
+	}
+	a.openImagePreview()
 }
 
 // canDownloadPreview reports whether a download has something to write,

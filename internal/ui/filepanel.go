@@ -80,16 +80,22 @@ type filePanelState struct {
 
 	// Viewer is the floating file card opened from a file row. ViewerGen
 	// guards a late read or save against another file or workspace.
-	ViewerOpen    bool
-	ViewerPath    string
-	ViewerBody    string
-	ViewerBusy    bool
-	ViewerErr     string
-	ViewerMode    viewerMode
-	ViewerGen     int
-	ViewerSaving  bool
-	ViewerSaveErr string
-	ViewerNotice  string
+	ViewerOpen bool
+	ViewerPath string
+	ViewerBody string
+	// ViewerImage is the decoded picture drawn in View, ViewerImageData its
+	// bytes for the enlarged preview's download, and ViewerEditable whether
+	// Body is source text that Edit may write back.
+	ViewerImage     mui.ImageSource
+	ViewerImageData []byte
+	ViewerEditable  bool
+	ViewerBusy      bool
+	ViewerErr       string
+	ViewerMode      viewerMode
+	ViewerGen       int
+	ViewerSaving    bool
+	ViewerSaveErr   string
+	ViewerNotice    string
 }
 
 func newFilePanelState(workspace string) filePanelState {
@@ -683,8 +689,9 @@ func (a *App) fileRowSelected(entry files.Entry) bool {
 		a.Files.Workspace == a.activeFileWorkspace()
 }
 
-// openFileViewer reads one text file off the UI thread and opens the shared
-// viewer. Folders keep toggling in the tree instead.
+// openFileViewer reads one file off the UI thread and opens the shared
+// viewer. A picture is decoded; a text file, an SVG included, keeps its
+// source for View and Edit. Folders keep toggling in the tree instead.
 func (a *App) openFileViewer(entry files.Entry) {
 	if entry.Dir {
 		return
@@ -696,6 +703,9 @@ func (a *App) openFileViewer(entry files.Entry) {
 	a.Files.ViewerOpen = true
 	a.Files.ViewerPath = entry.Path
 	a.Files.ViewerBody = ""
+	a.Files.ViewerImage = nil
+	a.Files.ViewerImageData = nil
+	a.Files.ViewerEditable = false
 	a.Files.ViewerErr = ""
 	a.Files.ViewerBusy = true
 	a.Files.ViewerMode = viewerView
@@ -705,7 +715,7 @@ func (a *App) openFileViewer(entry files.Entry) {
 	a.Files.ViewerGen++
 	gen := a.Files.ViewerGen
 	go func() {
-		body, err := files.ReadText(workspace, entry.Path)
+		content, err := loadViewerFile(workspace, entry.Path)
 		a.Post(func() {
 			if a.closed.Load() || a.Files.ViewerGen != gen || !a.Files.ViewerOpen ||
 				a.Files.Workspace != workspace || a.Files.ViewerPath != entry.Path {
@@ -716,7 +726,10 @@ func (a *App) openFileViewer(entry files.Entry) {
 				a.Files.ViewerErr = fileErrorText(err)
 				return
 			}
-			a.Files.ViewerBody = body
+			a.Files.ViewerBody = content.Body
+			a.Files.ViewerImage = content.Image
+			a.Files.ViewerImageData = content.Data
+			a.Files.ViewerEditable = content.Editable
 		})
 	}()
 }
@@ -727,6 +740,9 @@ func (a *App) closeFileViewer() {
 	a.Files.ViewerGen++
 	a.Files.ViewerPath = ""
 	a.Files.ViewerBody = ""
+	a.Files.ViewerImage = nil
+	a.Files.ViewerImageData = nil
+	a.Files.ViewerEditable = false
 	a.Files.ViewerBusy = false
 	a.Files.ViewerErr = ""
 	a.Files.ViewerMode = viewerView
@@ -758,22 +774,37 @@ func (a *App) fileViewerPopover(c *mui.Context, anchor mui.Element) {
 
 func (a *App) fileViewerCard(c *mui.Context, panel, anchor mui.Element) {
 	path := a.Files.ViewerPath
+	kind := viewerFileKindFor(path)
 	var save func(string)
-	if !a.Files.ViewerBusy && a.Files.ViewerErr == "" {
+	if a.Files.ViewerEditable && !a.Files.ViewerBusy && a.Files.ViewerErr == "" {
 		save = a.saveFileViewer
 	}
+	var onOpenImage func(mui.ImageSource, []byte)
+	if kind != viewerNotImage {
+		onOpenImage = func(src mui.ImageSource, data []byte) {
+			a.openViewerImagePreview(filepath.Base(path), src, data)
+		}
+	}
+	busyText, errorTitle := T("Reading file…"), T("Cannot show this file")
+	if kind != viewerNotImage {
+		busyText, errorTitle = T("Reading image…"), T("Cannot show this image")
+	}
 	a.viewerCard(c, panel, anchor, viewerSpec{
-		Key:      "file:" + path,
-		Title:    filepath.Base(path),
-		Subtitle: path,
-		Tooltip:  filepath.Join(a.Files.Workspace, filepath.FromSlash(path)),
-		Filename: path,
-		Body:     a.Files.ViewerBody,
-		Old:      "",
-		New:      a.Files.ViewerBody,
-		Markdown: isMarkdownPath(path),
-		Modes:    []viewerMode{viewerView, viewerEdit},
-		Mode:     a.Files.ViewerMode,
+		Key:         "file:" + path,
+		Title:       filepath.Base(path),
+		Subtitle:    path,
+		Tooltip:     filepath.Join(a.Files.Workspace, filepath.FromSlash(path)),
+		Filename:    path,
+		Body:        a.Files.ViewerBody,
+		Old:         "",
+		New:         a.Files.ViewerBody,
+		Markdown:    isMarkdownPath(path),
+		Image:       a.Files.ViewerImage,
+		ImageData:   a.Files.ViewerImageData,
+		SVG:         kind == viewerSVG,
+		OnOpenImage: onOpenImage,
+		Modes:       []viewerMode{viewerView, viewerEdit},
+		Mode:        a.Files.ViewerMode,
 		OnMode: func(mode viewerMode) {
 			a.Files.ViewerMode = mode
 			a.Files.ViewerSaveErr = ""
@@ -786,8 +817,8 @@ func (a *App) fileViewerCard(c *mui.Context, panel, anchor mui.Element) {
 		Notice:         a.Files.ViewerNotice,
 		Busy:           a.Files.ViewerBusy,
 		Err:            a.Files.ViewerErr,
-		BusyText:       T("Reading file…"),
-		ErrorTitle:     T("Cannot show this file"),
+		BusyText:       busyText,
+		ErrorTitle:     errorTitle,
 		EmptyViewTitle: T("Empty file"),
 		EmptyViewText:  T("This file has no text yet."),
 	})
@@ -817,6 +848,15 @@ func (a *App) saveFileViewer(text string) {
 				return
 			}
 			a.Files.ViewerBody = text
+			if viewerFileKindFor(rel) == viewerSVG {
+				// View draws the saved source; a document MyGo cannot draw
+				// stays as its source, where it can be fixed.
+				a.Files.ViewerImage = nil
+				if svg, _ := parseViewerSVG([]byte(text)); svg != nil {
+					a.Files.ViewerImage = svg
+				}
+				a.Files.ViewerImageData = []byte(text)
+			}
 			a.Files.ViewerNotice = T("Saved.")
 			a.refreshAfterFileSave(workspace)
 		})

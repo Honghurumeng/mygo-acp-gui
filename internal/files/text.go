@@ -14,9 +14,16 @@ import (
 // panel. A larger file is an error rather than a truncated preview.
 const MaxTextSize = 512 << 10
 
+// MaxImageSize bounds the picture the viewer loads, matching the composer's
+// attachments. A larger file is an error rather than a decode that would
+// take the window's memory.
+const MaxImageSize = 15 << 20
+
 var (
 	// ErrTextTooLarge means a file cannot be shown or edited in the viewer.
 	ErrTextTooLarge = errors.New("file is too large to view or edit")
+	// ErrImageTooLarge means a picture cannot be shown in the viewer.
+	ErrImageTooLarge = errors.New("image is too large to view")
 	// ErrBinary means a file has NUL bytes and is not text.
 	ErrBinary = errors.New("binary file cannot be viewed or edited")
 	// ErrSymlink keeps the viewer from following a link out of the workspace.
@@ -54,6 +61,38 @@ func ReadText(root, rel string) (string, error) {
 		return "", ErrTextTooLarge
 	}
 	return string(data), nil
+}
+
+// ReadImage reads a picture inside the workspace for the viewer. Unlike
+// ReadText it accepts binary bytes, and its limit is larger than a text
+// file's, but it still refuses a symbolic link so that browsing cannot lead
+// out of the workspace.
+func ReadImage(root, rel string) ([]byte, error) {
+	path, err := Resolve(root, rel)
+	if err != nil {
+		return nil, err
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil, ErrSymlink
+	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("%q is a folder", rel)
+	}
+	if info.Size() > MaxImageSize {
+		return nil, ErrImageTooLarge
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > MaxImageSize {
+		return nil, ErrImageTooLarge
+	}
+	return data, nil
 }
 
 // SaveText replaces the contents of an existing text file inside the
