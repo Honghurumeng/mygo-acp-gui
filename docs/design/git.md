@@ -46,8 +46,12 @@
   hover 不会覆盖选中底色，pressed 仍保留按下反馈。
 - 列表内容右侧留 10 DIP 内边距：滚动条是覆盖在内容上的 overlay，不占布局宽度，留白保证 `＋`/`－`
   和 Stage all / Unstage all 不被滚动条盖住。
-- 图表用 `git log --topo-order --all -n 80 --pretty=format:%H%x1f%P%x1f%an%x1f%s%x1f%D%x1f%cI`，解析成 `internal/git.LogCommit`（hash、parents、author、subject、refs、committer time），由 `internal/git` 计算 lane，界面由 `internal/ui/gitgraph.go` 自绘泳道、分支/标签芯片和提交行。
+- 图表用 `git log --topo-order --all -n <limit+1> --pretty=format:%H%x1f%P%x1f%an%x1f%s%x1f%D%x1f%cI` 读一页（`internal/git.CommitPageSize` = 80；`limit` 是当前要读的条数，多读 1 条用于判断还有没有更旧的提交），解析成 `internal/git.LogCommit`（hash、parents、author、subject、refs、committer time），由 `internal/git` 计算 lane，界面由 `internal/ui/gitgraph.go` 自绘泳道、分支/标签芯片和提交行。
   不用通用提交图组件：它的行高固定、行不可点，没法缩间距或插入文件列表。
+- 历史分页：首次只读一页，滚到列表底部（距底 2 行以内）自动异步续读下一页，列表在当前位置追加；滚不动时用列表末尾的 `Load more` 按钮，读取中显示 spinner 和 `Loading more commits…`，失败在页脚显示 git 错误和 `Retry`。
+  续读只替换 `Commits`/`CommitsMore`，不动状态、暂存列表、分割线和滚动位置；`CommitsGen` 守卫旧页，全量刷新（Refresh、焦点、提交、动作完成）会让在途的页结果失效。
+  Refresh / 焦点 / 提交后的完整读取按“已加载条数”取历史（至少一页），不会把已滚到 300 条的图缩回 80 条；切换 workspace 才回到一页。
+  读到不足一页时 `State.HistoryMore` 为 false，页脚不再出现；一次完整读取用 `-n limit+1` 判断是否还有更旧的提交。
 - 行高 22 DIP，整行可点（含左侧 lane 区域）；hover/展开时背景覆盖整行，lane 线用 `DrawOver` 画在行上层，不会遮住文字。
 - 提交行不再显示 7 位 hash，只保留 ref 芯片和 subject；完整 hash 放在 hover 详情卡里。
 - 指针在提交行停留 350 ms 后弹出详情卡（`ui.PopoverBase`）：显示完整 subject、Author、Date（本地时间）、全部 refs、
@@ -67,17 +71,17 @@
   作旧侧），二进制/超大文件与普通预览一样报错。读取沿用 `PreviewGen` + workspace + hash + path 守卫。
 - 展开数据用 `git show --no-color --name-status -z --format= --find-renames --first-parent <hash>`：NUL 分隔，
   重命名/复制记录依次是状态、旧路径、新路径，merge 只取第一父提交的差异。读取在 goroutine 中进行，
-  generation + workspace + hash 三重守卫防止旧结果落到新行；刷新后发现该提交已不在 80 条历史里时自动收起。
+  generation + workspace + hash 三重守卫防止旧结果落到新行；刷新后发现该提交已不在已加载的历史里时自动收起。
 - 必须用 `--topo-order`：绘图要求父提交排在所有子提交之后，普通逆时间顺序不保证这一点。
 - lane 最多 8 条（`GraphLanes`）。算法维护“仍等待的父提交”列表：子树在父子的 lane 上继续，合并的第二个及以后的父提交占用空闲 lane；超过 8 条并发时共用最后一条，不报错、不 panic。
 - 区分“fetch 了但没 pull”和“已经 pull”：除 `git log` 外再执行一次
-  `git rev-list --max-count=80 HEAD..@{upstream}`（无 upstream、detached HEAD 或执行失败时静默跳过），
+  `git rev-list --max-count=<已加载条数> HEAD..@{upstream}`（无 upstream、detached HEAD 或执行失败时静默跳过），
   命中的提交记 `LogCommit.Incoming`。`Incoming` 提交的泳道线画成虚线（`Path.Dash(0, 3, 3)`）并降低透明度，
   圆点画成空心环；其余提交保持实线和实心圆点。`HEAD` 所在提交由 `%D` 里的 `HEAD` / `HEAD ->` 标记得到，
   只有它的 ref 芯片使用泳道色的实底强调芯片；远端跟踪分支、其他本地分支和 tag 都用灰色文字的描边芯片。
   因此 fetch 后顶部是描边的 `origin/main`、当前分支芯片在下面的提交上；pull 后 HEAD 移到顶部，
   芯片变成泳道色，线条和圆点恢复实线。
-- 区分“已 push”和“未 push”：再执行一次 `git rev-list --max-count=80 @{upstream}..HEAD`，命中的提交记
+- 区分“已 push”和“未 push”：再执行一次 `git rev-list --max-count=<已加载条数> @{upstream}..HEAD`，命中的提交记
   `LogCommit.Unpushed`，圆点改用紫色（`gitgraph.go` 的 `gitUnpushedInk`：Oklch hue 300，浅色深一些、
   深色亮一些），从该提交到父提交的线也用同一紫色（沿用线本身的 0.7 透明度），所以连续未推送的一段
   整体呈紫色，在蓝色 lane 上一眼可见。已 push 提交的线和圆点仍用 lane 自己的颜色。没有 upstream 时

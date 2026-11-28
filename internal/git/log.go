@@ -13,8 +13,10 @@ import (
 // GraphLanes is how many lanes a commit graph may draw.
 const GraphLanes = 8
 
-// commitLimit bounds the history the panel reads and draws.
-const commitLimit = 80
+// CommitPageSize is how many commits one history read returns. The graph
+// opens with one page and reads another as the reader scrolls to the end,
+// so a long repository starts as fast as a short one.
+const CommitPageSize = 80
 
 // CommitFile is one path a commit changed against its first parent. Status
 // is git's one-letter code: A, M, D, R, C or T; a rename or copy keeps its
@@ -117,29 +119,45 @@ type LogCommit struct {
 	Lane int
 }
 
-// readCommits reads a bounded, topologically ordered history. Topological
-// order matters: a graph draws a parent under all of its children.
-func readCommits(ctx context.Context, root string) ([]LogCommit, error) {
+// History reads up to limit commits the repository's refs reach, oldest
+// last and topologically ordered, with lanes for the graph. more reports
+// whether older commits exist beyond the page. root is a repository root,
+// as RepoRoot returns.
+func History(ctx context.Context, root string, limit int) ([]LogCommit, bool, error) {
+	return readCommits(ctx, root, limit)
+}
+
+// readCommits reads a bounded, topologically ordered history. One commit
+// beyond the page is read to say whether older ones exist. Topological order
+// matters: a graph draws a parent under all of its children.
+func readCommits(ctx context.Context, root string, limit int) ([]LogCommit, bool, error) {
+	if limit < 1 {
+		limit = CommitPageSize
+	}
 	out, err := run(ctx, root, []string{"GIT_OPTIONAL_LOCKS=0"},
-		"log", "--topo-order", "--all", "-n", strconv.Itoa(commitLimit),
+		"log", "--topo-order", "--all", "-n", strconv.Itoa(limit+1),
 		"--pretty=format:%H%x1f%P%x1f%an%x1f%s%x1f%D%x1f%cI")
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	commits := parseCommits(out)
+	more := len(commits) > limit
+	if more {
+		commits = commits[:limit]
+	}
 	assignLanes(commits)
-	markIncoming(commits, readIncoming(ctx, root))
-	markUnpushed(commits, readUnpushed(ctx, root))
-	return commits, nil
+	markIncoming(commits, readIncoming(ctx, root, limit))
+	markUnpushed(commits, readUnpushed(ctx, root, limit))
+	return commits, more, nil
 }
 
 // readIncoming lists the commits the current branch's upstream has and HEAD
 // does not: what a fetch downloaded and a pull would integrate. A branch
 // without an upstream, or a detached HEAD, has none. The read is best effort:
 // a failure leaves the graph unmarked rather than costing it the history.
-func readIncoming(ctx context.Context, root string) map[string]bool {
+func readIncoming(ctx context.Context, root string, limit int) map[string]bool {
 	out, err := run(ctx, root, []string{"GIT_OPTIONAL_LOCKS=0"},
-		"rev-list", "--max-count", strconv.Itoa(commitLimit), "HEAD..@{upstream}")
+		"rev-list", "--max-count", strconv.Itoa(limit), "HEAD..@{upstream}")
 	if err != nil {
 		return nil
 	}
@@ -151,15 +169,15 @@ func readIncoming(ctx context.Context, root string) map[string]bool {
 // no remote-tracking ref has, so a branch that was never pushed is marked
 // too; a repository with no remote refs marks none, as there is no push to
 // measure against. The read is best effort, like readIncoming.
-func readUnpushed(ctx context.Context, root string) map[string]bool {
+func readUnpushed(ctx context.Context, root string, limit int) map[string]bool {
 	out, err := run(ctx, root, []string{"GIT_OPTIONAL_LOCKS=0"},
-		"rev-list", "--max-count", strconv.Itoa(commitLimit), "@{upstream}..HEAD")
+		"rev-list", "--max-count", strconv.Itoa(limit), "@{upstream}..HEAD")
 	if err != nil {
 		if !hasRemoteRefs(ctx, root) {
 			return nil
 		}
 		out, err = run(ctx, root, []string{"GIT_OPTIONAL_LOCKS=0"},
-			"rev-list", "--max-count", strconv.Itoa(commitLimit), "HEAD", "--not", "--remotes")
+			"rev-list", "--max-count", strconv.Itoa(limit), "HEAD", "--not", "--remotes")
 		if err != nil {
 			return nil
 		}

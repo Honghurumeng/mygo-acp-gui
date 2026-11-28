@@ -96,7 +96,10 @@ type State struct {
 	// does not show ignored files.
 	Ignored []string
 	Commits []LogCommit
-	Stat    DiffStat
+	// HistoryMore reports commits older than the read page, so the graph
+	// knows another read has more to show.
+	HistoryMore bool
+	Stat        DiffStat
 }
 
 // Staged returns the files with staged changes, in status order.
@@ -128,8 +131,16 @@ func Available() bool {
 }
 
 // Load reads the repository containing workspace: root, branch, status and
-// a bounded history. A missing repository is ErrNotRepository.
+// the first page of history. A missing repository is ErrNotRepository.
 func Load(ctx context.Context, workspace string) (State, error) {
+	return LoadHistory(ctx, workspace, CommitPageSize)
+}
+
+// LoadHistory is Load with a caller-chosen history depth: the panel asks for
+// as many commits as it already shows, so a refresh does not collapse a long
+// graph back to its first page. State.HistoryMore says whether the repository
+// has older commits than the read.
+func LoadHistory(ctx context.Context, workspace string, limit int) (State, error) {
 	if _, err := exec.LookPath("git"); err != nil {
 		return State{}, ErrGitNotFound
 	}
@@ -162,11 +173,12 @@ func Load(ctx context.Context, workspace string) (State, error) {
 		state.Stat = stat
 	}
 	if state.HasCommits {
-		commits, err := readCommits(ctx, root)
+		commits, more, err := readCommits(ctx, root, limit)
 		if err != nil {
 			return State{}, err
 		}
 		state.Commits = commits
+		state.HistoryMore = more
 	}
 	return state, nil
 }

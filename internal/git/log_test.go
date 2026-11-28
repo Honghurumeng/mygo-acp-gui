@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -175,7 +176,7 @@ func TestReadCommitsOrdersMergesAndRefs(t *testing.T) {
 	runTestGit(t, dir, "commit", "-q", "-m", "main work")
 	runTestGit(t, dir, "merge", "-q", "--no-ff", "-m", "merge feature", "feature")
 
-	commits, err := readCommits(ctx, dir)
+	commits, _, err := readCommits(ctx, dir, CommitPageSize)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,6 +195,62 @@ func TestReadCommitsOrdersMergesAndRefs(t *testing.T) {
 		}
 	}
 	assertGraphOrder(t, commits)
+}
+
+// TestReadCommitsReadsPages keeps one page from standing for the whole
+// history: a page says older commits exist, a deeper read returns them, and
+// the first page keeps its order and lanes.
+func TestReadCommitsReadsPages(t *testing.T) {
+	if !Available() {
+		t.Skip("git not installed")
+	}
+	ctx := context.Background()
+	dir := initRepo(t)
+	const total = 5
+	for i := 1; i <= total; i++ {
+		runTestGit(t, dir, "commit", "-q", "--allow-empty", "-m", fmt.Sprintf("commit %d", i))
+	}
+
+	first, more, err := readCommits(ctx, dir, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first) != 2 || first[0].Message != "commit 5" || first[1].Message != "commit 4" {
+		t.Fatalf("first page = %+v", first)
+	}
+	if !more {
+		t.Fatal("first page does not report older commits")
+	}
+
+	all, more, err := readCommits(ctx, dir, total)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != total || more {
+		t.Fatalf("full read = %d commits, more = %v", len(all), more)
+	}
+	for i := range first {
+		if all[i].Hash != first[i].Hash || all[i].Lane != first[i].Lane {
+			t.Errorf("deeper read changed commit %d: %+v, first page %+v", i, all[i], first[i])
+		}
+	}
+	assertGraphOrder(t, all)
+
+	// LoadHistory carries the same page and its answer into the panel state.
+	state, err := LoadHistory(ctx, dir, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Commits) != 2 || !state.HistoryMore {
+		t.Errorf("LoadHistory page = %d commits, more = %v", len(state.Commits), state.HistoryMore)
+	}
+	state, err = LoadHistory(ctx, dir, total)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Commits) != total || state.HistoryMore {
+		t.Errorf("LoadHistory full = %d commits, more = %v", len(state.Commits), state.HistoryMore)
+	}
 }
 
 func hasRef(refs []string, want string) bool {
@@ -227,7 +284,7 @@ func TestReadCommitsMarksFetchedNotPulled(t *testing.T) {
 	tip := headHash(t, origin)
 	runTestGit(t, clone, "fetch", "-q", "origin")
 
-	commits, err := readCommits(ctx, clone)
+	commits, _, err := readCommits(ctx, clone, CommitPageSize)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +300,7 @@ func TestReadCommitsMarksFetchedNotPulled(t *testing.T) {
 	}
 
 	runTestGit(t, clone, "pull", "-q", "--ff-only")
-	commits, err = readCommits(ctx, clone)
+	commits, _, err = readCommits(ctx, clone, CommitPageSize)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,7 +340,7 @@ func TestReadCommitsMarksUnpushedCommits(t *testing.T) {
 	runTestGit(t, work, "commit", "-q", "-m", "local work")
 	tip := headHash(t, work)
 
-	commits, err := readCommits(ctx, work)
+	commits, _, err := readCommits(ctx, work, CommitPageSize)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,7 +356,7 @@ func TestReadCommitsMarksUnpushedCommits(t *testing.T) {
 	}
 
 	runTestGit(t, work, "push", "-q", "origin", "master")
-	commits, err = readCommits(ctx, work)
+	commits, _, err = readCommits(ctx, work, CommitPageSize)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -316,7 +373,7 @@ func TestReadCommitsMarksUnpushedCommits(t *testing.T) {
 	runTestGit(t, work, "add", ".")
 	runTestGit(t, work, "commit", "-q", "-m", "branch work")
 	branchTip := headHash(t, work)
-	commits, err = readCommits(ctx, work)
+	commits, _, err = readCommits(ctx, work, CommitPageSize)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -332,7 +389,7 @@ func TestReadCommitsMarksUnpushedCommits(t *testing.T) {
 	writeFile(t, local, "a.txt", "one\n")
 	runTestGit(t, local, "add", ".")
 	runTestGit(t, local, "commit", "-q", "-m", "local only")
-	commits, err = readCommits(ctx, local)
+	commits, _, err = readCommits(ctx, local, CommitPageSize)
 	if err != nil {
 		t.Fatal(err)
 	}

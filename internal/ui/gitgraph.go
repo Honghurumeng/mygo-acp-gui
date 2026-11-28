@@ -154,8 +154,38 @@ func (a *App) gitGraphBody(c *mui.Context) {
 				a.gitGraphFiles(c, commit.Hash, indent)
 			}
 		}
+		if a.Git.CommitsMore || a.Git.CommitsBusy || a.Git.CommitsErr != "" {
+			a.gitGraphMore(c)
+		}
 	})
 	a.finishCommitHover(c, hoveredHash, cardHovered)
+}
+
+// gitGraphMore is the history's last row: the way to read older commits, or
+// what says a page is on its way or failed. The rows above it keep the
+// graph's lane geometry; the footer is not part of it.
+func (a *App) gitGraphMore(c *mui.Context) {
+	t := c.Theme()
+	mui.Row(c).FillWidth().Height(gitGraphRowHeight).Gap(6).AlignItems(mui.Center).
+		Padding(0, 6).Children(func() {
+		switch {
+		case a.Git.CommitsBusy:
+			mui.Spinner(c)
+			mutedText(c, T("Loading more commits…"), a.gitFont(9))
+		case a.Git.CommitsErr != "":
+			mui.Text(c, truncate(singleLine(a.Git.CommitsErr), 80)).
+				FontSize(a.gitFont(8)).TextColor(t.Danger).Grow(1).MinWidth(0).SingleLine()
+			if quietButton(c, T("Retry")).FontSize(a.gitFont(8)).Clicked() {
+				a.loadMoreCommits()
+			}
+		default:
+			button := quietButton(c, T("Load more")).FontSize(a.gitFont(9))
+			button.Tooltip(T("Read the next page of the history"))
+			if button.Clicked() {
+				a.loadMoreCommits()
+			}
+		}
+	})
 }
 
 // gitUnpushedInk is the violet of a commit no push has sent: its dot and

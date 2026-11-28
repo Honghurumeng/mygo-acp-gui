@@ -727,6 +727,60 @@ func TestGitListsShareScrollBarColumn(t *testing.T) {
 	}
 }
 
+// TestGitPanelPagesThroughHistory keeps a long history from stopping at one
+// page: the footer offers older commits, reaching its end reads the next page
+// in place, and a full reload keeps the depth the graph reached.
+func TestGitPanelPagesThroughHistory(t *testing.T) {
+	workspace := initGitPanelRepo(t)
+	total := git.CommitPageSize + 5
+	for i := 1; i <= total; i++ {
+		runGitPanelCommand(t, workspace, "commit", "-q", "--allow-empty", "-m", fmt.Sprintf("history %d", i))
+	}
+	app, tt := newGitPanelApp(t, workspace)
+	waitFor(t, app, tt, func() bool {
+		return app.Git.Checked && !app.Git.Loading && len(app.Git.Commits) == git.CommitPageSize
+	})
+	tt.Frame()
+	if !app.Git.CommitsMore {
+		t.Fatalf("the first page does not report older commits: %d commits", len(app.Git.Commits))
+	}
+	if newest := app.Git.Commits[0].Message; newest != fmt.Sprintf("history %d", total) {
+		t.Errorf("newest commit = %q", newest)
+	}
+	if _, ok := tt.Find("Load more"); !ok {
+		t.Fatalf("no Load more row; texts: %q", tt.Texts())
+	}
+
+	// Reaching the end of the scroll reads the next page without a click.
+	app.Git.GraphScroll.MaxY = 1000
+	app.Git.GraphScroll.Y = 1000
+	app.autoLoadMoreCommits()
+	waitFor(t, app, tt, func() bool {
+		return !app.Git.CommitsBusy && len(app.Git.Commits) == total
+	})
+	if app.Git.CommitsMore {
+		t.Error("the complete history still reports older commits")
+	}
+	if oldest := app.Git.Commits[total-1].Message; oldest != "history 1" {
+		t.Errorf("oldest commit = %q, want history 1", oldest)
+	}
+	tt.Frame()
+	if _, ok := tt.Find("Load more"); ok {
+		t.Errorf("Load more row survives a complete history; texts: %q", tt.Texts())
+	}
+
+	// Refresh, a commit and a focus reread ask for the depth already shown
+	// instead of collapsing the graph back to its first page.
+	app.startGitLoad(workspace, false)
+	waitFor(t, app, tt, func() bool {
+		return app.Git.Checked && !app.Git.Loading
+	})
+	if len(app.Git.Commits) != total || app.Git.CommitsMore {
+		t.Errorf("reload = %d commits, more = %v; want %d commits and no more",
+			len(app.Git.Commits), app.Git.CommitsMore, total)
+	}
+}
+
 func TestGitPanelExpandsCommitFiles(t *testing.T) {
 	workspace := initGitPanelRepo(t)
 	writeGitPanelFile(t, workspace, "hello.txt", "one\n")

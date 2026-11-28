@@ -50,6 +50,19 @@ type gitPanelState struct {
 	Changes    []git.File
 	Commits    []git.LogCommit
 
+	// CommitsMore reports older commits than the graph has read. Loading one
+	// more page is CommitsBusy; CommitsErr says why it failed. CommitsGen
+	// guards that page against a full reload or a workspace change, as Gen
+	// does the full read.
+	CommitsMore bool
+	CommitsBusy bool
+	CommitsErr  string
+	CommitsGen  int
+
+	// GraphScroll keeps the history's place when a page is appended, and
+	// tells the graph when to read the next one.
+	GraphScroll mui.ScrollState
+
 	// Stat counts the changed paths and their lines for the header.
 	Stat git.DiffStat
 
@@ -210,9 +223,15 @@ func (a *App) startGitLoad(workspace string, clearFeedback bool) {
 	}
 	a.Git.Gen++
 	gen := a.Git.Gen
+	// A page read in flight is out of date now; the full read replaces what
+	// it would have appended, and its post is dropped by CommitsGen.
+	a.Git.CommitsGen++
+	a.Git.CommitsBusy = false
+	a.Git.CommitsErr = ""
 	a.Git.Workspace = workspace
 	a.Git.Loading = true
 	a.Git.Busy = ""
+	history := a.gitHistoryDepth()
 	if clearFeedback {
 		a.Git.Error = ""
 		a.Git.Notice = ""
@@ -233,7 +252,7 @@ func (a *App) startGitLoad(workspace string, clearFeedback bool) {
 			case !info.IsDir():
 				err = errors.New("workspace is not a directory")
 			default:
-				state, err = git.Load(ctx, workspace)
+				state, err = git.LoadHistory(ctx, workspace, history)
 				switch {
 				case errors.Is(err, git.ErrNotRepository):
 					noRepo, err = true, nil
@@ -258,6 +277,7 @@ func (a *App) startGitLoad(workspace string, clearFeedback bool) {
 				a.Git.HasCommits = false
 				a.Git.Staged, a.Git.Changes = nil, nil
 				a.Git.Commits = nil
+				a.Git.CommitsMore = false
 				a.Git.Stat = git.DiffStat{}
 				return
 			}
@@ -269,6 +289,7 @@ func (a *App) startGitLoad(workspace string, clearFeedback bool) {
 				a.Git.HasCommits = false
 				a.Git.Staged, a.Git.Changes = nil, nil
 				a.Git.Commits = nil
+				a.Git.CommitsMore = false
 				a.Git.Stat = git.DiffStat{}
 				if clearFeedback {
 					a.Git.Error = ""
@@ -289,7 +310,49 @@ func (a *App) startGitLoad(workspace string, clearFeedback bool) {
 			a.Git.Staged = state.Staged()
 			a.Git.Changes = state.Changes()
 			a.Git.Commits = state.Commits
+			a.Git.CommitsMore = state.HistoryMore
 			a.Git.Stat = state.Stat
+			a.pruneCommitFiles()
+		})
+	}()
+}
+
+// gitHistoryDepth is how much history a full read asks for: at least one
+// page, and never less than the graph already shows, so Refresh, a commit
+// and a focus reread keep a scrolled-down history as deep as it was.
+func (a *App) gitHistoryDepth() int {
+	return max(git.CommitPageSize, len(a.Git.Commits))
+}
+
+// loadMoreCommits reads the next page in the background and appends it: the
+// status, the changes list and the graph's scroll place stay as they are, so
+// the history grows in place as the reader reaches its end.
+func (a *App) loadMoreCommits() {
+	if a.closed.Load() || a.Git.Loading || a.Git.Busy != "" || a.Git.CommitsBusy ||
+		!a.Git.CommitsMore || a.Git.Workspace == "" || a.Git.RepoRoot == "" {
+		return
+	}
+	workspace, root := a.Git.Workspace, a.Git.RepoRoot
+	limit := len(a.Git.Commits) + git.CommitPageSize
+	a.Git.CommitsGen++
+	gen := a.Git.CommitsGen
+	a.Git.CommitsBusy = true
+	a.Git.CommitsErr = ""
+	go func() {
+		ctx, cancel := context.WithTimeout(a.lifeCtx, gitStatusTimeout)
+		defer cancel()
+		commits, more, err := git.History(ctx, root, limit)
+		a.Post(func() {
+			if a.closed.Load() || a.Git.CommitsGen != gen || a.Git.Workspace != workspace {
+				return
+			}
+			a.Git.CommitsBusy = false
+			if err != nil {
+				a.Git.CommitsErr = gitErrorText(err)
+				return
+			}
+			a.Git.Commits = commits
+			a.Git.CommitsMore = more
 			a.pruneCommitFiles()
 		})
 	}()
@@ -1177,10 +1240,25 @@ func (a *App) gitGraph(c *mui.Context) {
 				a.runGitActionResult("Undo last commit", true, git.UndoLastCommit)
 			})
 		})
-		mui.Scroll(c).Grow(1).Padding(5, 0, 8, 6).Children(func() {
+		mui.Scroll(c).Grow(1).Padding(5, 0, 8, 6).TrackScroll(&a.Git.GraphScroll).Children(func() {
 			a.gitGraphBody(c)
 		})
+		a.autoLoadMoreCommits()
 	})
+}
+
+// autoLoadMoreCommits reads the next page once the history is scrolled near
+// its end, so the graph keeps going as the reader reaches the bottom instead
+// of stopping at a page. Without a scroll bar the footer's Load more button
+// is the way.
+func (a *App) autoLoadMoreCommits() {
+	if !a.Git.CommitsMore || a.Git.CommitsBusy || a.Git.CommitsErr != "" {
+		return
+	}
+	scroll := &a.Git.GraphScroll
+	if scroll.MaxY > 0 && scroll.Y >= scroll.MaxY-gitGraphRowHeight*2 {
+		a.loadMoreCommits()
+	}
 }
 
 // gitDiscardDialog confirms discarding every change in the repository before
