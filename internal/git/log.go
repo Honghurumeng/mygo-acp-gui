@@ -109,6 +109,10 @@ type LogCommit struct {
 	// Incoming marks a commit the current branch's upstream has and HEAD
 	// does not: a fetch brought it, and a pull would integrate it.
 	Incoming bool
+	// Unpushed marks a commit HEAD has and its upstream does not: a push
+	// would send it. A branch without an upstream counts every commit no
+	// remote-tracking ref has; a repository with no remote refs marks none.
+	Unpushed bool
 	// Lane is the column its line occupies, from 0 to GraphLanes-1.
 	Lane int
 }
@@ -125,6 +129,7 @@ func readCommits(ctx context.Context, root string) ([]LogCommit, error) {
 	commits := parseCommits(out)
 	assignLanes(commits)
 	markIncoming(commits, readIncoming(ctx, root))
+	markUnpushed(commits, readUnpushed(ctx, root))
 	return commits, nil
 }
 
@@ -138,13 +143,47 @@ func readIncoming(ctx context.Context, root string) map[string]bool {
 	if err != nil {
 		return nil
 	}
-	incoming := make(map[string]bool)
-	for _, line := range strings.Split(string(out), "\n") {
-		if hash := strings.TrimSpace(line); isHash(hash) {
-			incoming[hash] = true
+	return hashSet(out)
+}
+
+// readUnpushed lists the commits HEAD has and its upstream does not: what a
+// push would send. A branch without an upstream falls back to every commit
+// no remote-tracking ref has, so a branch that was never pushed is marked
+// too; a repository with no remote refs marks none, as there is no push to
+// measure against. The read is best effort, like readIncoming.
+func readUnpushed(ctx context.Context, root string) map[string]bool {
+	out, err := run(ctx, root, []string{"GIT_OPTIONAL_LOCKS=0"},
+		"rev-list", "--max-count", strconv.Itoa(commitLimit), "@{upstream}..HEAD")
+	if err != nil {
+		if !hasRemoteRefs(ctx, root) {
+			return nil
+		}
+		out, err = run(ctx, root, []string{"GIT_OPTIONAL_LOCKS=0"},
+			"rev-list", "--max-count", strconv.Itoa(commitLimit), "HEAD", "--not", "--remotes")
+		if err != nil {
+			return nil
 		}
 	}
-	return incoming
+	return hashSet(out)
+}
+
+// hasRemoteRefs reports whether a remote-tracking ref exists: only then can
+// the history tell a pushed commit from one no push has sent.
+func hasRemoteRefs(ctx context.Context, root string) bool {
+	out, err := run(ctx, root, []string{"GIT_OPTIONAL_LOCKS=0"},
+		"for-each-ref", "--count=1", "--format=%(refname)", "refs/remotes")
+	return err == nil && len(bytes.TrimSpace(out)) > 0
+}
+
+// hashSet reads rev-list's one-hash-per-line output.
+func hashSet(out []byte) map[string]bool {
+	hashes := make(map[string]bool)
+	for _, line := range strings.Split(string(out), "\n") {
+		if hash := strings.TrimSpace(line); isHash(hash) {
+			hashes[hash] = true
+		}
+	}
+	return hashes
 }
 
 // markIncoming flags the commits of a read history the upstream alone has.
@@ -154,6 +193,16 @@ func markIncoming(commits []LogCommit, incoming map[string]bool) {
 	}
 	for i := range commits {
 		commits[i].Incoming = incoming[commits[i].Hash]
+	}
+}
+
+// markUnpushed flags the commits of a read history no push has sent.
+func markUnpushed(commits []LogCommit, unpushed map[string]bool) {
+	if len(unpushed) == 0 {
+		return
+	}
+	for i := range commits {
+		commits[i].Unpushed = unpushed[commits[i].Hash]
 	}
 }
 

@@ -257,6 +257,92 @@ func TestReadCommitsMarksFetchedNotPulled(t *testing.T) {
 	}
 }
 
+// TestReadCommitsMarksUnpushedCommits keeps what a push would send apart
+// from what the upstream has: a commit ahead of the upstream is unpushed
+// until the push sends it; a branch with no upstream is measured against the
+// remote-tracking refs, and a repository with no remote marks none.
+func TestReadCommitsMarksUnpushedCommits(t *testing.T) {
+	if !Available() {
+		t.Skip("git not installed")
+	}
+	ctx := context.Background()
+	origin := initBareRemote(t)
+	work := t.TempDir()
+	runTestGit(t, work, "init", "-q", "-b", "master")
+	runTestGit(t, work, "config", "user.email", "test@example.com")
+	runTestGit(t, work, "config", "user.name", "Test User")
+	writeFile(t, work, "a.txt", "one\n")
+	runTestGit(t, work, "add", ".")
+	runTestGit(t, work, "commit", "-q", "-m", "base")
+	base := headHash(t, work)
+	runTestGit(t, work, "remote", "add", "origin", origin)
+	runTestGit(t, work, "push", "-q", "-u", "origin", "master")
+
+	writeFile(t, work, "b.txt", "two\n")
+	runTestGit(t, work, "add", ".")
+	runTestGit(t, work, "commit", "-q", "-m", "local work")
+	tip := headHash(t, work)
+
+	commits, err := readCommits(ctx, work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byHash := map[string]LogCommit{}
+	for _, commit := range commits {
+		byHash[commit.Hash] = commit
+	}
+	if got := byHash[tip]; !got.Unpushed || !got.Head {
+		t.Errorf("ahead tip = %+v, want unpushed and HEAD", got)
+	}
+	if got := byHash[base]; got.Unpushed {
+		t.Errorf("pushed base = %+v, want pushed", got)
+	}
+
+	runTestGit(t, work, "push", "-q", "origin", "master")
+	commits, err = readCommits(ctx, work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, commit := range commits {
+		if commit.Unpushed {
+			t.Errorf("pushed commit %s still marked unpushed", commit.Hash)
+		}
+	}
+
+	// A branch that was never pushed has no upstream; the remote-tracking
+	// refs still tell which of its commits a push would send.
+	runTestGit(t, work, "checkout", "-q", "-b", "feature")
+	writeFile(t, work, "c.txt", "three\n")
+	runTestGit(t, work, "add", ".")
+	runTestGit(t, work, "commit", "-q", "-m", "branch work")
+	branchTip := headHash(t, work)
+	commits, err = readCommits(ctx, work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, commit := range commits {
+		if want := commit.Hash == branchTip; commit.Unpushed != want {
+			t.Errorf("commit %s unpushed = %v, want %v", commit.Hash, commit.Unpushed, want)
+		}
+	}
+
+	// Nothing to measure against without a remote: a local repository
+	// keeps every dot in its lane's ink.
+	local := initRepo(t)
+	writeFile(t, local, "a.txt", "one\n")
+	runTestGit(t, local, "add", ".")
+	runTestGit(t, local, "commit", "-q", "-m", "local only")
+	commits, err = readCommits(ctx, local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, commit := range commits {
+		if commit.Unpushed {
+			t.Errorf("local-only commit %s marked unpushed", commit.Hash)
+		}
+	}
+}
+
 func TestCommitFilesListsChangesAgainstFirstParent(t *testing.T) {
 	if !Available() {
 		t.Skip("git not installed")

@@ -101,7 +101,13 @@ func (a *App) gitGraphBody(c *mui.Context) {
 					path.Dash(0, 3, 3)
 					alpha = 0.5
 				}
-				p.StrokePath(path, 2, inks[toLane%len(inks)].Alpha(alpha))
+				// The line leaving an unpushed commit takes its violet, so
+				// the run of commits a push would send reads as one.
+				edgeInk := inks[toLane%len(inks)]
+				if commit.Unpushed {
+					edgeInk = gitUnpushedInk(t)
+				}
+				p.StrokePath(path, 2, edgeInk.Alpha(alpha))
 			}
 		}
 		for i, commit := range commits {
@@ -122,10 +128,17 @@ func (a *App) gitGraphBody(c *mui.Context) {
 				p.StrokePath(ring, 1.5, ink.Alpha(0.8))
 				continue
 			}
+			// A commit the upstream does not have wears a violet dot: a push
+			// would send it, so it reads apart from the pushed ones at a
+			// glance while the lane keeps its own ink.
+			dotInk := ink
+			if commit.Unpushed {
+				dotInk = gitUnpushedInk(t)
+			}
 			p.Fill(mui.Rect{
 				X: x(commit.Lane) - rad, Y: dot(i) - rad,
 				W: 2 * rad, H: 2 * rad,
-			}, ink, 999)
+			}, dotInk, 999)
 		}
 	})
 	var hoveredHash string
@@ -143,6 +156,17 @@ func (a *App) gitGraphBody(c *mui.Context) {
 		}
 	})
 	a.finishCommitHover(c, hoveredHash, cardHovered)
+}
+
+// gitUnpushedInk is the violet of a commit no push has sent: its dot and
+// the lines leaving it. It is not one of the lane inks, so an unpushed
+// commit stays visible on every theme; a dark theme takes the lighter tint
+// that reads on its background.
+func gitUnpushedInk(t *mui.Theme) mui.Color {
+	if t.Dark {
+		return mui.Oklch(0.72, 0.19, 300)
+	}
+	return mui.Oklch(0.54, 0.22, 300)
 }
 
 // gitGraphCommit is one row, clickable across the lanes too: its left

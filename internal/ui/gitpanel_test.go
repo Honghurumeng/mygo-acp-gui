@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"image"
 	"image/color"
 	"os"
 	"os/exec"
@@ -471,6 +472,105 @@ func TestGitPanelShowsFetchedCommitsAsIncoming(t *testing.T) {
 	if chip, row := chipFills(t, tt, graphRef(app.Git.Commits[0])); chip == row {
 		t.Errorf("current branch chip fill = %v, want the lane's tint", chip)
 	}
+}
+
+// TestGitPanelMarksUnpushedCommitsViolet draws a commit the upstream does
+// not have in violet, dot and lines alike, so it reads apart from the pushed
+// ones at a glance; pushing it returns both to the lane's ink.
+func TestGitPanelMarksUnpushedCommitsViolet(t *testing.T) {
+	origin := filepath.Join(t.TempDir(), "origin.git")
+	runGitPanelCommand(t, filepath.Dir(origin), "init", "--bare", "-q", origin)
+	workspace := initGitPanelRepo(t)
+	writeGitPanelFile(t, workspace, "a.txt", "one\n")
+	runGitPanelCommand(t, workspace, "add", ".")
+	runGitPanelCommand(t, workspace, "commit", "-q", "-m", "base")
+	runGitPanelCommand(t, workspace, "remote", "add", "origin", origin)
+	runGitPanelCommand(t, workspace, "push", "-q", "-u", "origin", "HEAD")
+
+	writeGitPanelFile(t, workspace, "b.txt", "two\n")
+	runGitPanelCommand(t, workspace, "add", ".")
+	runGitPanelCommand(t, workspace, "commit", "-q", "-m", "local work")
+	writeGitPanelFile(t, workspace, "c.txt", "three\n")
+	runGitPanelCommand(t, workspace, "add", ".")
+	runGitPanelCommand(t, workspace, "commit", "-q", "-m", "second local work")
+
+	app, tt := newGitPanelApp(t, workspace)
+	tt.SetDark(false)
+	waitFor(t, app, tt, func() bool {
+		return app.Git.Checked && !app.Git.Loading && len(app.Git.Commits) == 3 &&
+			app.Git.Commits[0].Unpushed && app.Git.Commits[1].Unpushed &&
+			!app.Git.Commits[2].Unpushed
+	})
+	tt.Move(5, 5)
+	tt.Frame()
+	violet := gitUnpushedInk(mui.LightTheme())
+	img := tt.Image()
+	if n := countColor(img, violet); n == 0 {
+		t.Fatalf("the unpushed commit's dot is not violet (%v)", violet)
+	}
+
+	// The line between the two unpushed commits is violet too: find the
+	// dot's column on the upper row, then sample the middle of the gap.
+	upper, ok := tt.Find("local work")
+	if !ok {
+		t.Fatalf("the unpushed commit row is missing; texts: %q", tt.Texts())
+	}
+	lower, ok := tt.Find("base")
+	if !ok {
+		t.Fatalf("the pushed commit row is missing; texts: %q", tt.Texts())
+	}
+	rowY := int(upper.Y + upper.H/2)
+	dotX := -1
+	for x := img.Bounds().Min.X; x < img.Bounds().Max.X; x++ {
+		if got := img.RGBAAt(x, rowY); got.R == violet.R && got.G == violet.G && got.B == violet.B {
+			dotX = x
+			break
+		}
+	}
+	if dotX < 0 {
+		t.Fatalf("no violet dot on the unpushed row at y %d", rowY)
+	}
+	lineY := (rowY + int(lower.Y+lower.H/2)) / 2
+	violetLine := false
+	for x := dotX - 2; x <= dotX+2; x++ {
+		if purplePixel(img.RGBAAt(x, lineY)) {
+			violetLine = true
+		}
+	}
+	if !violetLine {
+		t.Errorf("the line between unpushed commits is not violet at (%d, %d)", dotX, lineY)
+	}
+
+	runGitPanelCommand(t, workspace, "push", "-q", "origin", "HEAD")
+	app.startGitLoad(workspace, true)
+	waitFor(t, app, tt, func() bool {
+		return !app.Git.Loading && len(app.Git.Commits) == 3 && !app.Git.Commits[0].Unpushed
+	})
+	tt.Frame()
+	if n := countColor(tt.Image(), violet); n != 0 {
+		t.Errorf("the pushed commit still has a violet dot (%d pixels)", n)
+	}
+}
+
+// purplePixel reports whether c leans violet, which tells the unpushed ink
+// apart from the lane's blue even where alpha thins it.
+func purplePixel(c color.RGBA) bool {
+	return c.R > c.G && c.B > c.G
+}
+
+// countColor counts the frame's pixels drawn in c.
+func countColor(img *image.RGBA, c mui.Color) int {
+	count := 0
+	bounds := img.Bounds()
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			got := img.RGBAAt(x, y)
+			if got.R == c.R && got.G == c.G && got.B == c.B {
+				count++
+			}
+		}
+	}
+	return count
 }
 
 // chipFills samples a ref chip's inside and the row behind it.
