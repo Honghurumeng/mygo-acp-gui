@@ -207,8 +207,32 @@ type ToolImage struct {
 - 图片相关：`Loading image…` / `View image in tool call` / `Cannot show this image: %s` /
   `The image data is not valid base64.` / `The image is empty.` / `The image is too large to show.` 等，
   全部走 `T` / `Tf` 并进入 `zh-Hans.json`。
+- 回合折叠：`1 thought` / `%d thoughts` / `1 tool call` / `%d tool calls` /
+  `Toggle thinking and tool details: %s`。
 - 走 `T` / `Tf`，`go test ./internal/i18n` 校验字面量与动词顺序；`Copy` 复用既有 key 与 `copyButton`。
 - 状态文案（`Pending` / `In progress` / `Completed` / `Failed` / `Cancelled`）不变，测试与无障碍名稳定。
+
+## 片段折叠
+
+工具卡片本身默认折叠成一行 header，但一回合几十个调用仍会把正文和最终总结冲散。`foldTurnDetails`
+（`app.go`）在 `conversationRows` 末尾把**连续的**思考和工具行收进一行 `RoleDetails` 计数条：
+
+- 分段：遇到 assistant 正文（`Text != ""` 的助手行）、系统提示、回合结尾行或新 prompt 就断开，下一段
+  重新计数。同一回合可以有多段，如 `2 thoughts · 1 tool call` → 正文 → `1 tool call`，计数条贴着
+  它隐藏的那段工作。
+- 计数：`agent_thought_chunk` 累积的 `Thought` 和 codex `kind: "think"` 的工具各算 1 段思考，其他
+  `RoleTool` 算 1 个工具调用；单数走 `1 thought` / `1 tool call`。
+- 位置：计数条插在该段第一条被折叠行的位置（不是回合开头），点开后按原顺序插回，正文行不移动；展开
+  后思考块和工具卡片退回各自的折叠状态（`Thinking` 默认收起、工具卡默认只露 header）。
+- 状态：`Chat.DetailsOpen` 以段首隐藏行 id 为 key 存 `*bool`（MyGo disclosure 直接写指针），相邻段
+  独立、默认收起、只在内存；`sessions.json` 与消息结构不变。
+- 不折叠：第一个 prompt 之前的行（启动提示、重放碎片）和 `SubagentID != ""` 的 child transcript；
+  后者已由子代理卡片控制显隐，顺序也由卡片决定。
+- 折叠时只留 `Thought` 的助手行整行不画；同时有正文的行保留正文、隐藏 `Thinking` 块（`hideThought`
+  是每帧重建的绘制状态），并且它就是该段的边界。
+- 测试：`TestTurnDetailsFoldsThinkingAndTools` / `TestTurnDetailsSplitsAtReplyText` /
+  `TestTurnDetailsFoldPerTurn` / `TestTurnDetailsKeepFlatWithoutPrompt` /
+  `TestTurnDetailsCountsThinkAsThought` / `TestDetailsLabel`。
 
 ## 兼容与回放
 

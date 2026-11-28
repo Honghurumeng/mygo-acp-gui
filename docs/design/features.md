@@ -121,6 +121,7 @@ Dock 角标（`internal/ui/badge.go`，`mygo.App.SetBadgeCount`）显示等待�
 - 重放中的 `user_message_chunk`、`agent_message_chunk` 和 `agent_thought_chunk` 合并成连续的用户/助手行，结束后统一标记 Done。pi-acp 给每条持久化消息带 `_meta.piAcp.replay.key`；key 变化时强制新行，因此失败 assistant（空内容、无 chunk）两侧的 user 消息不会粘连。空的 user 消息也会保留一行，保证轮次计数。
 - pi 的失败轮次回放成居中的 `Turn failed: …` / `Turn aborted.` 系统行，不再从恢复后的历史里消失。
 - `agent_thought_chunk`（实时 `thinking_delta` 和历史回放都走这个类型）累积到当前助手行的 `Thought`，渲染为回答上方的「Thinking」折叠块，默认收起；只有推理没有正文的空行不会画出来。
+- 片段折叠：连续的思考块和工具卡片收进一行 `N 段思考 · M 个工具调用`（`RoleDetails`，计数条出现在该段第一条被折叠行的位置，点开按原顺序插回）；遇到 assistant 正文、系统提示、回合结尾或新 prompt 就断开并重新计数，所以默认只看到正文和最终总结。展开状态按该段首行 id 存在 `Chat.DetailsOpen`（内存，不落盘），相邻片段互不影响；没有 prompt 的前置行和子代理 transcript 保持原样（见 [toolcards.md](toolcards.md)）。
 
 ## 图片
 

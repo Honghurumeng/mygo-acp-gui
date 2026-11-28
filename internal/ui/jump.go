@@ -192,7 +192,7 @@ func (a *App) jumpDialog(c *mui.Context, chat *Chat) {
 							mutedText(c, "→", a.chatFont(10)).Shrink(0)
 						})
 						if item.Clicked() {
-							chat.list.ScrollTo(entry.row, mui.Start)
+							chat.list.ScrollTo(chat.rowOf(entry.msg), mui.Start)
 							chat.JumpOpen = false
 						}
 					}

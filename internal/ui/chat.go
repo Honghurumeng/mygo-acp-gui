@@ -132,6 +132,15 @@ type Chat struct {
 	Closed bool
 
 	turn *turnState
+	// DetailsOpen remembers which runs of thinking and tool rows are unfolded.
+	// The key is the run's first hidden row, so one turn can hold several runs
+	// and opening one leaves the others folded. A missing key stays folded, so
+	// the conversation reads as body text plus the final summary.
+	DetailsOpen map[int]*bool
+	// rows is the folded conversation the last build drew. The jump list uses
+	// it to find the row a message occupies, since folding hides rows and
+	// shifts every index below them.
+	rows []*Message
 	list mui.ListState
 	// jumpScroll keeps the place of the jump-to-message list. It opens at
 	// its end so the newest prompt shows first.
@@ -177,6 +186,36 @@ func (c *Chat) subagent(sessionID string) *Subagent {
 		return nil
 	}
 	return c.Subagents[sessionID]
+}
+
+// detailsOpen returns the fold state of the run that starts at the given
+// hidden row, creating it collapsed. Callers get a stable pointer, so MyGo's
+// disclosure can toggle it in place.
+func (c *Chat) detailsOpen(key int) *bool {
+	if c.DetailsOpen == nil {
+		c.DetailsOpen = make(map[int]*bool)
+	}
+	open := c.DetailsOpen[key]
+	if open == nil {
+		folded := false
+		open = &folded
+		c.DetailsOpen[key] = open
+	}
+	return open
+}
+
+// rowOf returns the index a message takes in the folded conversation, or 0
+// when it is not drawn (a folded row or a stale message).
+func (c *Chat) rowOf(message *Message) int {
+	if c == nil {
+		return 0
+	}
+	for i, row := range c.rows {
+		if row == message {
+			return i
+		}
+	}
+	return 0
 }
 
 // canCloseProcess reports whether the row's Close process action applies: a

@@ -100,6 +100,9 @@ const (
 	// session. Its transcript rows keep their normal roles and use SubagentID
 	// so they remain searchable and replayable in the parent chat.
 	RoleSubagent
+	// RoleDetails is the synthetic one-line row that folds a run of thinking
+	// and tool calls. It is built at draw time, never stored in Chat.Messages.
+	RoleDetails
 )
 
 // Message is one row in the chat list.
@@ -160,6 +163,16 @@ type Message struct {
 	// Elapsed is the runtime shown in a RoleTurn summary row. It is kept as
 	// a duration rather than text so the label can be formatted at draw time.
 	Elapsed time.Duration
+	// GroupKey, GroupThoughts and GroupTools describe a RoleDetails row: the
+	// turn it folds (the key into Chat.DetailsOpen) and the counts its label
+	// shows.
+	GroupKey      int
+	GroupThoughts int
+	GroupTools    int
+	// hideThought is set on a reply while its turn is folded, so the body
+	// stays visible without the thinking block above it. It is draw state,
+	// rebuilt every frame from Chat.DetailsOpen.
+	hideThought bool
 }
 
 // Attachment is an image attached to a prompt.
@@ -867,6 +880,7 @@ func (a *App) View(c *mui.Context) {
 	var rows []*Message
 	if chat != nil {
 		rows = conversationRows(chat)
+		chat.rows = rows
 		chat.list.Key = func(i int) any { return rows[i].ID }
 		chat.list.FollowEnd = true
 		chat.list.FollowAnimation = &mui.Smooth
@@ -1199,7 +1213,148 @@ func conversationRows(chat *Chat) []*Message {
 		}
 		rows = append(rows, message)
 	}
-	return rows
+	return foldTurnDetails(chat, rows)
+}
+
+// foldTurnDetails replaces each run of thinking and tool rows with one
+// summary row, so a reply reads as body text plus the final summary until the
+// user opens the details. A run ends where the conversation shows something
+// else — a reply's body text, a notice, the runtime caption or the next
+// prompt — so the counts row always sits next to the work it hides instead of
+// summarizing a whole turn. Rows before the first prompt (startup notices,
+// replay fragments) and child-session transcripts keep their flat shape, since
+// those are already behind their own collapse and their order is decided by
+// the subagent card.
+func foldTurnDetails(chat *Chat, rows []*Message) []*Message {
+	if chat == nil {
+		return rows
+	}
+	out := make([]*Message, 0, len(rows)+4)
+	var (
+		key       int // first hidden row's id, 0 while no run is open
+		thoughts  int
+		tools     int
+		firstHide = -1 // where the run starts in out, -1 while none is open
+		open      bool
+		started   bool // a prompt has been seen
+	)
+	// flush inserts the run's details row where its first folded row was, so
+	// the label sits at the point in the conversation the rows it hides had.
+	flush := func() {
+		if key == 0 || firstHide < 0 {
+			return
+		}
+		header := &Message{
+			ID:            -key - 1,
+			Role:          RoleDetails,
+			Done:          true,
+			GroupKey:      key,
+			GroupThoughts: thoughts,
+			GroupTools:    tools,
+		}
+		out = append(out, nil)
+		copy(out[firstHide+1:], out[firstHide:])
+		out[firstHide] = header
+		key, thoughts, tools, firstHide = 0, 0, 0, -1
+	}
+	start := func(message *Message) {
+		if key != 0 {
+			return
+		}
+		key, firstHide = message.ID, len(out)
+		open = *chat.detailsOpen(key)
+	}
+	for _, message := range rows {
+		if message == nil {
+			continue
+		}
+		if message.Role == RoleUser && message.SubagentID == "" {
+			flush()
+			started = true
+			out = append(out, message)
+			continue
+		}
+		if !started || message.SubagentID != "" {
+			out = append(out, message)
+			continue
+		}
+		switch {
+		case message.Role == RoleTool && message.ToolKind == "think":
+			start(message)
+			thoughts++
+			if open {
+				out = append(out, message)
+			}
+		case message.Role == RoleTool:
+			start(message)
+			tools++
+			if open {
+				out = append(out, message)
+			}
+		case message.Role == RoleAssistant && message.Thought != "":
+			start(message)
+			thoughts++
+			message.hideThought = !open
+			if open || message.Text != "" {
+				out = append(out, message)
+			}
+			// A reply with body text is a visible row, so the run ends above
+			// it and later work starts a new counts row.
+			if message.Text != "" {
+				flush()
+			}
+		default:
+			flush()
+			out = append(out, message)
+		}
+	}
+	flush()
+	return out
+}
+
+// detailsLabel is the count line of a folded run, for example
+// "2 thoughts · 5 tool calls". Only the counters that exist are named.
+func detailsLabel(thoughts, tools int) string {
+	parts := make([]string, 0, 2)
+	if thoughts > 0 {
+		if thoughts == 1 {
+			parts = append(parts, T("1 thought"))
+		} else {
+			parts = append(parts, Tf("%d thoughts", thoughts))
+		}
+	}
+	if tools > 0 {
+		if tools == 1 {
+			parts = append(parts, T("1 tool call"))
+		} else {
+			parts = append(parts, Tf("%d tool calls", tools))
+		}
+	}
+	return strings.Join(parts, " · ")
+}
+
+// detailsRow is the disclosure that stands in for one run of thinking and
+// tool rows. Clicking it inserts those rows under the same line; the body
+// text and the final summary never move.
+func (a *App) detailsRow(c *mui.Context, chat *Chat, m *Message) {
+	t := c.Theme()
+	open := chat.detailsOpen(m.GroupKey)
+	label := detailsLabel(m.GroupThoughts, m.GroupTools)
+	parts := mui.CollapsibleBase(c, open)
+	trigger := parts.Trigger.FillWidth().MaxWidth(chatMaxWidth).Gap(8).AlignItems(mui.Center).
+		Padding(4, 8).Radius(8).Label(Tf("Toggle thinking and tool details: %s", label))
+	if trigger.Hovered() {
+		trigger.Background(t.SurfaceHover)
+	}
+	trigger.Children(func() {
+		mui.Icon(c, sparklesIcon).Size(13, 13).Shrink(0).TextColor(t.TextMuted)
+		mutedText(c, label, a.chatFont(11)).SingleLine().Grow(1).MinWidth(0)
+		mark := "▸"
+		if *open {
+			mark = "▾"
+		}
+		mutedText(c, mark, a.chatFont(10)).Shrink(0)
+	})
 }
 
 func (a *App) message(c *mui.Context, chat *Chat, m *Message) {
@@ -1224,7 +1379,7 @@ func (a *App) message(c *mui.Context, chat *Chat, m *Message) {
 	case RoleAssistant:
 		mui.Column(c).MaxWidth(chatMaxWidth).Children(func() {
 			a.subagentLabel(c, m)
-			if m.Thought != "" {
+			if m.Thought != "" && !m.hideThought {
 				mui.Collapsible(c, T("Thinking"), &m.ShowThought, func() {
 					mutedText(c, m.Thought, a.chatFont(12)).Selectable()
 				})
@@ -1244,6 +1399,8 @@ func (a *App) message(c *mui.Context, chat *Chat, m *Message) {
 		})
 	case RoleTool:
 		a.toolMessage(c, m)
+	case RoleDetails:
+		a.detailsRow(c, chat, m)
 	case RoleSubagent:
 		a.subagentMessage(c, chat, m)
 	case RoleError:

@@ -214,7 +214,7 @@ func TestJumpButtonOpensHistoryAndScrollsToMessage(t *testing.T) {
 		t.Error("jump dialog stayed open")
 	}
 	first, last := chat.list.Visible()
-	if first != oldestEntry.row {
-		t.Errorf("first visible row = %d, want the jumped-to row %d (last %d)", first, oldestEntry.row, last)
+	if want := chat.rowOf(oldestEntry.msg); first != want {
+		t.Errorf("first visible row = %d, want the jumped-to row %d (last %d)", first, want, last)
 	}
 }
