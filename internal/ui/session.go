@@ -491,6 +491,7 @@ func (a *App) connectChat(chat *Chat) {
 	action := chat.pendingSessionAction
 	sessionID := chat.pendingSessionID
 	title := chat.pendingSessionTitle
+	wake := chat.pendingSessionWake
 	pendingConfig := chat.draftConfig()
 	pendingMode := chat.draftMode()
 	chat.clearPendingSession()
@@ -562,9 +563,10 @@ func (a *App) connectChat(chat *Chat) {
 		if !a.trackSession(s) {
 			return
 		}
-		if action != "load" {
+		if action != "load" || wake {
 			// A loaded session keeps the config it was saved with; draft picks
-			// belong to new conversations.
+			// belong to new conversations. A sleeping chat is the exception:
+			// configuration changed while it slept is re-applied on wake.
 			a.applyDraftConfig(ctx, s, spec.ID, pendingConfig)
 			a.applyDraftMode(ctx, s, spec.ID, pendingMode)
 		}
@@ -636,8 +638,14 @@ func (a *App) connectChat(chat *Chat) {
 				a.Post(func() { a.finishReplay(chat) })
 			}
 			if pendingSend {
-				chat.pendingSend = false
-				a.sendChat(chat)
+				if chat.replaying {
+					// The prompt must not interleave with the replayed history;
+					// finishReplay sends it once the transcript is complete.
+					chat.pendingSend = true
+				} else {
+					chat.pendingSend = false
+					a.sendChat(chat)
+				}
 			}
 		})
 	}()
@@ -733,14 +741,16 @@ func (a *App) setAgentStatus(id, status, detail string) {
 	}
 }
 
-// Disconnect closes the active chat's process but keeps its tab as a draft.
+// Disconnect closes the active chat's process and keeps its tab as a fresh
+// draft. The header uses it to cancel a connect; a running conversation is
+// stopped through the Force stop dialog, which keeps its transcript.
 func (a *App) Disconnect() {
 	a.disconnectChat(a.activeChat())
 }
 
-// disconnectChat closes one chat's process but keeps its tab as a draft, so
-// closing a background chat does not touch the active one. The session stays
-// in the archive and reappears as a saved row.
+// disconnectChat closes one chat's process and resets the tab to a fresh
+// draft. It backs Cancel while connecting; a running process goes through
+// Force stop instead.
 func (a *App) disconnectChat(chat *Chat) {
 	if chat == nil || chat.Closed || chat.taskActive {
 		return
@@ -834,6 +844,7 @@ func (a *App) sendChat(chat *Chat) bool {
 	if chat == nil {
 		return false
 	}
+	chat.markActive()
 	taskPrompt := chat.taskActive && a.TaskRun.Active && a.TaskRun.Chat == chat
 	if taskPrompt {
 		if !chat.canSubmit() {
@@ -850,8 +861,15 @@ func (a *App) sendChat(chat *Chat) bool {
 	}
 	if chat.Session == nil {
 		// The first message connects the draft and is then sent by the
-		// successful connect callback.
+		// successful connect callback. A sleeping conversation resumes its
+		// saved ACP session instead of creating a new one.
 		if !chat.Connecting {
+			if chat.sleeping() {
+				chat.pendingSessionID = chat.Info.SessionID
+				chat.pendingSessionAction = "load"
+				chat.pendingSessionTitle = chat.Title
+				chat.pendingSessionWake = true
+			}
 			chat.pendingSend = true
 			a.connectChat(chat)
 		}
@@ -1199,6 +1217,12 @@ func (a *App) finishReplay(chat *Chat) {
 	chat.turn = nil
 	chat.replaying = false
 	chat.replayKey = ""
+	// A prompt typed while the chat was asleep wakes it: finishReplay sends
+	// it now, after session/load has replayed the old transcript.
+	if chat.pendingSend && chat.Session != nil {
+		chat.pendingSend = false
+		a.sendChat(chat)
+	}
 }
 
 func (a *App) applyUpdate(chat *Chat, ev session.Event) {
@@ -1208,6 +1232,7 @@ func (a *App) applyUpdate(chat *Chat, ev session.Event) {
 	if chat.Info.SessionID == "" && chat.Busy == "" {
 		return
 	}
+	chat.markActive()
 	if chat != a.activeChat() {
 		chat.Unread = true
 		a.updateDockBadge()
@@ -1896,6 +1921,7 @@ func (a *App) applyPromptResult(chat *Chat, turn *turnState, res acp.PromptResul
 	if chat == nil || chat.Session == nil || chat.turn != turn {
 		return
 	}
+	chat.markActive()
 	elapsed := a.finishTurnRuntime(chat, turn)
 	if turn.assistant != nil {
 		turn.assistant.Done = true

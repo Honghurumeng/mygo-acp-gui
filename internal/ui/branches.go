@@ -278,7 +278,7 @@ func (a *App) gitBranchChip(c *mui.Context, chat *Chat) {
 	if branch == "" {
 		return
 	}
-	draft := chat.Session == nil && !chat.Connecting && chat.Busy == "" && !chat.taskActive
+	draft := chat.Session == nil && !chat.Connecting && chat.Busy == "" && !chat.taskActive && !chat.sleeping()
 	chip := a.composerControl(chipBase(c)).Label(Tf("Git branch: %s", branch))
 	chip.Children(func() {
 		mui.Text(c, "⑂ "+truncate(branch, 24)).FontSize(a.composerFont(9)).SingleLine()

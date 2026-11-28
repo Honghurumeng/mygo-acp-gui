@@ -440,7 +440,7 @@ func (a *App) openSavedSession(item savedSession) {
 
 	chat := a.activeChat()
 	reuse := chat != nil && !chat.Connecting && chat.Agent.ID == spec.ID
-	if reuse && chat.Session != nil && (len(chat.Messages) > 0 || chat.Streaming || chat.Busy != "") {
+	if reuse && (len(chat.Messages) > 0 || chat.Streaming || chat.Busy != "") {
 		reuse = false
 	}
 	// An agent process is bound to the workspace it was started in;

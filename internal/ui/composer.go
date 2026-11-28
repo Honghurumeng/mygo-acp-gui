@@ -229,9 +229,11 @@ func (a *App) chatModes(chat *Chat) ([]acp.Mode, string) {
 	}
 	modes := chat.Info.Modes
 	current := chat.Info.CurrentModeID
-	if cached := a.AgentModes[chat.Agent.ID]; len(cached.Modes) > 0 {
-		modes = cached.Modes
-		current = cached.CurrentModeID
+	if !chat.sleeping() {
+		if cached := a.AgentModes[chat.Agent.ID]; len(cached.Modes) > 0 {
+			modes = cached.Modes
+			current = cached.CurrentModeID
+		}
 	}
 	if chat.PendingMode != "" {
 		for _, mode := range modes {
@@ -326,7 +328,7 @@ func (a *App) modelPanel(c *mui.Context, chat *Chat) {
 				a.composerCaption(inner, T("No agents"))
 				return
 			}
-			agentLocked := chat.taskActive || chat.Session != nil || chat.Connecting
+			agentLocked := chat.taskActive || chat.Connecting || chat.Session != nil || chat.sleeping()
 			for i, spec := range a.Agents {
 				i, spec := i, spec
 				selected := spec.ID == chat.Agent.ID
@@ -642,6 +644,11 @@ func (a *App) chatConfigOptions(chat *Chat) []acp.ConfigOption {
 		return chat.Info.ConfigOptions
 	}
 	cached := a.AgentConfigs[chat.Agent.ID]
+	if chat.sleeping() || len(cached) == 0 {
+		// A sleeping chat still has a real session, so its own last config is
+		// authoritative; the agent cache may belong to another chat.
+		cached = chat.Info.ConfigOptions
+	}
 	if len(cached) == 0 {
 		return chat.Info.ConfigOptions
 	}

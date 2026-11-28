@@ -346,6 +346,11 @@ type App struct {
 	RenameSessionID string
 	RenameText      string
 
+	// ForceStopChat owns the confirmation dialog for stopping an agent
+	// process by hand, opened from a conversation's row.
+	ForceStopOpen bool
+	ForceStopChat *Chat
+
 	// SettingsOpen shows the settings panel. SettingsSection is the selected
 	// category in its left column.
 	SettingsOpen    bool
@@ -648,6 +653,7 @@ func New(opts Options) *App {
 	for _, workspace := range collapsed {
 		a.WorkspaceCollapsed[workspace] = true
 	}
+	a.startIdleSleeper()
 	return a
 }
 
@@ -914,6 +920,7 @@ func (a *App) View(c *mui.Context) {
 	a.permissionDialog(c)
 	a.settingsDialog(c)
 	a.renameDialog(c)
+	a.forceStopDialog(c)
 	a.taskEditorDialog(c)
 	a.taskDeleteDialog(c)
 	a.fileCreateDialog(c)

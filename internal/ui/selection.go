@@ -40,6 +40,20 @@ func (a *App) rememberSelection(chat *Chat) {
 	if chat.Session != nil {
 		selection.ConfigOptions = selectionFromOptions(chat.Info.ConfigOptions)
 		selection.Mode = chat.Info.CurrentModeID
+	} else if chat.sleeping() {
+		// A sleeping chat still owns a saved session: keep its config and
+		// apply only the picks made while the process was closed.
+		selection.ConfigOptions = selectionFromOptions(chat.Info.ConfigOptions)
+		for id, value := range chat.PendingConfig {
+			if selection.ConfigOptions == nil {
+				selection.ConfigOptions = make(map[string]string)
+			}
+			selection.ConfigOptions[id] = value
+		}
+		selection.Mode = chat.Info.CurrentModeID
+		if chat.PendingMode != "" {
+			selection.Mode = chat.PendingMode
+		}
 	} else {
 		if len(chat.PendingConfig) > 0 {
 			selection.ConfigOptions = make(map[string]string, len(chat.PendingConfig))

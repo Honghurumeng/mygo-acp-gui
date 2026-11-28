@@ -270,13 +270,18 @@ func TestCloseTabKeepsOtherChats(t *testing.T) {
 	}
 }
 
-func TestCloseProcessFromSidebarKeepsTab(t *testing.T) {
+func TestForceStopFromSidebarKeepsTranscript(t *testing.T) {
 	app, tt := newFakeApp(t)
 	first := connectTab(t, app, tt)
 	second := newTab(t, app, tt)
 	second = connectTab(t, app, tt)
-	if !second.canCloseProcess() {
-		t.Fatal("connected chat cannot close its process")
+	sendTo(t, app, tt, second, "keep me")
+	waitFor(t, app, tt, func() bool {
+		return !second.Streaming && second.Busy == "" && chatAssistantHas(second, "收到：keep me")
+	})
+	sessionID := second.Info.SessionID
+	if !second.canForceStop() {
+		t.Fatal("connected chat cannot force stop")
 	}
 
 	tt.Frame()
@@ -284,34 +289,47 @@ func TestCloseProcessFromSidebarKeepsTab(t *testing.T) {
 		t.Fatal(err)
 	}
 	tt.Frame()
-	if !tt.HasText("Close process") {
-		t.Fatalf("conversation menu missing Close process; texts: %q", tt.Texts())
+	if !tt.HasText("Force stop") {
+		t.Fatalf("conversation menu missing Force stop; texts: %q", tt.Texts())
 	}
-	if err := tt.Click("Close process"); err != nil {
+	if err := tt.Click("Force stop"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if !tt.HasText("Force stop this agent process?") {
+		t.Fatalf("force stop confirmation missing; texts: %q", tt.Texts())
+	}
+	if err := tt.Click("Force stop"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, app, tt, func() bool {
-		return second.Session == nil && !second.Connected && !second.canCloseProcess()
+		return second.Session == nil && !second.Connected && second.sleeping()
 	})
+	if second.Info.SessionID != sessionID {
+		t.Fatalf("force stop lost the session id: %q, want %q", second.Info.SessionID, sessionID)
+	}
+	if !chatAssistantHas(second, "收到：keep me") {
+		t.Fatalf("force stop lost the transcript: %+v", second.Messages)
+	}
 	if len(app.Chats) != 2 || app.Chats[0] != first || app.Chats[1] != second {
-		t.Fatalf("chats after closing a process = %+v", app.Chats)
+		t.Fatalf("chats after force stop = %+v", app.Chats)
 	}
 	if first.Session == nil || !first.Connected {
-		t.Fatal("closing one process disconnected another chat")
+		t.Fatal("force stopping one chat disconnected another")
 	}
 	if app.activeChat() != second {
-		t.Fatal("closing a background process changed the active chat")
+		t.Fatal("force stopping a background chat changed the active chat")
 	}
 }
 
-func TestCloseProcessDisabledForDraft(t *testing.T) {
+func TestForceStopDisabledForDraft(t *testing.T) {
 	app, tt := newFakeApp(t)
 	chat := app.activeChat()
 	if chat == nil {
 		t.Fatal("no draft chat")
 	}
-	if chat.canCloseProcess() {
-		t.Fatal("draft without a process can close one")
+	if chat.canForceStop() {
+		t.Fatal("draft without a process can force stop")
 	}
 	chat.Title = "Draft title"
 	tt.Frame()
@@ -319,15 +337,15 @@ func TestCloseProcessDisabledForDraft(t *testing.T) {
 		t.Fatal(err)
 	}
 	tt.Frame()
-	if !tt.HasText("Close process") {
-		t.Fatalf("conversation menu missing Close process; texts: %q", tt.Texts())
+	if !tt.HasText("Force stop") {
+		t.Fatalf("conversation menu missing Force stop; texts: %q", tt.Texts())
 	}
 	// The disabled item takes no press, so the draft keeps its state.
-	if err := tt.Click("Close process"); err == nil {
+	if err := tt.Click("Force stop"); err == nil {
 		tt.Frame()
 	}
 	if chat.Title != "Draft title" || chat.Closed || len(app.Chats) != 1 || app.activeChat() != chat {
-		t.Fatal("disabled Close process changed the draft")
+		t.Fatal("disabled Force stop changed the draft")
 	}
 }
 
@@ -406,7 +424,7 @@ func TestPermissionQueueKeepsChatsSeparate(t *testing.T) {
 	})
 }
 
-func TestCloseProcessLeavesFreshDraft(t *testing.T) {
+func TestDisconnectLeavesFreshDraft(t *testing.T) {
 	app, tt := newFakeApp(t)
 	chat := connectTab(t, app, tt)
 	chat.Title = "Older conversation"
@@ -467,5 +485,39 @@ func TestNewConversationKeepsDraftWithInput(t *testing.T) {
 	}
 	if draft.Input != "not sent yet" {
 		t.Fatalf("draft input = %q", draft.Input)
+	}
+}
+
+func TestForceStopInterruptsStreamingTurn(t *testing.T) {
+	app, tt := newFakeApp(t)
+	chat := connectTab(t, app, tt)
+	chat.Input = "/slow keep streaming"
+	tt.Frame()
+	if err := tt.Click("Send"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool { return chat.Streaming })
+
+	app.openForceStop(chat)
+	if !app.ForceStopOpen || app.ForceStopChat != chat {
+		t.Fatal("force stop dialog did not open")
+	}
+	app.confirmForceStop()
+	waitFor(t, app, tt, func() bool {
+		return chat.Session == nil && !chat.Connected && !chat.Streaming
+	})
+	if !chat.sleeping() {
+		t.Fatal("force stopped streaming chat is not sleeping")
+	}
+	if !hasRoleText(app, RoleSystem, "Stopped by user.") {
+		t.Fatalf("force stop notice missing; messages: %+v", chat.Messages)
+	}
+	for _, message := range chat.Messages {
+		if message.Role == RoleAssistant && !message.Done {
+			t.Fatal("interrupted assistant row is still streaming")
+		}
+	}
+	if chat.Info.SessionID == "" {
+		t.Fatal("force stop lost the session id")
 	}
 }

@@ -316,6 +316,11 @@ func (a *App) conversationRow(c *mui.Context, chat *Chat) {
 			Background(background).
 			Draw(func(p *mui.Painter, r mui.Rect) { chatRowOverlay(p, r, state) })
 		button.Children(func() {
+			if chat.sleeping() {
+				// Same quiet marker as saved sessions: the process is not
+				// running, but the tab keeps its transcript until the next prompt.
+				mutedText(c, "◷", a.workspaceFont(9))
+			}
 			agentBadge(c, chat.Agent.ID, 11)
 			mui.Text(c, chat.name()).FontSize(a.workspaceFont(11)).Grow(1).MinWidth(0).SingleLine()
 		})
@@ -333,11 +338,11 @@ func (a *App) conversationRow(c *mui.Context, chat *Chat) {
 					chat.MenuOpen = false
 					a.openRename(chat)
 				}
-				closeProcess := quietButton(c, T("Close process")).FillWidth().FontSize(a.workspaceFont(11))
-				closeProcess.Disabled(!chat.canCloseProcess())
-				if closeProcess.Clicked() {
+				forceStop := quietButton(c, T("Force stop")).FillWidth().FontSize(a.workspaceFont(11))
+				forceStop.Disabled(!chat.canForceStop())
+				if forceStop.Clicked() {
 					chat.MenuOpen = false
-					a.disconnectChat(chat)
+					a.openForceStop(chat)
 				}
 				if quietButton(c, T("Delete")).FillWidth().FontSize(a.workspaceFont(11)).TextColor(t.Danger).Clicked() {
 					chat.MenuOpen = false

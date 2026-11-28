@@ -27,6 +27,10 @@ type Chat struct {
 	// createdAt orders sidebar rows together with the archived session's
 	// last activity, so a new conversation starts at the top of its group.
 	createdAt time.Time
+	// lastActiveAt is the last prompt, agent update or selection. The idle
+	// sleeper closes the agent process when it gets old; the transcript and
+	// session id stay, so the next prompt resumes with session/load.
+	lastActiveAt time.Time
 
 	Session        *session.Session
 	Info           session.Info
@@ -123,7 +127,11 @@ type Chat struct {
 	pendingSessionID     string
 	pendingSessionAction string
 	pendingSessionTitle  string
-	replaying            bool
+	// pendingSessionWake marks a load that resumes a sleeping conversation,
+	// not a saved session opened in a new tab. Only a wake re-applies the
+	// config and mode the user picked while the process was closed.
+	pendingSessionWake bool
+	replaying          bool
 	// replayKey is the persisted message the current replay chunks belong
 	// to. pi-acp tags each chunk, so a new key starts a new row even when
 	// the preceding message produced no visible chunk (a failed turn).
@@ -218,10 +226,25 @@ func (c *Chat) rowOf(message *Message) int {
 	return 0
 }
 
-// canCloseProcess reports whether the row's Close process action applies: a
+// canForceStop reports whether the row's Force stop action applies: a
 // process is running or starting, and no task runner owns the chat.
-func (c *Chat) canCloseProcess() bool {
+func (c *Chat) canForceStop() bool {
 	return c != nil && !c.Closed && !c.taskActive && c.live()
+}
+
+// sleeping reports whether the chat kept its transcript and ACP session id
+// but its agent process is closed. Idle hibernation uses this state; sending
+// the next prompt resumes the session with session/load.
+func (c *Chat) sleeping() bool {
+	return c != nil && !c.Closed && c.Session == nil && !c.Connecting &&
+		strings.TrimSpace(c.Info.SessionID) != ""
+}
+
+// markActive records user or agent activity for the idle sleeper.
+func (c *Chat) markActive() {
+	if c != nil {
+		c.lastActiveAt = time.Now()
+	}
 }
 
 // emptyDraft reports whether the chat is an unused new conversation: no
@@ -311,6 +334,7 @@ func (c *Chat) clearPendingSession() {
 	c.pendingSessionID = ""
 	c.pendingSessionAction = ""
 	c.pendingSessionTitle = ""
+	c.pendingSessionWake = false
 }
 
 // beginConnect cancels any older connect and returns a context whose
@@ -466,6 +490,7 @@ func (a *App) newChatTabIn(workspace string) *Chat {
 		ID:             a.nextChatID(),
 		Workspace:      workspace,
 		createdAt:      time.Now(),
+		lastActiveAt:   time.Now(),
 		ComposerHeight: defaultComposerHeight,
 		composerCaret:  -1,
 	}
@@ -545,6 +570,7 @@ func (a *App) selectChat(chat *Chat) {
 	a.Workspace = chat.Workspace
 	a.ensureWorkspace(chat.Workspace)
 	a.WorkspaceCollapsed[chat.Workspace] = false
+	chat.markActive()
 	a.persistSettings()
 	a.showNextPermission()
 	a.updateDockBadge()
