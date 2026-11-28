@@ -19,12 +19,12 @@ const (
 	// gitListGutter is the room both lists keep at the panel's right edge
 	// for their overlay scroll bars: their scroll boxes run to that edge, so
 	// the bars line up in one column, and their rows stop short of it.
-	gitListGutter           = 12
-	defaultGitChangesHeight = 260
-	gitStatusTimeout        = 10 * time.Second
-	gitCommitTimeout        = 30 * time.Second
-	gitNetworkTimeout       = 60 * time.Second
-	gitActionTimeout        = 15 * time.Second
+	gitListGutter       = 12
+	defaultGitTopHeight = 334
+	gitStatusTimeout    = 10 * time.Second
+	gitCommitTimeout    = 30 * time.Second
+	gitNetworkTimeout   = 60 * time.Second
+	gitActionTimeout    = 15 * time.Second
 )
 
 // gitPanelState is the UI-thread copy of the active workspace's repository.
@@ -81,9 +81,13 @@ type gitPanelState struct {
 	CommitStatErr  string
 	CommitStatGen  int
 
-	Message       string
-	ChangesHeight float32
-	Gen           int
+	Message string
+	// TopHeight is the upper half of the history split: the commit box, the
+	// feedback line and the changes list. The divider sits at its bottom, so
+	// a taller message box or a notice only shortens the list instead of
+	// moving the divider and the graph with it.
+	TopHeight float32
+	Gen       int
 
 	// BranchPicker is the local branch list behind the header's branch line.
 	BranchPicker branchPickerState
@@ -133,11 +137,11 @@ func (a *App) activeGitWorkspace() string {
 func (a *App) ensureGitPanel() {
 	workspace := a.activeGitWorkspace()
 	if a.Git.Workspace != workspace {
-		height := a.Git.ChangesHeight
+		height := a.Git.TopHeight
 		if height <= 0 {
-			height = defaultGitChangesHeight
+			height = defaultGitTopHeight
 		}
-		a.Git = gitPanelState{Workspace: workspace, ChangesHeight: height}
+		a.Git = gitPanelState{Workspace: workspace, TopHeight: height}
 	}
 	if workspace == "" || !filepath.IsAbs(workspace) {
 		a.Git.Checked = true
@@ -618,8 +622,6 @@ func (a *App) gitPanelBody(c *mui.Context) {
 		}
 		return
 	}
-	a.gitCommitBox(c)
-	a.gitFeedback(c)
 	a.gitHistorySplit(c)
 }
 
@@ -728,8 +730,15 @@ func (a *App) gitFeedback(c *mui.Context) {
 	})
 }
 
+// gitHistorySplit lays the changes list over the graph. The commit box and the
+// feedback line go inside the split's first pane rather than above the split:
+// a message box that grows as the message is typed, or a notice that appears
+// after a commit and goes away on a refresh, then only takes room from the
+// changes list, and the divider the user dragged stays where it is.
 func (a *App) gitHistorySplit(c *mui.Context) {
-	mui.SplitVertical(c, &a.Git.ChangesHeight, func() {
+	mui.SplitVertical(c, &a.Git.TopHeight, func() {
+		a.gitCommitBox(c)
+		a.gitFeedback(c)
 		a.gitChanges(c)
 	}, func() {
 		a.gitGraph(c)
@@ -740,8 +749,10 @@ func (a *App) gitChanges(c *mui.Context) {
 	staged := a.Git.Staged
 	changes := a.Git.Changes
 	// The scroll box runs to the panel's right edge, so this list's overlay
-	// scroll bar sits in the same column as the history list's below.
-	mui.Column(c).FillHeight().Padding(6, 0, 4, gitListGutter).Children(func() {
+	// scroll bar sits in the same column as the history list's below. Grow
+	// takes what the commit box and the feedback line above leave in the
+	// split's first pane, and gives way to the message box when it grows.
+	mui.Column(c).Grow(1).Padding(6, 0, 4, gitListGutter).Children(func() {
 		mui.Scroll(c).Grow(1).Children(func() {
 			// Leave room for the overlay scrollbar so it never covers the
 			// stage/unstage button of a row.

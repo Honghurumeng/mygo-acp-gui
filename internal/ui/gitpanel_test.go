@@ -222,6 +222,69 @@ func TestGitPanelStagesAndCommits(t *testing.T) {
 	}
 }
 
+func TestGitHistoryDividerStaysWhenTopContentChanges(t *testing.T) {
+	workspace := initGitPanelRepo(t)
+	writeGitPanelFile(t, workspace, "hello.txt", "hello\n")
+	app, tt := newGitPanelApp(t, workspace)
+	waitFor(t, app, tt, func() bool {
+		return app.Git.Checked && !app.Git.Loading && len(app.Git.Changes) == 1
+	})
+
+	// The divider the user drags sits between the changes list and the graph.
+	// The commit box and the feedback line above the list are inside the same
+	// pane, so a message box that grows with a multi-line message, or a notice
+	// a commit leaves behind (and a refresh clears), must not move it: only
+	// the list gives way.
+	divider := func() float32 {
+		t.Helper()
+		tt.Frame()
+		info, ok := tt.AccessByRole(mui.RoleSplitter, "")
+		if !ok {
+			t.Fatalf("no divider; texts: %q", tt.Texts())
+		}
+		return info.Bounds.Y
+	}
+	row := func(label string) float32 {
+		t.Helper()
+		r, ok := tt.Find(label)
+		if !ok {
+			t.Fatalf("no %q row; texts: %q", label, tt.Texts())
+		}
+		return r.Y
+	}
+
+	y0 := divider()
+	staged0, fetch0 := row("Staged"), row("Fetch")
+
+	app.Git.Message = "subject\n\nbody line one\nbody line two\nbody line three"
+	if y := divider(); y != y0 {
+		t.Errorf("divider moved to %v from %v when the message box grew", y, y0)
+	}
+	if y := row("Fetch"); y != fetch0 {
+		t.Errorf("graph moved to %v from %v when the message box grew", y, fetch0)
+	}
+	if y := row("Staged"); y <= staged0 {
+		t.Errorf("changes list did not give way to the grown message box: Staged at %v, was %v", y, staged0)
+	}
+
+	app.Git.Message = ""
+	app.Git.Notice = "Committed."
+	if y := divider(); y != y0 {
+		t.Errorf("divider moved to %v from %v when the notice showed", y, y0)
+	}
+	if y := row("Fetch"); y != fetch0 {
+		t.Errorf("graph moved to %v from %v when the notice showed", y, fetch0)
+	}
+
+	app.Git.Notice = ""
+	if y := divider(); y != y0 {
+		t.Errorf("divider moved to %v from %v when the notice cleared", y, y0)
+	}
+	if y := row("Staged"); y != staged0 {
+		t.Errorf("changes list at %v after the notice cleared, was %v", y, staged0)
+	}
+}
+
 func TestGitPanelDiscardsAllChangesAfterConfirm(t *testing.T) {
 	workspace := initGitPanelRepo(t)
 	writeGitPanelFile(t, workspace, "hello.txt", "one\n")

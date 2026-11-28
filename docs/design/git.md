@@ -9,6 +9,7 @@
 - 初始打开。面板不被持久化，重启后恢复默认打开。
 - 有仓库时从上到下：带边框的 commit message 输入框、Commit 按钮、错误/成功提示、暂存/更改列表、Git 图表和功能按钮；输入框和按钮之间不再放常驻状态条。
   commit message 输入框的正文与 Staged/Changes 行同为 10 DIP 基准，只受 Git 面板字号设置缩放。
+  输入框随内容长到最多 4 行，提示行在出错或有 Notice 时出现；两者都在分割线的上半区之内，见下条。
 - 标题行右侧显示未提交统计：`N files` 加绿色 `+新增`、红色 `−删除`，零变化或读取中不显示。
   数字由 `git diff --numstat -z HEAD` 得到（首个提交前用空树 hash），未跟踪文件按整文件新增行数计入；
   二进制或超过 512 KB 的未跟踪文件只计文件数。统计是装饰性的，失败只清空数字，不阻塞面板。
@@ -16,7 +17,10 @@
   （tooltip 为 `N commits fetched; pull to merge`）；pull 或快进后 behind 归零，芯片消失。
   分支行只再追加 `↑N`（尚未推送的提交数）；这一行同时是分支选择器的入口。
 - 变更行可点：点文件名在 Git 面板左侧弹出 diff 卡片（见下节），右侧 `＋`/`－` 仍只做暂存/取消暂存。
-- 变更区域和图表区域用 `ui.SplitVertical` 分隔，可拖动调整高度，二者总高度不变。
+- 变更区域和图表区域用 `ui.SplitVertical` 分隔，可拖动调整高度，二者总高度不变。上半区（`TopHeight`，默认 334 DIP）
+  包含 commit 输入框、提示行和暂存/更改列表，而不只是列表：输入框长高、提交后出现 Notice、刷新后 Notice 消失时，
+  只让列表让位，分割线和图表都不动（否则提交/刷新会把分割线推上推下）。列表用 `Grow(1)` 吃上半区剩下的高度，
+  拖动到最小的 10 DIP 时输入框会被裁掉，把分割线拖回来即可恢复。
 - 状态区在 workspace 切换时立即清空并异步重读，避免显示上一个仓库的内容。
 
 ## 探测与提示
@@ -197,5 +201,5 @@ go test ./internal/git -v
 go test ./internal/ui -run 'TestGitPanel' -v -count=1
 ```
 
-`internal/git` 测试覆盖状态/重命名解析、分支头解析、init、stage/unstage（含 `UnstageAll` 和首提交前）、commit、首提交撤销、discard all（已暂存/未暂存/未跟踪/首提交前、忽略文件保留）、嵌套工作区，以及 diff 两侧（未暂存/已暂存/未跟踪/新增/删除/重命名、二进制与超大文件、越界路径）、提交日志解析（含 committer time、HEAD 标记）、refs 解析、fetch 未 pull 的 `Incoming` 标记与 pull 后清除、未 push 的 `Unpushed` 标记与 push 后清除（含无 upstream 回退与无 remote 不标记）、commit 文件列表与提交 diff 两侧（首提交/单文件/重命名/删除）、提交文件数与增删行数统计、merge 的 lane 分配与 8 lane 上限、父提交必须在子提交之后、本地分支读取/新建/切换（含 unborn 分支与非法名字）、`SwitchBranchCarryingChanges` 的干净/冲突恢复、新分支首次 `PushBranch` 自动设置 upstream、无 upstream 时 `PullBranch` 匹配同名远端分支；`TestFetchPullPushAndUnstageAll` 用临时 bare remote 跑通 Fetch/Pull/Push/UnstageAll；UI 测试覆盖无仓库提示与 init、无 git 提示、窗口获得焦点后刷新、一轮对话结束后刷新、Stage all + Commit 全链路、Fetch/Pull/Push/Undo/Unstage all 按钮与 notice、Discard all 确认/取消与位置（含确认时后台刷新进行中也不吞点击）、切 tab 不打断进行中的操作、共享卡片打开（位于 Git 面板左侧、面板仍可见、点外部关闭）、响应式布局（窄卡片
+`internal/git` 测试覆盖状态/重命名解析、分支头解析、init、stage/unstage（含 `UnstageAll` 和首提交前）、commit、首提交撤销、discard all（已暂存/未暂存/未跟踪/首提交前、忽略文件保留）、嵌套工作区，以及 diff 两侧（未暂存/已暂存/未跟踪/新增/删除/重命名、二进制与超大文件、越界路径）、提交日志解析（含 committer time、HEAD 标记）、refs 解析、fetch 未 pull 的 `Incoming` 标记与 pull 后清除、未 push 的 `Unpushed` 标记与 push 后清除（含无 upstream 回退与无 remote 不标记）、commit 文件列表与提交 diff 两侧（首提交/单文件/重命名/删除）、提交文件数与增删行数统计、merge 的 lane 分配与 8 lane 上限、父提交必须在子提交之后、本地分支读取/新建/切换（含 unborn 分支与非法名字）、`SwitchBranchCarryingChanges` 的干净/冲突恢复、新分支首次 `PushBranch` 自动设置 upstream、无 upstream 时 `PullBranch` 匹配同名远端分支；`TestFetchPullPushAndUnstageAll` 用临时 bare remote 跑通 Fetch/Pull/Push/UnstageAll；UI 测试覆盖无仓库提示与 init、无 git 提示、窗口获得焦点后刷新、一轮对话结束后刷新、Stage all + Commit 全链路、Fetch/Pull/Push/Undo/Unstage all 按钮与 notice、Discard all 确认/取消与位置（含确认时后台刷新进行中也不吞点击）、切 tab 不打断进行中的操作、分割线不随更长的 commit 输入框和出现/消失的提示行上下移动（列表让位）、共享卡片打开（位于 Git 面板左侧、面板仍可见、点外部关闭）、响应式布局（窄卡片
 Unified/宽卡片 Split、点阈值宽度）、未暂存文件编辑保存、暂存与历史只读、fetch 后 `↓N` 芯片与描边远端芯片、pull 后芯片和徽标消失、未推送提交的紫色圆点与 push 后恢复 lane 色，以及二进制报错、提交图渲染与窄面板裁剪、点击提交展开/收起文件列表、从展开列表打开提交 diff、hover 详情卡（位于图表左侧、无短 hash/父提交、含文件与行数统计）与复制 hash、提交右键创建分支（不切换、非法名留在对话框）、Git 标题行和 composer 草稿的分支选择器、切换失败时完整显示错误（含 `Aborting`）与 `Stash & switch` 三步说明、切换失败后列表仍可见、`Stash & switch` 携带本地修改切换（含冲突留 stash 的完整警告与 `git stash drop` 提示）、切换后面板/芯片刷新、新分支首次 Push 设置 upstream。

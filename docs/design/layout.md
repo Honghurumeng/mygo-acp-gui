@@ -55,7 +55,7 @@
   卡片不会压住面板；右栏仍是默认 300 DIP 时与旧公式完全一致（见 [viewer.md](viewer.md)）。
 - 侧栏滚动条轨道完整保留在侧栏内；对话左缘 6 DIP 内的滚轮不滚动消息列表（该条只有 padding，
   没有正文），其余面板的表头左留 12 DIP、列表右留 12 DIP 滚动条槽，热区只压在留白上。
-- 分栏拖动与 composer 高度拖动、Git 面板 `ui.SplitVertical` 的 Changes 高度拖动互不影响：各管一个方向。
+- 分栏拖动与 composer 高度拖动、Git 面板 `ui.SplitVertical` 的上半区高度拖动互不影响：各管一个方向。
 
 ## 测试
 

@@ -542,7 +542,7 @@ func New(opts Options) *App {
 		SidebarOpen:        true,
 		GitPanelOpen:       true,
 		RightTab:           rightTabGit,
-		Git:                gitPanelState{ChangesHeight: defaultGitChangesHeight},
+		Git:                gitPanelState{TopHeight: defaultGitTopHeight},
 		Files:              newFilePanelState(""),
 		MD:                 markdown.Options{},
 		sessions:           make(map[*session.Session]struct{}),
