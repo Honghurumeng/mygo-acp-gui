@@ -882,6 +882,9 @@ func (a *App) sendChat(chat *Chat) bool {
 	})
 	number := chat.userMessageCount()
 	a.recordUserTurnSent(chat, number, sentAt)
+	// Sending counts as activity: the row moves to the top of its workspace
+	// while the turn runs, not only after it finishes.
+	a.touchArchivedSession(chat)
 	assistant := a.addMessage(chat, &Message{
 		ID:   a.nextID(),
 		Role: RoleAssistant,

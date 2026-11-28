@@ -2,8 +2,10 @@ package ui
 
 import (
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	mui "github.com/egoist/mygo/ui"
 )
@@ -63,6 +65,44 @@ func (a *App) chatsInWorkspace(workspace string) []*Chat {
 		}
 	}
 	return chats
+}
+
+// workspaceRow is one entry of a workspace group: an open conversation or a
+// saved session that has no open tab.
+type workspaceRow struct {
+	chat  *Chat
+	saved *savedSession
+	at    time.Time
+}
+
+// workspaceRows merges open conversations and saved sessions into one list
+// ordered by last activity, newest first. A draft conversation uses its
+// creation time, so clicking ＋ puts it on top instead of below older rows.
+func (a *App) workspaceRows(workspace string) []workspaceRow {
+	chats := a.chatsInWorkspace(workspace)
+	rows := make([]workspaceRow, 0, len(chats))
+	for _, chat := range chats {
+		rows = append(rows, workspaceRow{chat: chat, at: a.chatActivityAt(chat)})
+	}
+	saved := a.savedSessionsFor(workspace)
+	for i := range saved {
+		rows = append(rows, workspaceRow{saved: &saved[i], at: savedUpdatedAt(saved[i].SessionSummary)})
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		if !rows[i].at.Equal(rows[j].at) {
+			return rows[i].at.After(rows[j].at)
+		}
+		switch {
+		case rows[i].chat != nil && rows[j].chat != nil:
+			// Same clock tick: the newer conversation has the larger ID.
+			return rows[i].chat.ID > rows[j].chat.ID
+		case rows[i].chat != nil, rows[j].chat != nil:
+			// Open conversations outrank saved history on a tie.
+			return rows[i].chat != nil
+		}
+		return false
+	})
+	return rows
 }
 
 func (a *App) sidebar(c *mui.Context) {
@@ -163,9 +203,8 @@ func (a *App) workspaceGroup(c *mui.Context, workspace string) {
 	if removed {
 		display = "[removed] " + label
 	}
-	chats := a.chatsInWorkspace(workspace)
-	saved := a.savedSessionsFor(workspace)
-	total := len(chats) + len(saved)
+	rows := a.workspaceRows(workspace)
+	total := len(rows)
 
 	mui.Row(c).Gap(2).AlignItems(mui.Center).Children(func() {
 		head := mui.ButtonBase(c).Grow(1).Gap(5).Padding(4, 8).Radius(8).
@@ -229,27 +268,28 @@ func (a *App) workspaceGroup(c *mui.Context, workspace string) {
 		return
 	}
 
-	chats = a.chatsInWorkspace(workspace)
-	saved = a.savedSessionsFor(workspace)
-	if len(chats) == 0 && len(saved) == 0 {
+	// The header's ＋ and menu can add or reopen rows while it is built, so
+	// rebuild the list before drawing it (as the old chats/saved split did).
+	rows = a.workspaceRows(workspace)
+	total = len(rows)
+	if total == 0 {
 		a.workspaceCaption(c, T("No conversations yet")).Padding(2, 16)
 		return
 	}
 
 	expanded := a.WorkspaceExpanded[workspace]
-	total = len(chats) + len(saved)
 	limit := total
 	if !expanded && limit > workspacePreviewLimit {
 		limit = workspacePreviewLimit
 	}
 	mui.Column(c).Gap(1).Padding(0, 0, 0, 12).Children(func() {
 		for i := 0; i < limit; i++ {
-			// Open conversations come first, then the workspace's saved
-			// history; the preview limit applies to the combined list.
-			if i < len(chats) {
-				a.conversationRow(c, chats[i])
+			// Rows are ordered by last activity; the preview limit applies to
+			// open conversations and saved history together.
+			if row := rows[i]; row.chat != nil {
+				a.conversationRow(c, row.chat)
 			} else {
-				a.savedSessionRow(c, saved[i-len(chats)])
+				a.savedSessionRow(c, *row.saved)
 			}
 		}
 		if total > workspacePreviewLimit {

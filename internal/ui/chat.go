@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 
 	mui "github.com/egoist/mygo/ui"
 	"github.com/reed/acp-gui/internal/acp"
@@ -23,6 +24,9 @@ type Chat struct {
 	Agent agent.LaunchSpec
 
 	Workspace string
+	// createdAt orders sidebar rows together with the archived session's
+	// last activity, so a new conversation starts at the top of its group.
+	createdAt time.Time
 
 	Session        *session.Session
 	Info           session.Info
@@ -399,6 +403,7 @@ func (a *App) newChatTabIn(workspace string) *Chat {
 	chat := &Chat{
 		ID:             a.nextChatID(),
 		Workspace:      workspace,
+		createdAt:      time.Now(),
 		ComposerHeight: defaultComposerHeight,
 		composerCaret:  -1,
 	}

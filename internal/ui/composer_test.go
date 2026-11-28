@@ -203,16 +203,24 @@ func TestWorkspaceConversationPreviewAndCollapse(t *testing.T) {
 	app.selectChat(app.Chats[0])
 	tt.Frame()
 
-	for i := 2; i <= 5; i++ {
+	// Newest activity first: the preview keeps the five newest conversations
+	// and hides the oldest open one together with the saved history.
+	for i := 2; i <= 6; i++ {
 		if !tt.HasText(fmt.Sprintf("Conversation %d", i)) {
 			t.Errorf("preview is missing conversation %d; texts: %q", i, tt.Texts())
 		}
 	}
-	if tt.HasText("Conversation 6") {
-		t.Fatalf("preview showed more than five conversations; texts: %q", tt.Texts())
-	}
 	if tt.HasText("Fake history") {
 		t.Fatalf("preview showed saved history beyond the limit; texts: %q", tt.Texts())
+	}
+	// The preview keeps the five newest rows; the header wording hides the
+	// oldest conversation's title, so check the merged row list itself.
+	rows := app.workspaceRows(base)
+	if len(rows) != 7 {
+		t.Fatalf("sidebar rows = %d, want 7", len(rows))
+	}
+	if rows[5].chat == nil || rows[5].chat.Title != "First conversation" {
+		t.Fatalf("oldest conversation is not the first hidden row: %+v", rows[5])
 	}
 	label := filepath.Base(base)
 	if !tt.HasText("Show 2 more") {

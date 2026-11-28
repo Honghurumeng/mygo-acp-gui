@@ -14,6 +14,7 @@ import (
 	"github.com/reed/acp-gui/internal/acp"
 	"github.com/reed/acp-gui/internal/agent"
 	"github.com/reed/acp-gui/internal/archive"
+	"github.com/reed/acp-gui/internal/session"
 )
 
 func TestSavedSessionRenamePersistsAcrossRestart(t *testing.T) {
@@ -528,5 +529,77 @@ func TestLoadArchiveDoesNotAddWorkspaces(t *testing.T) {
 	}
 	if len(app.SavedSessions) != 1 {
 		t.Fatalf("archived row was dropped from the index: %+v", app.SavedSessions)
+	}
+}
+
+func TestWorkspaceRowsSortByLastActivity(t *testing.T) {
+	workspace := "/work/a"
+	app := &App{
+		Workspace:  workspace,
+		Workspaces: []string{workspace},
+		Archived: []archive.Session{{
+			AgentID:   "pi",
+			SessionID: "turned",
+			Cwd:       workspace,
+			UpdatedAt: "2026-03-01T00:00:00Z",
+			Show:      true,
+		}},
+		SavedSessions: []savedSession{{
+			SessionSummary: acp.SessionSummary{SessionID: "saved", Cwd: workspace, UpdatedAt: "2026-02-15T00:00:00Z"},
+			AgentID:        "pi",
+			Show:           true,
+			archived:       true,
+			workspace:      workspace,
+		}},
+		Chats: []*Chat{
+			{
+				ID:        1,
+				Agent:     agent.LaunchSpec{ID: "pi"},
+				Workspace: workspace,
+				Info:      session.Info{SessionID: "turned"},
+				createdAt: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC),
+			},
+			{
+				ID:        2,
+				Agent:     agent.LaunchSpec{ID: "pi"},
+				Workspace: workspace,
+				createdAt: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
+			},
+		},
+	}
+	rows := app.workspaceRows(workspace)
+	want := []string{"turned", "saved", ""}
+	if len(rows) != len(want) {
+		t.Fatalf("rows = %+v", rows)
+	}
+	for i, id := range want {
+		got := ""
+		switch {
+		case rows[i].chat != nil:
+			got = rows[i].chat.Info.SessionID
+		case rows[i].saved != nil:
+			got = rows[i].saved.SessionID
+		}
+		if got != id {
+			t.Fatalf("row %d = %q, want %q (rows=%+v)", i, got, id, rows)
+		}
+	}
+}
+
+func TestNewConversationSortsFirst(t *testing.T) {
+	app, tt := newFakeApp(t)
+	workspace := current(app).Workspace
+	current(app).Title = "Older conversation"
+	tt.Frame()
+	newest := app.newChatTabIn(workspace)
+	newest.Title = "Newest conversation"
+	tt.Frame()
+
+	rows := app.workspaceRows(workspace)
+	if len(rows) == 0 || rows[0].chat != newest {
+		t.Fatalf("new conversation is not first: %+v", rows)
+	}
+	if !tt.HasText("Newest conversation") {
+		t.Fatalf("new conversation missing from the sidebar; texts: %q", tt.Texts())
 	}
 }

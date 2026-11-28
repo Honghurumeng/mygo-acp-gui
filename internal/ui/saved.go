@@ -187,6 +187,26 @@ func savedUpdatedAt(item acp.SessionSummary) time.Time {
 	return time.Time{}
 }
 
+// chatActivityAt is the sidebar sort time of an open conversation: the newer
+// of its creation time and the archived session's last activity.
+func (a *App) chatActivityAt(chat *Chat) time.Time {
+	if chat == nil {
+		return time.Time{}
+	}
+	at := chat.createdAt
+	sessionID := strings.TrimSpace(chat.Info.SessionID)
+	if sessionID == "" {
+		return at
+	}
+	if index := a.archiveIndex(strings.TrimSpace(chat.Agent.ID), sessionID); index >= 0 {
+		archived := savedUpdatedAt(acp.SessionSummary{UpdatedAt: a.Archived[index].UpdatedAt})
+		if archived.After(at) {
+			return archived
+		}
+	}
+	return at
+}
+
 // canonicalWorkspace resolves symlinks for comparisons. Grouping sessions by
 // cwd must not depend on whether the user picked /var or /private/var.
 func canonicalWorkspace(path string) string {
