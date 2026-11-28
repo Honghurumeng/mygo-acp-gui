@@ -81,8 +81,12 @@ func TestLoadStatusGraphAndActions(t *testing.T) {
 		t.Fatalf("staged after unstage = %+v", state.Staged())
 	}
 
-	if err := UndoLastCommit(context.Background(), dir); err != nil {
+	message, err := UndoLastCommit(context.Background(), dir)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if message != "first commit" {
+		t.Errorf("undone message = %q, want %q", message, "first commit")
 	}
 	state, err = Load(context.Background(), dir)
 	if err != nil {

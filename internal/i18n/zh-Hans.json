@@ -528,7 +528,7 @@
  "Unchanged": "未变更",
  "Undo": "撤销",
  "Undo last commit": "撤销上次提交",
- "Undo the last commit (soft reset)": "撤销上次提交（soft reset）",
+ "Undo the last commit (soft reset); its message goes back to the commit box": "撤销上次提交（soft reset），提交信息回到输入框",
  "Unknown": "未知",
  "Unmerged": "未合并",
  "Unstage": "取消暂存",

@@ -292,6 +292,15 @@ func (a *App) startGitLoad(workspace string, clearFeedback bool) {
 }
 
 func (a *App) runGitAction(label string, requireRepo bool, fn func(context.Context, string) error) {
+	a.runGitActionResult(label, requireRepo, func(ctx context.Context, root string) (string, error) {
+		return "", fn(ctx, root)
+	})
+}
+
+// runGitActionResult is runGitAction for an action that hands back text for
+// the commit message box: on success a non-empty result replaces the box, so
+// undoing a commit leaves its message ready to edit again.
+func (a *App) runGitActionResult(label string, requireRepo bool, fn func(context.Context, string) (string, error)) {
 	workspace := a.activeGitWorkspace()
 	if workspace == "" || !filepath.IsAbs(workspace) || a.Git.Workspace != workspace {
 		return
@@ -322,7 +331,7 @@ func (a *App) runGitAction(label string, requireRepo bool, fn func(context.Conte
 	go func() {
 		ctx, cancel := context.WithTimeout(a.lifeCtx, gitTimeoutFor(label))
 		defer cancel()
-		err := fn(ctx, target)
+		message, err := fn(ctx, target)
 		a.Post(func() {
 			if a.closed.Load() || a.Git.Gen != gen || a.Git.Workspace != workspace {
 				return
@@ -334,6 +343,8 @@ func (a *App) runGitAction(label string, requireRepo bool, fn func(context.Conte
 				a.Git.Notice = gitNoticeFor(label)
 				if label == "Commit" {
 					a.Git.Message = ""
+				} else if message != "" {
+					a.Git.Message = message
 				}
 			}
 			a.startGitLoad(workspace, false)
@@ -1151,10 +1162,8 @@ func (a *App) gitGraph(c *mui.Context) {
 			a.gitToolButton(c, T("Refresh"), T("Reload status and graph"), busy, func() {
 				a.startGitLoad(a.Git.Workspace, true)
 			})
-			a.gitToolButton(c, T("Undo"), T("Undo the last commit (soft reset)"), busy || !a.Git.HasCommits, func() {
-				a.runGitAction("Undo last commit", true, func(ctx context.Context, root string) error {
-					return git.UndoLastCommit(ctx, root)
-				})
+			a.gitToolButton(c, T("Undo"), T("Undo the last commit (soft reset); its message goes back to the commit box"), busy || !a.Git.HasCommits, func() {
+				a.runGitActionResult("Undo last commit", true, git.UndoLastCommit)
 			})
 		})
 		mui.Scroll(c).Grow(1).Padding(5, 0, 8, 6).Children(func() {

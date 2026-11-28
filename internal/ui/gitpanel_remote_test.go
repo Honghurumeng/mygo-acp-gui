@@ -160,4 +160,7 @@ func TestGitPanelUndoLastCommit(t *testing.T) {
 	if app.Git.Staged[0].Path != "next.txt" {
 		t.Errorf("staged after undo = %+v", app.Git.Staged)
 	}
+	if app.Git.Message != "next" {
+		t.Errorf("message after undo = %q, want %q", app.Git.Message, "next")
+	}
 }

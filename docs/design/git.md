@@ -83,6 +83,8 @@
 - 提交 subject 为空时显示 `(no subject)`（提交行必须有文字）；无法识别的日志行（例如混入的 warning）直接跳过。
 - merge 提交只按第一父提交展开和预览，不展示相对每个父的 combined diff；也不画 rebase/merge/revert 进行中的状态。
 - 没有提交时显示 “No commits yet.”；`Undo` 对首个提交也有效（`update-ref -d HEAD`），其余提交用 `reset --soft HEAD~1`。
+  撤销成功后把被撤销提交的完整信息（`git log -1 --format=%B`，多行保留）写回 commit message 输入框，
+  方便直接改一改再提交；读取信息失败只少了回填，不影响撤销本身。
 
 ## 分支
 

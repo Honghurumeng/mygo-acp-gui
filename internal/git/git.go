@@ -422,18 +422,32 @@ func Push(ctx context.Context, root string) error {
 	return err
 }
 
-// UndoLastCommit moves HEAD back one commit and keeps its changes staged.
-// The first commit has no parent, so it is removed by clearing the HEAD ref.
-func UndoLastCommit(ctx context.Context, root string) error {
+// UndoLastCommit moves HEAD back one commit and keeps its changes staged. It
+// returns the undone commit's message so the panel can put it back in the
+// commit input box for editing. The first commit has no parent, so it is
+// removed by clearing the HEAD ref.
+func UndoLastCommit(ctx context.Context, root string) (string, error) {
+	message := headCommitMessage(ctx, root)
 	if _, err := run(ctx, root, []string{"GIT_OPTIONAL_LOCKS=0"}, "rev-parse", "--verify", "--quiet", "HEAD^"); err != nil {
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return message, ctx.Err()
 		}
 		_, err = run(ctx, root, nil, "update-ref", "-d", "HEAD")
-		return err
+		return message, err
 	}
 	_, err := run(ctx, root, nil, "reset", "--soft", "HEAD~1")
-	return err
+	return message, err
+}
+
+// headCommitMessage reads HEAD's full message (%B) for an undo. A failure only
+// costs the restored text, so the undo itself still runs: the caller sees an
+// empty message and leaves its input box alone.
+func headCommitMessage(ctx context.Context, root string) string {
+	out, err := run(ctx, root, []string{"GIT_OPTIONAL_LOCKS=0"}, "log", "-1", "--format=%B")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func run(ctx context.Context, dir string, extraEnv []string, args ...string) ([]byte, error) {
