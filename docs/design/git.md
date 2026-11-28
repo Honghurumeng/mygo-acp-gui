@@ -135,12 +135,18 @@
 - Discard all：`git reset -q` 清空暂存 → 有 HEAD 时 `git checkout -- .` 恢复工作区 → `git clean -fd` 删除未跟踪文件和目录。
   已暂存、未暂存和未跟踪的更改都会被丢掉；忽略文件保留（不用 `clean -x`）。必须先在确认框里点 `Discard`，
   Cancel、Esc 或点遮罩外都不执行；确认框显示 staged/unstaged 数量，面板关闭或切换 workspace 时自动关闭。
+  确认按钮只在真正的 git 操作（`Git.Busy`）进行中禁用；后台状态刷新（窗口获得焦点、一轮对话结束）
+  不会吞掉确认点击：确认时让进行中的读取作废，直接开始 discard，避免“要点两次确认”。
 - 所有命令通过 `exec.Command` 直接传参数，不经过 shell；不使用 force push、reset --hard。
 
 ## 异步与安全
 
 - 所有 git 命令在 goroutine 中执行，结果通过 `App.Post` 回到 UI 线程。
 - 每次读取/操作带 generation 和 workspace 校验；切换会话或再次刷新后，过期结果直接丢弃。
+- 状态、图表、diff 等读取命令带 `GIT_OPTIONAL_LOCKS=0`，不拿 index 锁；因此这类读取在飞时不阻塞写操作：
+  操作自增 generation 让读取结果作废（并清掉 `Loading`），完成后重新读取。确认框按钮同理，不因读取而禁用。
+- 反过来，切 tab 回来、窗口获得焦点、一轮对话结束等刷新都跳过正在进行的操作；操作完成自己重读，
+  避免新 generation 丢掉操作的完成回调、让 `Busy` 永久卡住。
 - 状态/图表超时 10 秒，普通操作（含分支读取/创建/切换）15 秒，Commit 与 Discard all 30 秒，Fetch/Pull/Push 60 秒；应用退出时由 `lifeCtx` 取消。
 - 环境固定 `GIT_TERMINAL_PROMPT=0`、`GIT_PAGER=cat`、`LC_ALL=C`；不弹出隐藏的凭据输入，不内嵌终端。
 - 不改写用户仓库之外的内容；面板只操作当前 workspace 所在仓库。
@@ -183,5 +189,5 @@ go test ./internal/git -v
 go test ./internal/ui -run 'TestGitPanel' -v -count=1
 ```
 
-`internal/git` 测试覆盖状态/重命名解析、分支头解析、init、stage/unstage（含 `UnstageAll` 和首提交前）、commit、首提交撤销、discard all（已暂存/未暂存/未跟踪/首提交前、忽略文件保留）、嵌套工作区，以及 diff 两侧（未暂存/已暂存/未跟踪/新增/删除/重命名、二进制与超大文件、越界路径）、提交日志解析（含 committer time、HEAD 标记）、refs 解析、fetch 未 pull 的 `Incoming` 标记与 pull 后清除、commit 文件列表与提交 diff 两侧（首提交/单文件/重命名/删除）、提交文件数与增删行数统计、merge 的 lane 分配与 8 lane 上限、父提交必须在子提交之后、本地分支读取/新建/切换（含 unborn 分支与非法名字）、`SwitchBranchCarryingChanges` 的干净/冲突恢复、新分支首次 `PushBranch` 自动设置 upstream、无 upstream 时 `PullBranch` 匹配同名远端分支；`TestFetchPullPushAndUnstageAll` 用临时 bare remote 跑通 Fetch/Pull/Push/UnstageAll；UI 测试覆盖无仓库提示与 init、无 git 提示、窗口获得焦点后刷新、一轮对话结束后刷新、Stage all + Commit 全链路、Fetch/Pull/Push/Undo/Unstage all 按钮与 notice、Discard all 确认/取消与位置、共享卡片打开（位于 Git 面板左侧、面板仍可见、点外部关闭）、响应式布局（窄卡片
+`internal/git` 测试覆盖状态/重命名解析、分支头解析、init、stage/unstage（含 `UnstageAll` 和首提交前）、commit、首提交撤销、discard all（已暂存/未暂存/未跟踪/首提交前、忽略文件保留）、嵌套工作区，以及 diff 两侧（未暂存/已暂存/未跟踪/新增/删除/重命名、二进制与超大文件、越界路径）、提交日志解析（含 committer time、HEAD 标记）、refs 解析、fetch 未 pull 的 `Incoming` 标记与 pull 后清除、commit 文件列表与提交 diff 两侧（首提交/单文件/重命名/删除）、提交文件数与增删行数统计、merge 的 lane 分配与 8 lane 上限、父提交必须在子提交之后、本地分支读取/新建/切换（含 unborn 分支与非法名字）、`SwitchBranchCarryingChanges` 的干净/冲突恢复、新分支首次 `PushBranch` 自动设置 upstream、无 upstream 时 `PullBranch` 匹配同名远端分支；`TestFetchPullPushAndUnstageAll` 用临时 bare remote 跑通 Fetch/Pull/Push/UnstageAll；UI 测试覆盖无仓库提示与 init、无 git 提示、窗口获得焦点后刷新、一轮对话结束后刷新、Stage all + Commit 全链路、Fetch/Pull/Push/Undo/Unstage all 按钮与 notice、Discard all 确认/取消与位置（含确认时后台刷新进行中也不吞点击）、切 tab 不打断进行中的操作、共享卡片打开（位于 Git 面板左侧、面板仍可见、点外部关闭）、响应式布局（窄卡片
 Unified/宽卡片 Split、点阈值宽度）、未暂存文件编辑保存、暂存与历史只读、fetch 后 `↓N` 芯片与描边远端芯片、pull 后芯片和徽标消失，以及二进制报错、提交图渲染与窄面板裁剪、点击提交展开/收起文件列表、从展开列表打开提交 diff、hover 详情卡（位于图表左侧、无短 hash/父提交、含文件与行数统计）与复制 hash、提交右键创建分支（不切换、非法名留在对话框）、Git 标题行和 composer 草稿的分支选择器、切换失败时完整显示错误（含 `Aborting`）与 `Stash & switch` 三步说明、切换失败后列表仍可见、`Stash & switch` 携带本地修改切换（含冲突留 stash 的完整警告与 `git stash drop` 提示）、切换后面板/芯片刷新、新分支首次 Push 设置 upstream。

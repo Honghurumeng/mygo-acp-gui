@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"image/color"
 	"os"
@@ -278,6 +279,126 @@ func TestGitPanelDiscardsAllChangesAfterConfirm(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(workspace, "new.txt")); !os.IsNotExist(err) {
 		t.Errorf("untracked file survived the discard (err = %v)", err)
 	}
+}
+
+// The confirmation must not need a second click when a background refresh
+// starts while the pointer is on it: a focus or turn-end read used to
+// disable the button and drop the click, leaving the dialog open and every
+// change in place.
+func TestGitPanelDiscardConfirmSurvivesBackgroundRefresh(t *testing.T) {
+	workspace, app, tt := discardableGitPanel(t)
+
+	if err := tt.Click("Discard all"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	button, ok := tt.Find("Discard")
+	if !ok {
+		t.Fatalf("confirmation missing; texts: %q", tt.Texts())
+	}
+	tt.Press(button.X+button.W/2, button.Y+button.H/2)
+	tt.Frame()
+
+	// The read starts between the press and the release, as a window focus
+	// or an agent turn end does. Its post is not flushed until the waits
+	// below, so it is still in flight when the button is released.
+	app.startGitLoad(workspace, false)
+	tt.Frame()
+	if !app.Git.Loading {
+		t.Fatal("the background refresh did not start")
+	}
+
+	tt.Release(button.X+button.W/2, button.Y+button.H/2)
+	tt.Frame()
+	waitFor(t, app, tt, func() bool {
+		return !app.Git.DiscardOpen && app.Git.Busy == "" && !app.Git.Loading &&
+			len(app.Git.Staged) == 0 && len(app.Git.Changes) == 0
+	})
+	data, err := os.ReadFile(filepath.Join(workspace, "hello.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "one\n" {
+		t.Errorf("tracked file = %q, want the committed contents", data)
+	}
+}
+
+// A click on the confirmation while a status read is already in flight runs
+// the discard instead of being ignored until the read finishes.
+func TestGitPanelDiscardConfirmWhileRefreshRuns(t *testing.T) {
+	workspace, app, tt := discardableGitPanel(t)
+
+	if err := tt.Click("Discard all"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	app.startGitLoad(workspace, false)
+	tt.Frame()
+	if !app.Git.Loading {
+		t.Fatal("the background refresh did not start")
+	}
+	if err := tt.Click("Discard"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, app, tt, func() bool {
+		return !app.Git.DiscardOpen && app.Git.Busy == "" && !app.Git.Loading &&
+			len(app.Git.Staged) == 0 && len(app.Git.Changes) == 0
+	})
+}
+
+// discardableGitPanel returns a repository with one modified tracked file,
+// its Git panel read once and shown.
+func discardableGitPanel(t *testing.T) (string, *App, *mui.Tester) {
+	t.Helper()
+	workspace := initGitPanelRepo(t)
+	writeGitPanelFile(t, workspace, "hello.txt", "one\n")
+	runGitPanelCommand(t, workspace, "add", ".")
+	runGitPanelCommand(t, workspace, "commit", "-q", "-m", "first")
+	writeGitPanelFile(t, workspace, "hello.txt", "two\n")
+	app, tt := newGitPanelApp(t, workspace)
+	waitFor(t, app, tt, func() bool {
+		return app.Git.Checked && !app.Git.Loading && len(app.Git.Changes) == 1
+	})
+	return workspace, app, tt
+}
+
+// Leaving the Git tab and coming back marks the panel stale. That must not
+// start a read while an action runs: its new generation would drop the
+// action's completion and leave the panel busy forever.
+func TestGitPanelTabSwitchDuringActionClearsBusy(t *testing.T) {
+	workspace := initGitPanelRepo(t)
+	writeGitPanelFile(t, workspace, "hello.txt", "one\n")
+	app, tt := newGitPanelApp(t, workspace)
+	waitFor(t, app, tt, func() bool {
+		return app.Git.Checked && !app.Git.Loading && app.Git.RepoRoot != ""
+	})
+
+	started, release := make(chan struct{}), make(chan struct{})
+	app.runGitAction("Stage all", true, func(context.Context, string) error {
+		close(started)
+		<-release
+		return nil
+	})
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the action did not start")
+	}
+
+	if err := tt.Click("Show Files panel"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if err := tt.Click("Show Git panel"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if app.Git.Loading {
+		t.Fatal("a read started while an action was running")
+	}
+
+	close(release)
+	waitFor(t, app, tt, func() bool { return app.Git.Busy == "" && !app.Git.Loading })
 }
 
 func TestGitGraphShowsOneShortRef(t *testing.T) {

@@ -127,7 +127,9 @@ func (a *App) activeGitWorkspace() string {
 }
 
 // ensureGitPanel starts one read when the panel opens or follows a chat to a
-// new workspace. Checked keeps the view from spawning git every frame.
+// new workspace. Checked keeps the view from spawning git every frame; an
+// action already running reads again when it finishes, so a tab switch cannot
+// start a read whose generation would drop the action's completion.
 func (a *App) ensureGitPanel() {
 	workspace := a.activeGitWorkspace()
 	if a.Git.Workspace != workspace {
@@ -142,7 +144,7 @@ func (a *App) ensureGitPanel() {
 		a.Git.Loading = false
 		return
 	}
-	if a.Git.Checked || a.Git.Loading {
+	if a.Git.Checked || a.Git.Loading || a.Git.Busy != "" {
 		return
 	}
 	a.startGitLoad(workspace, false)
@@ -294,7 +296,12 @@ func (a *App) runGitAction(label string, requireRepo bool, fn func(context.Conte
 	if workspace == "" || !filepath.IsAbs(workspace) || a.Git.Workspace != workspace {
 		return
 	}
-	if !a.Git.Available || a.Git.Loading || a.Git.Busy != "" {
+	// A status read still running does not block an action: reads run with
+	// GIT_OPTIONAL_LOCKS=0, so they hold no index lock, and the generation
+	// below drops their result. Blocking here used to swallow a click made
+	// while the window regained focus or a turn ended, which read as the
+	// action needing a second click.
+	if !a.Git.Available || a.Git.Busy != "" {
 		return
 	}
 	target := workspace
@@ -306,6 +313,9 @@ func (a *App) runGitAction(label string, requireRepo bool, fn func(context.Conte
 	}
 	a.Git.Gen++
 	gen := a.Git.Gen
+	// The read in flight is outdated now; its post returns early, so its
+	// loading state must not outlive the action that replaced it.
+	a.Git.Loading = false
 	a.Git.Busy = label
 	a.Git.Error = ""
 	a.Git.Notice = ""
@@ -1164,7 +1174,10 @@ func (a *App) gitDiscardDialog(c *mui.Context) {
 		return
 	}
 	t := c.Theme()
-	busy := a.Git.Busy != "" || a.Git.Loading
+	// Only a git action in flight disables the confirmation. A background
+	// refresh is no reason to drop the click: runGitAction supersedes the
+	// read and runs the discard.
+	busy := a.Git.Busy != ""
 	confirm := false
 	mui.Modal(c, &a.Git.DiscardOpen, func() {
 		mui.Column(c).Gap(10).Width(380).Children(func() {
