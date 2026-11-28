@@ -224,6 +224,29 @@ func (c *Chat) canCloseProcess() bool {
 	return c != nil && !c.Closed && !c.taskActive && c.live()
 }
 
+// emptyDraft reports whether the chat is an unused new conversation: no
+// process, no session, no transcript, no composer input and no pending load.
+// Creating a conversation can drop such a tab instead of stacking another
+// empty one next to it; a draft the user typed into or renamed is kept.
+func (c *Chat) emptyDraft() bool {
+	if c == nil || c.Closed || c.taskActive || c.Session != nil || c.Connecting {
+		return false
+	}
+	if c.Info.SessionID != "" || c.pendingSessionID != "" || c.ConnectError != "" {
+		return false
+	}
+	if c.Busy != "" || c.Streaming || c.replaying {
+		return false
+	}
+	if strings.TrimSpace(c.Input) != "" || len(c.Attachments) > 0 || len(c.FileRefs) > 0 {
+		return false
+	}
+	if len(c.Messages) > 0 || len(c.Subagents) > 0 || c.turn != nil {
+		return false
+	}
+	return strings.TrimSpace(c.Title) == ""
+}
+
 // draftConfig returns a copy of the draft's config choices, or nil when the
 // chat is not a draft or nothing was picked.
 func (c *Chat) draftConfig() map[string]string {
@@ -465,6 +488,18 @@ func (a *App) newChatTabIn(workspace string) *Chat {
 // newChatTab opens a draft chat in the current workspace.
 func (a *App) newChatTab() *Chat {
 	return a.newChatTabIn(a.defaultWorkspace())
+}
+
+// newConversationIn opens a new draft conversation in workspace the way the
+// sidebar's ＋ does. Unused drafts left behind by a closed process (or by an
+// earlier ＋) are dropped first, so empty conversations do not accumulate.
+func (a *App) newConversationIn(workspace string) *Chat {
+	for _, chat := range a.chatsSnapshot() {
+		if chat.emptyDraft() && sameWorkspace(chat.Workspace, workspace) {
+			a.removeChat(chat)
+		}
+	}
+	return a.newChatTabIn(workspace)
 }
 
 // ensureChat returns the active chat, opening a draft tab when none exists.

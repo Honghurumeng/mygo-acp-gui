@@ -259,7 +259,7 @@ func (a *App) workspaceGroup(c *mui.Context, workspace string) {
 		if !removed {
 			plus := quietButton(c, "＋").Label(Tf("New conversation in %s", label)).FontSize(a.workspaceFont(12))
 			if plus.Clicked() {
-				a.newChatTabIn(workspace)
+				a.newConversationIn(workspace)
 			}
 		}
 	})

@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	mui "github.com/egoist/mygo/ui"
 	"github.com/reed/acp-gui/internal/acp"
@@ -403,4 +404,68 @@ func TestPermissionQueueKeepsChatsSeparate(t *testing.T) {
 		return app.Permission == nil && !first.Streaming && !second.Streaming &&
 			chatAssistantHas(first, "permission granted") && chatAssistantHas(second, "permission granted")
 	})
+}
+
+func TestCloseProcessLeavesFreshDraft(t *testing.T) {
+	app, tt := newFakeApp(t)
+	chat := connectTab(t, app, tt)
+	chat.Title = "Older conversation"
+	// Pretend the tab was opened long ago. Without resetting the draft's
+	// creation time its row would sort by that old stamp after the process
+	// closes, even though it is a brand-new conversation.
+	chat.createdAt = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	tt.Frame()
+
+	app.disconnectChat(chat)
+	waitFor(t, app, tt, func() bool { return chat.Session == nil && !chat.Connected })
+
+	if chat.Title != "" || chat.Info.SessionID != "" || len(chat.Messages) != 0 {
+		t.Fatalf("closed process did not reset the tab: %+v", chat)
+	}
+	if time.Since(chat.createdAt) > time.Minute {
+		t.Fatalf("draft kept its old creation time: %v", chat.createdAt)
+	}
+	rows := app.workspaceRows(chat.Workspace)
+	if len(rows) == 0 || rows[0].chat != chat {
+		t.Fatalf("fresh draft is not the first row: %+v", rows)
+	}
+	if !tt.HasText(chat.name()) {
+		t.Fatalf("draft missing from the sidebar; name %q texts: %q", chat.name(), tt.Texts())
+	}
+}
+
+func TestNewConversationReplacesUnusedDraft(t *testing.T) {
+	app, tt := newFakeApp(t)
+	first := connectTab(t, app, tt)
+	tt.Frame()
+	app.disconnectChat(first)
+	waitFor(t, app, tt, func() bool { return first.Session == nil && !first.Connected })
+	tt.Frame()
+
+	newest := newTab(t, app, tt)
+	if len(app.Chats) != 1 || app.Chats[0] != newest {
+		t.Fatalf("unused draft was not replaced: %+v", app.Chats)
+	}
+	if newest == first || !first.Closed {
+		t.Fatalf("new conversation reused the old draft: newest=%+v first=%+v", newest, first)
+	}
+	rows := app.workspaceRows(newest.Workspace)
+	if len(rows) == 0 || rows[0].chat != newest {
+		t.Fatalf("new conversation is not the first row: %+v", rows)
+	}
+}
+
+func TestNewConversationKeepsDraftWithInput(t *testing.T) {
+	app, tt := newFakeApp(t)
+	draft := app.activeChat()
+	draft.Input = "not sent yet"
+	tt.Frame()
+
+	next := newTab(t, app, tt)
+	if next == draft || len(app.Chats) != 2 || app.Chats[0] != draft {
+		t.Fatalf("draft with input was dropped: %+v", app.Chats)
+	}
+	if draft.Input != "not sent yet" {
+		t.Fatalf("draft input = %q", draft.Input)
+	}
 }

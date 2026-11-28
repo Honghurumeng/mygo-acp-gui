@@ -763,7 +763,13 @@ func (a *App) disconnectChat(chat *Chat) {
 	a.rememberSelection(chat)
 	chat.Info = session.Info{}
 	chat.pendingSend = false
+	chat.clearPendingSession()
 	a.resetConversation(chat)
+	// The tab is now an ordinary draft conversation. A draft sorts by its
+	// creation time, so take the current clock instead of keeping the old
+	// tab's timestamp: closing a process must put the new draft at the top
+	// of its workspace exactly like a freshly created conversation.
+	chat.createdAt = time.Now()
 }
 
 func (a *App) closeInBackground(chat *Chat, s *session.Session) {
